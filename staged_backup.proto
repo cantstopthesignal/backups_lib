@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package StagedBackup;
+
+message PathInfoProto {
+  enum PathType {
+    DIR = 0;
+    FILE = 1;
+    SYMLINK = 2;
+  }
+
+  string path = 1;
+  PathType path_type = 2;
+  uint64 mode = 3;
+  int64 mtime = 4;
+  uint64 size = 5;
+  uint32 uid = 6;
+  uint32 gid = 7;
+  string link_dest = 8;
+  bytes sha256 = 9;
+  bytes xattr_hash = 10;
+}
+
+message ManifestProto {
+  repeated PathInfoProto path_infos = 1;
+}
