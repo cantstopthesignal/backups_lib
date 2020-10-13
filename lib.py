@@ -60,6 +60,17 @@ def GetManifestBackupPath(manifest_path):
   return path
 
 
+def FileSizeStringToBytes(size_str):
+  if size_str.endswith('gb'):
+    return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
+  elif size_str.endswith('mb'):
+    return int(float(size_str[:-2]) * 1024 * 1024)
+  elif size_str.endswith('kb'):
+    return int(float(size_str[:-2]) * 1024)
+  assert size_str.endswith('b')
+  return int(size_str[:-1])
+
+
 def FileSizeToString(size):
   def SizeFormat(sz, suffix):
     sz_str = '%.1f' % sz
@@ -68,13 +79,13 @@ def FileSizeToString(size):
     return sz_str + suffix
   if size < 1024:
     return '%db' % size
-  size /= 1024
+  size /= 1024.0
   if size < 1024:
     return SizeFormat(size, 'kb')
-  size /= 1024
+  size /= 1024.0
   if size < 1024:
     return SizeFormat(size, 'mb')
-  size /= 1024
+  size /= 1024.0
   return SizeFormat(size, 'gb')
 
 
@@ -308,58 +319,7 @@ def CreateDiskImage(image_path, volume_name=None, size='1T', filesystem='APFS',
     encryption_manager.SavePassword(password, image_uuid)
 
 
-def DefragmentImage(image_path, output, encryption_manager=None, dry_run=False):
-  (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
-
-  with ImageAttacher(image_path, readonly=dry_run, mount=False,
-                     encryption_manager=encryption_manager) as attacher:
-    assert attacher.GetDevice().startswith('/dev/')
-    diskutil_output = subprocess.check_output(['diskutil', 'list', attacher.GetDevice()])
-    apfs_identifier = None
-    for line in diskutil_output.split('\n'):
-      pieces = line.strip().split()
-      if pieces[1:3] == ['Apple_APFS', 'Container']:
-        if apfs_identifier is not None:
-          raise Exception('Multiple apfs containers found in diskutil output: %s' % diskutil_output)
-        apfs_identifier = pieces[-1]
-    if apfs_identifier is None:
-      print >>self.output, '*** Warning: no apfs container found to defragment'
-      return
-
-    apfs_device = os.path.join('/dev', apfs_identifier)
-
-    assert apfs_device.startswith(attacher.GetDevice())
-
-    current_bytes = None
-    min_bytes = None
-    diskutil_output = subprocess.check_output(['diskutil', 'apfs', 'resizeContainer', apfs_device , 'limits'])
-    for line in diskutil_output.split('\n'):
-      line = line.strip()
-      m = re.match('^Current Physical Store partition size on map:.*[(]([0-9]+) Bytes[)]$', line)
-      if m:
-        current_bytes = int(m.group(1))
-      m = re.match('^Minimum [(]constrained by file/snapshot usage[)]:.*[(]([0-9]+) Bytes[)]$', line)
-      if m:
-        min_bytes = int(m.group(1))
-    if current_bytes is None or min_bytes is None:
-      raise Exception('Could not determine minimum and current bytes for apfs device %s' % apfs_device)
-
-    print >>output, 'Defragmenting %s; apfs min size %s, current size %s...' % (
-      image_path, FileSizeToString(min_bytes), FileSizeToString(current_bytes))
-    if not dry_run:
-      for size in [min_bytes, current_bytes]:
-        cmd = ['diskutil', 'apfs', 'resizeContainer', apfs_device, str(size)]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        for line in p.stdout:
-          print >>output, line.rstrip()
-        if p.wait():
-          raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
-
-
-def CompactImage(image_path, output, defragment=False, encryption_manager=None, dry_run=False):
-  if defragment:
-    DefragmentImage(image_path, output, encryption_manager=encryption_manager, dry_run=dry_run)
-
+def CompactImage(image_path, output, encryption_manager=None, dry_run=False):
   (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
 
   cmd = ['hdiutil', 'compact', image_path]
@@ -380,6 +340,91 @@ def CompactImage(image_path, output, defragment=False, encryption_manager=None, 
     output.write(p.stdout.read())
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+
+def GetApfsDeviceFromAttachedImageDevice(image_device, output):
+  assert image_device.startswith('/dev/')
+  diskutil_output = subprocess.check_output(['diskutil', 'list', image_device])
+  apfs_identifier = None
+  for line in diskutil_output.split('\n'):
+    pieces = line.strip().split()
+    if pieces[1:3] == ['Apple_APFS', 'Container']:
+      if apfs_identifier is not None:
+        raise Exception('Multiple apfs containers found in diskutil output: %s' % diskutil_output)
+      apfs_identifier = pieces[-1]
+  if apfs_identifier is None:
+    print >>output, '*** Warning: no apfs container found to defragment'
+    return
+
+  apfs_device = os.path.join('/dev', apfs_identifier)
+  assert apfs_device.startswith(image_device)
+
+  return apfs_device
+
+
+def GetApfsDeviceLimits(apfs_device):
+  current_bytes = None
+  min_bytes = None
+  diskutil_output = subprocess.check_output(['diskutil', 'apfs', 'resizeContainer', apfs_device , 'limits'])
+  for line in diskutil_output.split('\n'):
+    line = line.strip()
+    m = re.match('^Current Physical Store partition size on map:.*[(]([0-9]+) Bytes[)]$', line)
+    if m:
+      current_bytes = int(m.group(1))
+    m = re.match('^Minimum [(]constrained by file/snapshot usage[)]:.*[(]([0-9]+) Bytes[)]$', line)
+    if m:
+      min_bytes = int(m.group(1))
+  if current_bytes is None or min_bytes is None:
+    raise Exception('Could not determine minimum and current bytes for apfs device %s' % apfs_device)
+
+  return (current_bytes, min_bytes)
+
+
+def ResizeApfsContainer(apfs_device, new_size, output):
+  cmd = ['diskutil', 'apfs', 'resizeContainer', apfs_device, str(new_size)]
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  for line in p.stdout:
+    print >>output, line.rstrip()
+  if p.wait():
+    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+
+def CompactAndDefragmentImage(image_path, output, defragment=False, defragment_iterations=1,
+                              encryption_manager=None, dry_run=False):
+  (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+
+  old_apfs_container_size = None
+  if defragment:
+    with ImageAttacher(image_path, readonly=dry_run, mount=False,
+                       encryption_manager=encryption_manager) as attacher:
+      apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
+      old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
+
+      print >>output, 'Defragmenting %s; apfs min size %s, current size %s...' % (
+        image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size))
+      if not dry_run:
+        for i in range(defragment_iterations):
+          if i:
+            _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
+            if new_min_bytes >= min_bytes * 0.95:
+              print >>output, 'Iteration %d, new apfs min size %s has low savings' % (
+                i+1, FileSizeToString(new_min_bytes))
+              break
+            print >>output, 'Iteration %d, new apfs min size %s...' % (
+              i+1, FileSizeToString(new_min_bytes))
+            min_bytes = new_min_bytes
+          ResizeApfsContainer(apfs_device, min_bytes, output=output)
+
+  CompactImage(image_path, output=output, encryption_manager=encryption_manager,
+               dry_run=dry_run)
+
+  if defragment and not dry_run:
+    print >>output, 'Restoring apfs container size to %s...' % (
+      FileSizeToString(old_apfs_container_size))
+    with ImageAttacher(image_path, readonly=dry_run, mount=False,
+                       encryption_manager=encryption_manager) as attacher:
+      apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
+      ResizeApfsContainer(apfs_device, old_apfs_container_size, output=output)
 
 
 def GetImageEncryptionDetails(image_path):
@@ -1594,10 +1639,11 @@ class CheckpointApplier(object):
 
 
 class CheckpointStripper(object):
-  def __init__(self, checkpoint_path, output, defragment=False, dry_run=False, verbose=False,
-               encryption_manager=None):
+  def __init__(self, checkpoint_path, output, defragment=False, defragment_iterations=1,
+               dry_run=False, verbose=False, encryption_manager=None):
     self.checkpoint_path = checkpoint_path
     self.defragment = defragment
+    self.defragment_iterations = defragment_iterations
     self.output = output
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1617,7 +1663,8 @@ class CheckpointStripper(object):
 
     compactor = ImageCompactor(
       self.checkpoint_path, output=self.output, defragment=self.defragment,
-      dry_run=self.dry_run, verbose=self.verbose, encryption_manager=self.encryption_manager)
+      defragment_iterations=self.defragment_iterations, dry_run=self.dry_run,
+      verbose=self.verbose, encryption_manager=self.encryption_manager)
     return compactor.Compact()
 
   def _StripInternal(self):
@@ -1633,10 +1680,11 @@ class CheckpointStripper(object):
 
 
 class ImageCompactor(object):
-  def __init__(self, image_path, output, defragment=False, dry_run=False, verbose=False,
-               encryption_manager=None):
+  def __init__(self, image_path, output, defragment=False, defragment_iterations=1,
+               dry_run=False, verbose=False, encryption_manager=None):
     self.image_path = image_path
     self.defragment = defragment
+    self.defragment_iterations = defragment_iterations
     self.output = output
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1645,8 +1693,10 @@ class ImageCompactor(object):
 
   def Compact(self):
     starting_size = GetPathTreeSize(self.image_path)
-    CompactImage(self.image_path, output=self.output, defragment=self.defragment,
-                 dry_run=self.dry_run, encryption_manager=self.encryption_manager)
+    CompactAndDefragmentImage(
+      self.image_path, output=self.output, defragment=self.defragment,
+      defragment_iterations=self.defragment_iterations, dry_run=self.dry_run,
+      encryption_manager=self.encryption_manager)
     ending_size = GetPathTreeSize(self.image_path)
     print >>self.output, "Image size %s -> %s" % (
       FileSizeToString(starting_size), FileSizeToString(ending_size))
@@ -1792,10 +1842,12 @@ def DoStripCheckpoint(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--checkpoint-path', required=True)
   parser.add_argument('--no-defragment', dest='defragment', action='store_false')
+  parser.add_argument('--defragment-iterations', default='1', type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   checkpoint_stripper = CheckpointStripper(
-    cmd_args.checkpoint_path, defragment=cmd_args.defragment, output=output, dry_run=args.dry_run,
+    cmd_args.checkpoint_path, defragment=cmd_args.defragment,
+    defragment_iterations=cmd_args.defragment_iterations, output=output, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=EncryptionManager())
   return checkpoint_stripper.Strip()
 
@@ -1804,10 +1856,12 @@ def DoCompactImage(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--image-path', required=True)
   parser.add_argument('--no-defragment', dest='defragment', action='store_false')
+  parser.add_argument('--defragment-iterations', default='1', type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   image_compactor = ImageCompactor(
-    cmd_args.image_path, defragment=cmd_args.defragment, output=output, dry_run=args.dry_run,
+    cmd_args.image_path, defragment=cmd_args.defragment,
+    defragment_iterations=cmd_args.defragment_iterations, output=output, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=EncryptionManager())
   return image_compactor.Compact()
 
