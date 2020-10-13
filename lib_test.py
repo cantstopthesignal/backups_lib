@@ -16,6 +16,7 @@ import lib
 import main
 
 from test_util import AssertEquals
+from test_util import AssertLinesEqual
 from test_util import CreateDir
 from test_util import CreateFile
 from test_util import CreateSymlink
@@ -66,7 +67,7 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=l
 
 
 def AssertEmptyRsync(from_path, to_path, checksum=True):
-  AssertEquals(RsyncPaths(from_path, to_path, checksum=checksum, dry_run=True), [])
+  AssertLinesEqual(RsyncPaths(from_path, to_path, checksum=checksum, dry_run=True), [])
 
 
 def AssertBasisInfoFileEquals(metadata_path, basis_path=None):
@@ -198,7 +199,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
       continue
     output_lines.append(line)
   output.close()
-  AssertEquals(output_lines, expected_output)
+  AssertLinesEqual(output_lines, expected_output)
   if not dry_run:
     assert checkpoint_path
     checkpoint, manifest = GetCheckpointData(
@@ -227,7 +228,7 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
       continue
     output_lines.append(line)
   output.close()
-  AssertEquals(output_lines, expected_output)
+  AssertLinesEqual(output_lines, expected_output)
 
 
 def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[]):
@@ -244,7 +245,7 @@ def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[])
       continue
     output_lines.append(line)
   output.close()
-  AssertEquals(output_lines, expected_output)
+  AssertLinesEqual(output_lines, expected_output)
 
 
 def DoStrip(checkpoint_path, defragment=True, dry_run=False, expected_output=[]):
@@ -282,7 +283,7 @@ def CreateDryRunTest():
                        '>f+++++++ par!/f3',
                        '>f+++++++ par!/f_\\r',
                        'Transferring 5 paths (14b)'])
-    AssertEquals(os.listdir(checkpoints_dir), [])
+    AssertLinesEqual(os.listdir(checkpoints_dir), [])
 
     checkpoint1, manifest1 = DoCreate(
       src_root, checkpoints_dir, '1',
@@ -293,16 +294,16 @@ def CreateDryRunTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 5 paths (14b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest1),
-                   ['.d....... .',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f3',
-                    '.f....... par!/f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f3',
+                        '.f....... par!/f_\\r'])
       AssertEmptyRsync(src_root, checkpoint1.GetContentRootPath())
     finally:
       checkpoint1.Close()
-    AssertEquals(os.listdir(checkpoints_dir), ['1.sparseimage'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), ['1.sparseimage'])
 
     SetMTime(file1, None)
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -313,7 +314,7 @@ def CreateDryRunTest():
     expected_output=['>fcs..... par!/f2',
                      '.f..t.... par!/f_\\r',
                      'Transferring 2 of 5 paths (17b of 17b)'])
-    AssertEquals(os.listdir(checkpoints_dir), ['1.sparseimage'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), ['1.sparseimage'])
 
 
 def CreateTest():
@@ -342,13 +343,13 @@ def CreateTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 6 paths (29b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest_only),
-                   ['.d....... .',
-                    '.f....... .staged_backup_filter',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f3',
-                    '.f....... par!/f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest_only),
+                       ['.d....... .',
+                        '.f....... .staged_backup_filter',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f3',
+                        '.f....... par!/f_\\r'])
     finally:
       checkpoint_manifest_only.Close()
 
@@ -362,13 +363,13 @@ def CreateTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 6 paths (29b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest1),
-                   ['.d....... .',
-                    '.f....... .staged_backup_filter',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f3',
-                    '.f....... par!/f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.f....... .staged_backup_filter',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f3',
+                        '.f....... par!/f_\\r'])
       AssertEmptyRsync(src_root, checkpoint1.GetContentRootPath())
       AssertBasisInfoFileEquals(checkpoint1.GetMetadataPath(), None)
     finally:
@@ -378,14 +379,14 @@ def CreateTest():
                                       last_checkpoint_path=checkpoint1.GetImagePath(),
                                       readonly=False)
     try:
-      AssertEquals(GetManifestDiffItemized(manifest1, manifest2), [])
-      AssertEquals(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                   ['.d..t...... ./',
-                    '>f+++++++++ .staged_backup_filter',
-                    'cd+++++++++ par!/',
-                    '>f+++++++++ par!/f2',
-                    '>f+++++++++ par!/f3',
-                    '>f+++++++++ par!/f_\r'])
+      AssertLinesEqual(GetManifestDiffItemized(manifest1, manifest2), [])
+      AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
+                       ['.d..t...... ./',
+                        '>f+++++++++ .staged_backup_filter',
+                        'cd+++++++++ par!/',
+                        '>f+++++++++ par!/f2',
+                        '>f+++++++++ par!/f3',
+                        '>f+++++++++ par!/f_\r'])
       AssertBasisInfoFileEquals(checkpoint2.GetMetadataPath(), checkpoint1.GetImagePath())
       DoVerify(manifest2.GetPath(), src_root,
                expected_success=False,
@@ -409,12 +410,12 @@ def CreateTest():
                        'Transferring 3 of 6 paths (3b of 32b)'],
       readonly=False)
     try:
-      AssertEquals(GetManifestItemized(manifest3),
-                   GetManifestItemized(manifest1))
-      AssertEquals(GetManifestDiffItemized(manifest2, manifest3),
-                   ['.d......x .',
-                    '>fcs..... par!/f2',
-                    '.f..t.... par!/f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest3),
+                       GetManifestItemized(manifest1))
+      AssertLinesEqual(GetManifestDiffItemized(manifest2, manifest3),
+                       ['.d......x .',
+                        '>fcs..... par!/f2',
+                        '.f..t.... par!/f_\\r'])
       AssertBasisInfoFileEquals(checkpoint3.GetMetadataPath(), checkpoint2.GetImagePath())
       DoVerify(manifest3.GetPath(), checkpoint3.GetContentRootPath(),
                expected_success=False,
@@ -422,15 +423,15 @@ def CreateTest():
                                 '>f+++++++ par!/f3'])
       checkpoint2 = lib.Checkpoint.Open(checkpoint2.GetImagePath(), readonly=False)
       try:
-        AssertEquals(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                     ['.d........x ./',
-                      '>fcs....... par!/f2',
-                      '.f..t...... par!/f_\r'])
+        AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
+                         ['.d........x ./',
+                          '>fcs....... par!/f2',
+                          '.f..t...... par!/f_\r'])
       finally:
         checkpoint2.Close()
-      AssertEquals(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
-                   ['>f+++++++++ .staged_backup_filter',
-                    '>f+++++++++ par!/f3'])
+      AssertLinesEqual(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
+                       ['>f+++++++++ .staged_backup_filter',
+                        '>f+++++++++ par!/f3'])
     finally:
       checkpoint3.Close()
 
@@ -454,14 +455,14 @@ def CreateTest():
                          '>fc...... par!/f2',
                          'Transferring 4 of 8 paths (6b of 35b)'])
       try:
-        AssertEquals(GetManifestDiffItemized(manifest3, manifest4),
-                     ['.d..t.... par!',
-                      '>fc...... par!/f2'])
-        AssertEquals(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
-                     ['.d..t.....x ./',
-                      '>f+++++++++ .staged_backup_filter',
-                      '>f+++++++++ par!/f3',
-                      '>f+++++++++ par!/f_\r'])
+        AssertLinesEqual(GetManifestDiffItemized(manifest3, manifest4),
+                         ['.d..t.... par!',
+                          '>fc...... par!/f2'])
+        AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
+                         ['.d..t.....x ./',
+                          '>f+++++++++ .staged_backup_filter',
+                          '>f+++++++++ par!/f3',
+                          '>f+++++++++ par!/f_\r'])
         AssertBasisInfoFileEquals(checkpoint4.GetMetadataPath(), checkpoint3.GetImagePath())
         DoVerify(manifest4.GetPath(), checkpoint4.GetContentRootPath())
       finally:
@@ -502,12 +503,12 @@ def CreateWithFilterMergeTest():
                        '>f+++++++ par/f2',
                        'Transferring 5 paths (15b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest1),
-                   ['.d....... .',
-                    '.d....... par',
-                    '.f....... par/.staged_backup_filter',
-                    '.f....... par/f1',
-                    '.f....... par/f2'])
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.d....... par',
+                        '.f....... par/.staged_backup_filter',
+                        '.f....... par/f1',
+                        '.f....... par/f2'])
     finally:
       checkpoint1.Close()
 
@@ -535,10 +536,10 @@ def ApplyDryRunTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 3 paths (0b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest1),
-                   ['.d....... .',
-                    '.d....... par!',
-                    '.f....... par!/f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.d....... par!',
+                        '.f....... par!/f_\\r'])
     finally:
       checkpoint1.Close()
 
@@ -547,11 +548,11 @@ def ApplyDryRunTest():
                              '*deleting del_par!/del',
                              '>d+++++++ par!',
                              '>f+++++++ par!/f_\\r'])
-    AssertEquals(RsyncPaths(src_root, dest_root),
-                 ['*deleting del_par!/',
-                  '*deleting del_par!/del',
-                  'cd+++++++++ par!/',
-                  '>f+++++++++ par!/f_\r'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root),
+                     ['*deleting del_par!/',
+                      '*deleting del_par!/del',
+                      'cd+++++++++ par!/',
+                      '>f+++++++++ par!/f_\r'])
 
 
 def ApplyTest():
@@ -583,13 +584,13 @@ def ApplyTest():
                        '>L+++++++ par!/ln2 -> f_\\r',
                        'Transferring 6 paths (0b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest1),
-                   ['.d....... .',
-                    '.L....... ln1_dir -> par!',
-                    '.L....... ln3 -> INVALID',
-                    '.d....... par!',
-                    '.f....... par!/f_\\r',
-                    '.L....... par!/ln2 -> f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.L....... ln1_dir -> par!',
+                        '.L....... ln3 -> INVALID',
+                        '.d....... par!',
+                        '.f....... par!/f_\\r',
+                        '.L....... par!/ln2 -> f_\\r'])
     finally:
       checkpoint1.Close()
 
@@ -616,15 +617,15 @@ def ApplyTest():
                        '>f+++++++ par!/f2',
                        'Transferring 2 of 8 paths (0b of 0b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest2),
-                   ['.d....... .',
-                    '.f....... f3',
-                    '.L....... ln1_dir -> par!',
-                    '.L....... ln3 -> INVALID',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f_\\r',
-                    '.L....... par!/ln2 -> f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest2),
+                       ['.d....... .',
+                        '.f....... f3',
+                        '.L....... ln1_dir -> par!',
+                        '.L....... ln3 -> INVALID',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f_\\r',
+                        '.L....... par!/ln2 -> f_\\r'])
       AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
                    [u'com.apple.lastuseddate#PS', u'example'])
     finally:
@@ -645,22 +646,22 @@ def ApplyTest():
       expected_output=['.d......x .',
                        'Transferring 1 of 8 paths (0b of 0b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest3),
-                   ['.d....... .',
-                    '.f....... f3',
-                    '.L....... ln1_dir -> par!',
-                    '.L....... ln3 -> INVALID',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f_\\r',
-                    '.L....... par!/ln2 -> f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest3),
+                       ['.d....... .',
+                        '.f....... f3',
+                        '.L....... ln1_dir -> par!',
+                        '.L....... ln3 -> INVALID',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f_\\r',
+                        '.L....... par!/ln2 -> f_\\r'])
     finally:
       checkpoint3.Close()
 
     DoApply(checkpoint3.GetImagePath(), dest_root,
             expected_output=['.d......x .'])
-    AssertEquals(RsyncPaths(src_root, dest_root, dry_run=True),
-                 ['.f........x f3'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
+                     ['.f........x f3'])
 
     # No modifications
 
@@ -668,22 +669,22 @@ def ApplyTest():
       src_root, checkpoints_dir, '4', last_checkpoint_path=checkpoint3.GetImagePath(),
       expected_output=[])
     try:
-      AssertEquals(GetManifestItemized(manifest4),
-                   ['.d....... .',
-                    '.f....... f3',
-                    '.L....... ln1_dir -> par!',
-                    '.L....... ln3 -> INVALID',
-                    '.d....... par!',
-                    '.f....... par!/f2',
-                    '.f....... par!/f_\\r',
-                    '.L....... par!/ln2 -> f_\\r'])
+      AssertLinesEqual(GetManifestItemized(manifest4),
+                       ['.d....... .',
+                        '.f....... f3',
+                        '.L....... ln1_dir -> par!',
+                        '.L....... ln3 -> INVALID',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f_\\r',
+                        '.L....... par!/ln2 -> f_\\r'])
     finally:
       checkpoint4.Close()
 
     DoApply(checkpoint4.GetImagePath(), dest_root,
             expected_output=[])
-    AssertEquals(RsyncPaths(src_root, dest_root, dry_run=True),
-                 ['.f........x f3'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
+                     ['.f........x f3'])
 
     # Modify some existing files
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -701,14 +702,14 @@ def ApplyTest():
                        '.Lc...... par!/ln2 -> INVALID',
                        'Transferring 4 of 7 paths (3b of 3b)'])
     try:
-      AssertEquals(GetManifestItemized(manifest5),
-                    ['.d....... .',
-                     '.f....... f3',
-                     '.L....... ln1_dir -> par!/f2',
-                     '.d....... par!',
-                     '.f....... par!/f2',
-                     '.f....... par!/f_\\r',
-                     '.L....... par!/ln2 -> INVALID'])
+      AssertLinesEqual(GetManifestItemized(manifest5),
+                       ['.d....... .',
+                        '.f....... f3',
+                        '.L....... ln1_dir -> par!/f2',
+                        '.d....... par!',
+                        '.f....... par!/f2',
+                        '.f....... par!/f_\\r',
+                        '.L....... par!/ln2 -> INVALID'])
       AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
                    [u'com.apple.lastuseddate#PS', u'example'])
     finally:
@@ -738,8 +739,8 @@ def ApplyTest():
 
     DoApply(checkpoint6.GetImagePath(), dest_root)
     AssertEmptyRsync(src_root, dest_root, checksum=False)
-    AssertEquals(RsyncPaths(src_root, dest_root, checksum=True, dry_run=True),
-                 ['>fc........ par!/f2'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, checksum=True, dry_run=True),
+                     ['>fc........ par!/f2'])
 
     # Now do a sync with checksum all and verify the diffing file gets transferred
 
@@ -781,9 +782,9 @@ def StripTest():
         src_root, checkpoints_dir, '1',
         expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
       try:
-        AssertEquals(GetManifestItemized(manifest1),
-                     ['.d....... .',
-                      '.f....... f1'])
+        AssertLinesEqual(GetManifestItemized(manifest1),
+                         ['.d....... .',
+                          '.f....... f1'])
       finally:
         checkpoint1.Close()
       AssertCheckpointStripState(checkpoint1.GetImagePath(), False)
@@ -811,17 +812,17 @@ def StripTest():
                 'Defragmenting %s; apfs min size 1gb, current size 1023gb...' % checkpoint2_path,
                 'Image size 34mb -> 34mb'])
       output = DoStrip(checkpoint2_path, expected_output=None)
-      AssertEquals(['Checkpoint stripped',
-                    'Defragmenting %s; apfs min size 1gb, current size 1023gb...' % checkpoint2_path,
-                    'Started APFS operation'],
-                   output[:3])
-      AssertEquals(['Finished APFS operation',
-                    'Starting to compact\xe2\x80\xa6',
-                    'Reclaiming free space\xe2\x80\xa6',
-                    'Finishing compaction\xe2\x80\xa6',
-                    'Reclaimed 16 MB out of 1023.6 GB possible.',
-                    'Image size 34mb -> 20mb'],
-                   output[-6:])
+      AssertLinesEqual(['Checkpoint stripped',
+                        'Defragmenting %s; apfs min size 1gb, current size 1023gb...' % checkpoint2_path,
+                        'Started APFS operation'],
+                       output[:3])
+      AssertLinesEqual(['Finished APFS operation',
+                        'Starting to compact\xe2\x80\xa6',
+                        'Reclaiming free space\xe2\x80\xa6',
+                        'Finishing compaction\xe2\x80\xa6',
+                        'Reclaimed 16 MB out of 1023.6 GB possible.',
+                        'Image size 34mb -> 20mb'],
+                       output[-6:])
       AssertEquals(20975616, os.lstat(checkpoint2_path).st_size)
       AssertCheckpointStripState(checkpoint2_path, True)
 
@@ -862,17 +863,17 @@ def CompactTest():
                   % checkpoint1.GetImagePath(),
                   'Image size 30mb -> 30mb'])
       output = DoCompact(checkpoint1.GetImagePath(), expected_output=None)
-      AssertEquals(['Defragmenting %s; apfs min size 1gb, current size 1023gb...'
-                    % checkpoint1.GetImagePath(),
-                    'Started APFS operation'],
-                   output[:2])
-      AssertEquals(['Finished APFS operation',
-                    'Starting to compact\xe2\x80\xa6',
-                    'Reclaiming free space\xe2\x80\xa6',
-                    'Finishing compaction\xe2\x80\xa6',
-                    'Reclaimed 12 MB out of 1023.6 GB possible.',
-                    'Image size 30mb -> 20mb'],
-                   output[-6:])
+      AssertLinesEqual(['Defragmenting %s; apfs min size 1gb, current size 1023gb...'
+                        % checkpoint1.GetImagePath(),
+                        'Started APFS operation'],
+                       output[:2])
+      AssertLinesEqual(['Finished APFS operation',
+                        'Starting to compact\xe2\x80\xa6',
+                        'Reclaiming free space\xe2\x80\xa6',
+                        'Finishing compaction\xe2\x80\xa6',
+                        'Reclaimed 12 MB out of 1023.6 GB possible.',
+                        'Image size 30mb -> 20mb'],
+                       output[-6:])
       AssertEquals(20975616, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
       image_path2 = os.path.join(test_dir, 'image2.sparsebundle')
@@ -897,16 +898,16 @@ def CompactTest():
                   'Defragmenting %s; apfs min size 1gb, current size 1023gb...' % image_path2,
                   'Image size 45mb -> 45mb'])
       output = DoCompact(image_path2, expected_output=None)
-      AssertEquals(['Defragmenting %s; apfs min size 1gb, current size 1023gb...' % image_path2,
-                    'Started APFS operation'],
-                   output[:2])
-      AssertEquals(['Finished APFS operation',
-                    'Starting to compact\xe2\x80\xa6',
-                    'Reclaiming free space\xe2\x80\xa6',
-                    'Finishing compaction\xe2\x80\xa6',
-                    'Reclaimed 10.2 MB out of 1023.6 GB possible.',
-                    'Image size 45mb -> 35mb'],
-                   output[-6:])
+      AssertLinesEqual(['Defragmenting %s; apfs min size 1gb, current size 1023gb...' % image_path2,
+                        'Started APFS operation'],
+                       output[:2])
+      AssertLinesEqual(['Finished APFS operation',
+                        'Starting to compact\xe2\x80\xa6',
+                        'Reclaiming free space\xe2\x80\xa6',
+                        'Finishing compaction\xe2\x80\xa6',
+                        'Reclaimed 10.2 MB out of 1023.6 GB possible.',
+                        'Image size 45mb -> 35mb'],
+                       output[-6:])
       AssertEquals('35mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
 
 
