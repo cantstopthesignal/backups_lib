@@ -88,11 +88,13 @@ def GetRsyncBin():
   return os.path.join(home, 'bin/rsync')
 
 
-def MakeRsyncDirname(dirname):
-  if dirname.endswith('/'):
-    return dirname
+def MakeRsyncDirname(dirname, absolute=False):
   assert dirname
-  return dirname + '/'
+  if not dirname.endswith('/'):
+    dirname = dirname + '/'
+  if absolute and not dirname.startswith('/'):
+    dirname = '/' + dirname
+  return dirname
 
 
 def EscapeString(s):
@@ -264,6 +266,16 @@ def GetPathTreeSize(path):
     return total_size
   else:
     return path_stat.st_size
+
+
+def GetDriveAvailableSpace(path):
+  output = subprocess.check_output(['df', '-k', path])
+  (header_row, data_row) = output.strip().split('\n')
+  assert header_row.split()[:4] == [
+    'Filesystem', '1024-blocks', 'Used', 'Available']
+  data_row = data_row.split()
+  available_kbs = int(data_row[3])
+  return available_kbs * 1024
 
 
 def CreateDiskImage(image_path, volume_name=None, size='1T', filesystem='APFS',
