@@ -972,11 +972,20 @@ def FileSizeToStringTest():
   AssertEquals(lib.FileSizeToString(1024 * 1024 * 1.45), '1.4mb')
   AssertEquals(lib.FileSizeToString(int(1024 * 1024 * 1.45)), '1.4mb')
   AssertEquals(lib.FileSizeToString(1024 * 1024 * 1024 * 999), '999gb')
+  AssertEquals(lib.FileSizeToString(-10), '-10b')
+  AssertEquals(lib.FileSizeToString(-1024 * 50), '-50kb')
+  AssertEquals(lib.FileSizeToString(-1024 * 1024 * 1.45), '-1.4mb')
+  AssertEquals(lib.FileSizeToString(int(-1024 * 1024 * 1.45)), '-1.4mb')
+  AssertEquals(lib.FileSizeToString(-1024 * 1024 * 1024 * 999), '-999gb')
 
   AssertEquals(lib.FileSizeStringToBytes('10b'), 10)
   AssertEquals(lib.FileSizeStringToBytes('50kb'), 1024 * 50)
   AssertEquals(lib.FileSizeStringToBytes('1.4mb'), 1468006)
   AssertEquals(lib.FileSizeStringToBytes('999gb'), 1024 * 1024 * 1024 * 999)
+  AssertEquals(lib.FileSizeStringToBytes('-10b'), -10)
+  AssertEquals(lib.FileSizeStringToBytes('-50kb'), -1024 * 50)
+  AssertEquals(lib.FileSizeStringToBytes('-1.4mb'), -1468006)
+  AssertEquals(lib.FileSizeStringToBytes('-999gb'), -1024 * 1024 * 1024 * 999)
 
 
 def EscapeKeyDetectorTest():

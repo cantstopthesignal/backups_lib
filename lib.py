@@ -77,13 +77,13 @@ def FileSizeToString(size):
     if sz_str.endswith('.0'):
       sz_str = sz_str[:-2]
     return sz_str + suffix
-  if size < 1024:
+  if size < 1024 and size > -1024:
     return '%db' % size
   size /= 1024.0
-  if size < 1024:
+  if size < 1024 and size > -1024:
     return SizeFormat(size, 'kb')
   size /= 1024.0
-  if size < 1024:
+  if size < 1024 and size > -1024:
     return SizeFormat(size, 'mb')
   size /= 1024.0
   return SizeFormat(size, 'gb')
