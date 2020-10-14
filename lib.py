@@ -267,13 +267,20 @@ def GetXattrHash(path, ignored_keys=[]):
     return hasher.digest()
 
 
-def GetPathTreeSize(path):
+def GetPathTreeSize(path, files_only=False, excludes=[]):
   path_stat = os.lstat(path)
   if stat.S_ISDIR(path_stat.st_mode):
-    total_size = path_stat.st_size
+    if files_only:
+      total_size = 0
+    else:
+      total_size = path_stat.st_size
     for parent_path, child_dirs, child_files in os.walk(path):
       for child_name in child_dirs + child_files:
-        total_size += os.lstat(os.path.join(parent_path, child_name)).st_size
+        if child_name in excludes:
+          continue
+        child_stat = os.lstat(os.path.join(parent_path, child_name))
+        if not stat.S_ISDIR(child_stat.st_mode) or not files_only:
+          total_size += child_stat.st_size
     return total_size
   else:
     return path_stat.st_size
