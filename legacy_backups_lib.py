@@ -17,7 +17,8 @@ import lib
 
 COMMAND_VERIFY_LEGACY_BACKUP_CHECKSUMS = 'verify-legacy-backup-checksums'
 
-LEGACY_CHECKSUMS_FILENAME = 'checksums'
+LEGACY_CHECKSUMS_FILENAME = '.checksums'
+LEGACY_CHECKSUMS_IN_BACKUP_FILENAME = 'checksums'
 
 
 def Md5(path):
@@ -33,6 +34,40 @@ def Md5(path):
 
 def XmlTextNodeToUtf8(textNode):
   return unicodedata.normalize('NFD', textNode.data).encode('utf8')
+
+
+class LegacyChecksums(object):
+  @staticmethod
+  def LoadFromFile(checksums_path):
+    path_to_md5_map = {}
+    dom = xml.dom.minidom.parse(checksums_path)
+    file_elements = dom.getElementsByTagName('file')
+    for file_element in file_elements:
+      path = XmlTextNodeToUtf8(
+        file_element.getElementsByTagName('path')[0].firstChild)
+      checksum = XmlTextNodeToUtf8(
+        file_element.getElementsByTagName('checksum')[0].firstChild)
+      path_to_md5_map[path] = checksum
+    ignore_patterns = []
+    ignore_pattern_elements = dom.getElementsByTagName('ignorepattern')
+    for element in ignore_pattern_elements:
+      ignore_patterns.append(XmlTextNodeToUtf8(element.firstChild))
+    ignore_patterns.sort()
+    return LegacyChecksums(path_to_md5_map, ignore_patterns)
+
+  def __init__(self, path_to_md5_map={}, ignore_patterns=[]):
+    self.path_to_md5_map = path_to_md5_map
+    self.ignore_patterns = ignore_patterns
+
+  def GetPathToMd5Map(self):
+    return self.path_to_md5_map
+
+  def AddPath(self, path, md5):
+    assert path not in self.path_to_md5_map
+    self.path_to_md5_map[path] = md5
+
+  def GetIgnoresRegexp(self):
+    return re.compile('^(%s)$' % '|'.join(self.ignore_patterns))
 
 
 class LegacyChecksumsVerifier(object):
@@ -52,37 +87,24 @@ class LegacyChecksumsVerifier(object):
       last_manifest = None
       for backup in self.manager.GetBackupList():
         manifest = lib.Manifest()
-        legacy_md5_map, legacy_ignore_pattern = self._LoadLegacyChecksumsMap(backup)
-        if legacy_md5_map is None:
+        legacy_checksums = self._LoadLegacyChecksums(backup)
+        if legacy_checksums is None:
           print >>self.output, 'Legacy checksums do not exists for backup %s' % backup
           last_manifest = None
           continue
-        if not self._VerifyInternal(backup, manifest, last_manifest, legacy_md5_map,
-                                    legacy_ignore_pattern):
+        if not self._VerifyInternal(
+            backup, manifest, last_manifest, legacy_checksums.GetPathToMd5Map(),
+            legacy_checksums.GetIgnoresRegexp()):
           raise Exception('Failed to verify backup %s' % backup)
         last_manifest = manifest
       return True
     finally:
       self.manager.Close()
 
-  def _LoadLegacyChecksumsMap(self, backup):
-    checksums_path = os.path.join(backup.GetMetadataPath(), LEGACY_CHECKSUMS_FILENAME)
-    if not os.path.exists(checksums_path):
-      return (None, None)
-
-    legacy_md5_map = {}
-    dom = xml.dom.minidom.parse(checksums_path)
-    file_elements = dom.getElementsByTagName('file')
-    for file_element in file_elements:
-      path = XmlTextNodeToUtf8(file_element.getElementsByTagName('path')[0].firstChild)
-      checksum = XmlTextNodeToUtf8(file_element.getElementsByTagName('checksum')[0].firstChild)
-      legacy_md5_map[path] = checksum
-    ignore_patterns = []
-    ignore_pattern_elements = dom.getElementsByTagName('ignorepattern')
-    for element in ignore_pattern_elements:
-      ignore_patterns.append(XmlTextNodeToUtf8(element.firstChild))
-    ignore_pattern = re.compile('^(%s)$' % '|'.join(ignore_patterns))
-    return legacy_md5_map, ignore_pattern
+  def _LoadLegacyChecksums(self, backup):
+    checksums_path = os.path.join(backup.GetMetadataPath(), LEGACY_CHECKSUMS_IN_BACKUP_FILENAME)
+    if os.path.exists(checksums_path):
+      return LegacyChecksums.LoadFromFile(checksums_path)
 
   def _VerifyInternal(self, backup, manifest, last_manifest, legacy_md5_map, legacy_ignore_pattern):
     print >>self.output, 'Verify backup %s using legacy checksums...' % backup
