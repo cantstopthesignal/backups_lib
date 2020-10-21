@@ -853,6 +853,8 @@ def StripTest():
               expected_output=[
                 'Checkpoint stripped',
                 'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
+                'Resizing image to minimum size: 2147073968 -> 1441792 blocks...',
+                'Restoring image size to 2147073968 blocks...',
                 'Image size 34mb -> 34mb'])
       DoStrip(checkpoint2_path, defragment_iterations=2,
               expected_output=[
@@ -861,14 +863,20 @@ def StripTest():
                 '<... snip APFS operation ...>',
                 'Iteration 2, new apfs min size 1.2gb...',
                 '<... snip APFS operation ...>',
+                'Resizing image to minimum size: 2600960 -> 69632 blocks...',
+                'Restoring image size to 2600960 blocks...',
                 'Starting to compact\xe2\x80\xa6',
                 'Reclaiming free space\xe2\x80\xa6',
                 'Finishing compaction\xe2\x80\xa6',
-                'Reclaimed 13 MB out of 1.2 GB possible.',
+                'Reclaimed 22 MB out of 1.2 GB possible.',
                 'Restoring apfs container size to 1023.8gb...',
                 '<... snip APFS operation ...>',
-                'Image size 34mb -> 24mb'])
-      AssertEquals(25169920, os.lstat(checkpoint2_path).st_size)
+                'Starting to compact\xe2\x80\xa6',
+                'Reclaiming free space\xe2\x80\xa6',
+                'Finishing compaction\xe2\x80\xa6',
+                'Reclaimed 3 MB out of 1023.6 GB possible.',
+                'Image size 34mb -> 13mb'])
+      AssertEquals(13635584, os.lstat(checkpoint2_path).st_size)
       AssertCheckpointStripState(checkpoint2_path, True)
 
 
@@ -906,18 +914,26 @@ def CompactTest():
                 expected_output=[
                   'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
                   % checkpoint1.GetImagePath(),
+                  'Resizing image to minimum size: 2147073968 -> 1441792 blocks...',
+                  'Restoring image size to 2147073968 blocks...',
                   'Image size 30mb -> 30mb'])
       DoCompact(checkpoint1.GetImagePath(),
                 expected_output=[
                   'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
                   % checkpoint1.GetImagePath(),
                   '<... snip APFS operation ...>',
+                  'Resizing image to minimum size: 3538944 -> 503808 blocks...',
+                  'Restoring image size to 3538944 blocks...',
                   'Starting to compact\xe2\x80\xa6',
                   'Reclaiming free space\xe2\x80\xa6',
                   'Finishing compaction\xe2\x80\xa6',
-                  'Reclaimed 12 MB out of 1.5 GB possible.',
+                  'Reclaimed 13 MB out of 1.7 GB possible.',
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
+                  'Starting to compact\xe2\x80\xa6',
+                  'Reclaiming free space\xe2\x80\xa6',
+                  'Finishing compaction\xe2\x80\xa6',
+                  'Reclaimed 1 MB out of 1023.6 GB possible.',
                   'Image size 30mb -> 20mb'])
       AssertEquals(20975616, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
@@ -926,44 +942,48 @@ def CompactTest():
       AssertEquals('29.4mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
 
       with lib.ImageAttacher(image_path2, readonly=False, browseable=False) as attacher:
-        file2 = CreateFile(attacher.GetMountPoint(), 'f2', contents='1' * (1024 * 1024 * 20))
-        DeleteFileOrDir(file2)
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '49.4mb', '49.6mb')
+        file2 = CreateFile(attacher.GetMountPoint(), 'f2', contents='1' * (1024 * 1024 * 200))
+      with lib.ImageAttacher(image_path2, readonly=False, browseable=False) as attacher:
+        DeleteFileOrDir(os.path.join(attacher.GetMountPoint(), 'f2'))
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '229.4mb', '229.6mb')
 
       DoCompact(image_path2, defragment=False,
                 expected_output=['Starting to compact\xe2\x80\xa6',
                                  'Reclaiming free space\xe2\x80\xa6',
                                  'Finishing compaction\xe2\x80\xa6',
-                                 'Reclaimed 4.0 MB out of 1023.6 GB possible.',
-                                 re.compile('^Image size 49[.][45]mb -> 45[.][45]mb$')])
-      AssertEquals('45.4mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
+                                 'Reclaimed 4.0 MB out of 1023.4 GB possible.',
+                                 re.compile('^Image size 229[.]5mb -> 225[.]5mb$')])
+      AssertEquals('225.5mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
 
       DoCompact(image_path2, defragment_iterations=5, dry_run=True,
                 expected_output=[
-                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % image_path2,
-                  re.compile('^Image size 45[.][45]mb -> 45[.][45]mb$')])
+                  'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
+                  'Resizing image to minimum size: 2147073968 -> 1835008 blocks...',
+                  'Restoring image size to 2147073968 blocks...',
+                  'Image size 225.5mb -> 225.5mb'])
       DoCompact(image_path2, defragment_iterations=5,
                 expected_output=[
-                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % image_path2,
+                  'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
                   '<... snip APFS operation ...>',
-                  re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.]{3}$'),
+                  'Iteration 2, new apfs min size 1.2gb...',
                   '<... snip APFS operation ...>',
-                  re.compile('^Iteration 3, new apfs min size 1([.]1)?gb[.]{3}$'),
+                  'Iteration 3, new apfs min size 1gb...',
                   '<... snip APFS operation ...>',
-                  re.compile('^Iteration 4, new apfs min size 1([.]1)?gb has low savings$'),
+                  'Iteration 4, new apfs min size 1gb has low savings',
+                  'Resizing image to minimum size: 2170880 -> 65536 blocks...',
+                  'Restoring image size to 2170880 blocks...',
                   'Starting to compact\xe2\x80\xa6',
                   'Reclaiming free space\xe2\x80\xa6',
                   'Finishing compaction\xe2\x80\xa6',
-                  re.compile('^Reclaimed (29[.]9|7.7) MB out of 1[.]0 GB possible[.]$'),
+                  'Reclaimed 215.2 MB out of 1.0 GB possible.',
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
-                  re.compile('^Image size 45[.][45]mb -> (30[.][67]|50[.]7)mb$')])
-      try:
-        AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '30.6mb', '30.7mb')
-      except:
-        # TODO: Find out why this compaction test sometimes doesn't decrease size
-        print '*** Warning: CompactTest: did not compact well'
-        AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '50.6mb', '50.8mb')
+                  'Starting to compact\xe2\x80\xa6',
+                  'Reclaiming free space\xe2\x80\xa6',
+                  'Finishing compaction\xe2\x80\xa6',
+                  'Reclaimed 4 MB out of 1023.6 GB possible.',
+                  'Image size 225.5mb -> 23.6mb'])
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '23.6mb', '23.7mb')
 
 
 def FileSizeToStringTest():

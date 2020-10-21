@@ -326,8 +326,10 @@ def CreateDiskImage(image_path, volume_name=None, size='1T', filesystem='APFS',
     encryption_manager.SavePassword(password, image_uuid)
 
 
-def CompactImage(image_path, output, encryption_manager=None, dry_run=False):
-  (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+def CompactImage(image_path, output, encryption_manager=None, encrypted=None, image_uuid=None,
+                 dry_run=False):
+  if encrypted is None or image_uuid is None:
+    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
 
   cmd = ['hdiutil', 'compact', image_path]
   if encrypted:
@@ -349,6 +351,52 @@ def CompactImage(image_path, output, encryption_manager=None, dry_run=False):
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
+def ResizeImage(image_path, block_count, output, encryption_manager=None, encrypted=None,
+                image_uuid=None, dry_run=False):
+  if encrypted is None or image_uuid is None:
+    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+
+  cmd = ['hdiutil', 'resize', '-size', '%db' % block_count, image_path]
+  if encrypted:
+    cmd.append('-stdinpass')
+
+  if not dry_run:
+    if encrypted:
+      password = encryption_manager.GetPassword(
+        image_path, image_uuid, try_last_password=False)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT)
+    if encrypted:
+      p.stdin.write(password)
+    p.stdin.close()
+    output.write(p.stdout.read())
+    if p.wait():
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+
+def CompactImageWithResize(image_path, output, encryption_manager=None, encrypted=None,
+                           image_uuid=None, dry_run=False):
+  if encrypted is None or image_uuid is None:
+    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+
+  (current_block_count, min_block_count) = GetDiskImageLimits(
+    image_path, encryption_manager=encryption_manager, encrypted=encrypted, image_uuid=image_uuid)
+
+  print >>output, 'Resizing image to minimum size: %d -> %d blocks...' % (
+    current_block_count, min_block_count)
+  ResizeImage(image_path, block_count=min_block_count, output=output,
+              encryption_manager=encryption_manager, encrypted=encrypted,
+              image_uuid=image_uuid, dry_run=dry_run)
+
+  print >>output, 'Restoring image size to %d blocks...' % current_block_count
+  ResizeImage(image_path, block_count=current_block_count, output=output,
+              encryption_manager=encryption_manager, encrypted=encrypted,
+              image_uuid=image_uuid, dry_run=dry_run)
+
+  CompactImage(image_path, output=output, encryption_manager=encryption_manager, encrypted=encrypted,
+               image_uuid=image_uuid, dry_run=dry_run)
+
+
 def GetApfsDeviceFromAttachedImageDevice(image_device, output):
   assert image_device.startswith('/dev/')
   diskutil_output = subprocess.check_output(['diskutil', 'list', image_device])
@@ -360,7 +408,9 @@ def GetApfsDeviceFromAttachedImageDevice(image_device, output):
         raise Exception('Multiple apfs containers found in diskutil output: %s' % diskutil_output)
       apfs_identifier = pieces[-1]
   if apfs_identifier is None:
-    print >>output, '*** Warning: no apfs container found to defragment'
+    print >>output, '*** Warning: no apfs container found to defragment:'
+    for line in diskutil_output.split('\n'):
+      print >>output, line
     return
 
   apfs_device = os.path.join('/dev', apfs_identifier)
@@ -396,42 +446,84 @@ def ResizeApfsContainer(apfs_device, new_size, output):
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
+def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uuid=None):
+  if encrypted is None or image_uuid is None:
+    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+
+  cmd = ['hdiutil', 'resize', '-limits', image_path]
+  if encrypted:
+    cmd.append('-stdinpass')
+
+  if encrypted:
+    password = encryption_manager.GetPassword(
+      image_path, image_uuid, try_last_password=False)
+  p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT)
+  if encrypted:
+    p.stdin.write(password)
+  p.stdin.close()
+  hdiutil_output = p.stdout.read()
+  if p.wait():
+    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+  lines = hdiutil_output.strip().split('\n')
+  if len(lines) != 1:
+    raise Exception('Unexpected output from hdiutil resize -limits: %r' % hdiutil_output)
+  min_blocks, current_blocks, _ = lines[0].split()
+  min_blocks = int(min_blocks)
+  current_blocks = int(current_blocks)
+
+  return (current_blocks, min_blocks)
+
+
 def CompactAndDefragmentImage(image_path, output, defragment=False, defragment_iterations=1,
                               encryption_manager=None, dry_run=False):
   (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
 
+  if not defragment:
+    CompactImage(image_path, output=output, encryption_manager=encryption_manager,
+                 encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
+    return
+
   old_apfs_container_size = None
-  if defragment:
-    with ImageAttacher(image_path, readonly=dry_run, mount=False,
-                       encryption_manager=encryption_manager) as attacher:
-      apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
-      old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
+  with ImageAttacher(image_path, readonly=dry_run, mount=False,
+                     encryption_manager=encryption_manager) as attacher:
+    apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
+    if apfs_device is None:
+      raise Exception('No apfs device found for disk image')
+    old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
 
-      print >>output, 'Defragmenting %s; apfs min size %s, current size %s...' % (
-        image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size))
-      if not dry_run:
-        for i in range(defragment_iterations):
-          if i:
-            _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
-            if new_min_bytes >= min_bytes * 0.95:
-              print >>output, 'Iteration %d, new apfs min size %s has low savings' % (
-                i+1, FileSizeToString(new_min_bytes))
-              break
-            print >>output, 'Iteration %d, new apfs min size %s...' % (
+    print >>output, 'Defragmenting %s; apfs min size %s, current size %s...' % (
+      image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size))
+    if not dry_run:
+      for i in range(defragment_iterations):
+        if i:
+          _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
+          if new_min_bytes >= min_bytes * 0.95:
+            print >>output, 'Iteration %d, new apfs min size %s has low savings' % (
               i+1, FileSizeToString(new_min_bytes))
-            min_bytes = new_min_bytes
-          ResizeApfsContainer(apfs_device, min_bytes, output=output)
+            break
+          print >>output, 'Iteration %d, new apfs min size %s...' % (
+            i+1, FileSizeToString(new_min_bytes))
+          min_bytes = new_min_bytes
+        ResizeApfsContainer(apfs_device, min_bytes, output=output)
 
-  CompactImage(image_path, output=output, encryption_manager=encryption_manager,
-               dry_run=dry_run)
+  CompactImageWithResize(image_path, output=output, encryption_manager=encryption_manager,
+                         encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
 
-  if defragment and not dry_run:
+  if not dry_run:
     print >>output, 'Restoring apfs container size to %s...' % (
       FileSizeToString(old_apfs_container_size))
     with ImageAttacher(image_path, readonly=dry_run, mount=False,
                        encryption_manager=encryption_manager) as attacher:
       apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
+      if apfs_device is None:
+        raise Exception('No apfs device found for disk image, cannot restore to %d bytes'
+                        % old_apfs_container_size)
       ResizeApfsContainer(apfs_device, old_apfs_container_size, output=output)
+
+  CompactImage(image_path, output=output, encryption_manager=encryption_manager,
+               encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
 
 
 def GetImageEncryptionDetails(image_path):
