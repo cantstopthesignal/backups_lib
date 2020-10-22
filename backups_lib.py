@@ -122,13 +122,14 @@ class PathsIntoBackupCopier(object):
       self.to_manifest = None
       self.num_copied = 0
       self.num_hard_linked = 0
+      self.num_hard_linked_to_duplicates = 0
       self.total_from_paths = 0
       self.total_to_paths = 0
       self.success = True
 
   def __init__(self, from_backup, from_manifest, to_backup_manager, to_backup, last_to_backup,
-               last_to_manifest, path_matcher, output, verify_with_checksums=False, dry_run=False,
-               verbose=False):
+               last_to_manifest, path_matcher, output, verify_with_checksums=False, deduplicate=True,
+               deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False, verbose=False):
     """
     Args:
         to_backup: None to create a new backup matching from_backup's name for the contents,
@@ -144,6 +145,8 @@ class PathsIntoBackupCopier(object):
     self.path_matcher = path_matcher
     self.output = output
     self.verify_with_checksums = verify_with_checksums
+    self.deduplicate = deduplicate
+    self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
     self.verbose = verbose
 
@@ -168,8 +171,14 @@ class PathsIntoBackupCopier(object):
     else:
       result.to_manifest = lib.Manifest()
 
+    if self.deduplicate and self.last_to_manifest is not None:
+      sha256_to_last_pathinfos = self.last_to_manifest.CreateSha256ToPathInfosMap(
+        min_file_size=self.deduplicate_min_file_size)
+    else:
+      sha256_to_last_pathinfos = None
+
     paths_to_copy = []
-    paths_to_link = []
+    paths_to_link_map = {}
     mismatched_itemized = []
     all_from_files_matched = True
 
@@ -190,8 +199,15 @@ class PathsIntoBackupCopier(object):
         if path_info.path_type == lib.PathInfo.TYPE_FILE and self.last_to_manifest is not None:
           if not lib.PathInfo.GetItemizedDiff(
               path_info, self.last_to_manifest.GetPathInfo(path)).HasDiffs():
-            paths_to_link.append(path)
+            paths_to_link_map[path] = path
             continue
+
+          if self.deduplicate and sha256_to_last_pathinfos is not None:
+            dup_path_info = self._FindBestDup(path_info, sha256_to_last_pathinfos)
+            if dup_path_info is not None:
+              paths_to_link_map[path] = dup_path_info.path
+              continue
+
         paths_to_copy.append(path)
       else:
         all_from_files_matched = False
@@ -203,7 +219,8 @@ class PathsIntoBackupCopier(object):
       result.success = False
       return result
 
-    paths_to_sync_set = set(paths_to_copy + paths_to_link)
+    paths_to_sync_set = set(paths_to_copy)
+    paths_to_sync_set.update(paths_to_link_map.keys())
 
     if not paths_to_sync_set:
       return result
@@ -219,6 +236,11 @@ class PathsIntoBackupCopier(object):
           and not self.path_matcher.Matches(itemized.path)):
         continue
       print >>self.output, itemized
+      link_to_path = paths_to_link_map.get(itemized.path)
+      if link_to_path is not None and link_to_path != itemized.path:
+        path_info = self.from_manifest.GetPathInfo(itemized.path)
+        print >>self.output, '  duplicate to %s (size=%s)' % (
+          lib.EscapePath(link_to_path), lib.FileSizeToString(path_info.size))
 
     unreferenced_parent_dirs = set()
     for path in paths_to_sync_set:
@@ -251,8 +273,8 @@ class PathsIntoBackupCopier(object):
           result.to_manifest.AddPathInfo(extracted_path_info)
           result.total_to_paths += 1
 
-        for path in paths_to_link:
-          last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path)
+        for path, path_to in paths_to_link_map.items():
+          last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path_to)
           full_path = os.path.join(result.to_backup.GetDiskPath(), path)
           with lib.PreserveParentMtime(full_path):
             os.link(last_full_path, full_path)
@@ -274,8 +296,19 @@ class PathsIntoBackupCopier(object):
         raise
 
     result.num_copied = len(paths_to_sync_set)
-    result.num_hard_linked = len(paths_to_link)
+    for path, path_to in paths_to_link_map.items():
+      result.num_hard_linked += 1
+      if path != path_to:
+        result.num_hard_linked_to_duplicates += 1
     return result
+
+  def _FindBestDup(self, path_info, sha256_to_last_pathinfos):
+    dup_path_infos = SortedPathInfosByPathSimilarity(
+      path_info.path, sha256_to_last_pathinfos.get(path_info.sha256, []))
+    for dup_path_info in dup_path_infos:
+      itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
+      if not itemized.HasDiffs():
+        return dup_path_info
 
 
 class DeDuplicateBackupsResult(object):
@@ -629,13 +662,25 @@ class Backup(object):
       superseding_backup.GetMetadataPath(),  '%s%s' % (SUPERSEDED_METADATA_PREFIX, self.GetName()))
     assert not os.path.exists(saved_metadata_dest_path)
     if not dry_run:
-      subprocess.check_call(['cp', '-r', self.GetMetadataPath(), saved_metadata_dest_path])
+      subprocess.check_call(['cp', '-a', self.GetMetadataPath(), saved_metadata_dest_path])
       for child_filename in os.listdir(saved_metadata_dest_path):
         if child_filename.startswith(SUPERSEDED_METADATA_PREFIX):
           child_old_path = os.path.join(saved_metadata_dest_path, child_filename)
           child_new_path = os.path.join(superseding_backup.GetMetadataPath(), child_filename)
           if not os.path.lexists(child_new_path):
             os.rename(child_old_path, child_new_path)
+
+  def CopyMetadataToBackup(self, to_backup, skip_manifest=False, dry_run=False):
+    from_metadata_path = self.GetMetadataPath()
+    to_metadata_path = to_backup.GetMetadataPath()
+    for filename in os.listdir(from_metadata_path):
+      if skip_manifest and filename == lib.MANIFEST_FILENAME:
+        continue
+      from_path = os.path.join(from_metadata_path, filename)
+      to_path = os.path.join(to_metadata_path, filename)
+      if os.path.lexists(to_path):
+        raise Exception('Cannot replace %r with %r' % (to_path, from_path))
+      subprocess.check_call(['cp', '-a', from_path, to_path])
 
   def Delete(self, dry_run=False):
     path = self.GetPath()
@@ -1576,8 +1621,8 @@ class UniqueFilesInBackupsDumper(object):
 
 class PathsFromBackupsExtractor(object):
   def __init__(self, config, output, output_image_path=None, paths=[],
-               min_backup=None, max_backup=None, encrypt=True, encryption_manager=None,
-               dry_run=False, verbose=False):
+               min_backup=None, max_backup=None, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
+               encrypt=True, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.output_image_path = output_image_path
@@ -1586,6 +1631,7 @@ class PathsFromBackupsExtractor(object):
     self.max_backup = max_backup
     self.encrypt = encrypt
     self.checksum_all = True
+    self.deduplicate_min_file_size = deduplicate_min_file_size
     self.encryption_manager = encryption_manager
     self.extracted_manager = None
     self.dry_run = dry_run
@@ -1661,15 +1707,21 @@ class PathsFromBackupsExtractor(object):
     copier = PathsIntoBackupCopier(
       from_backup=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
       to_backup=None, last_to_backup=last_extracted_backup, last_to_manifest=last_extracted_manifest,
-      path_matcher=path_matcher, output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+      path_matcher=path_matcher, deduplicate_min_file_size=self.deduplicate_min_file_size,
+      output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
     if not result.success:
       raise Exception('Failed to copy paths from %s' % backup)
 
     if result.num_copied:
-      print >>self.output, 'Paths: %d extracted, %d hard links, %d total' % (
-        result.num_copied, result.num_hard_linked, result.total_from_paths)
+      out_pieces = ['%d extracted' % result.num_copied]
+      if result.num_hard_linked:
+        out_pieces.append('%d hard links' % result.num_hard_linked)
+      if result.num_hard_linked_to_duplicates:
+        out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
+      out_pieces.append('%d total' % result.total_from_paths)
+      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
       return (result.to_backup, result.to_manifest)
 
     return (None, None)
@@ -1677,13 +1729,14 @@ class PathsFromBackupsExtractor(object):
 
 class IntoBackupsMerger(object):
   def __init__(self, config, output, from_image_path=None,
-               min_backup=None, max_backup=None, encryption_manager=None,
-               dry_run=False, verbose=False):
+               min_backup=None, max_backup=None, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
+               encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.from_image_path = from_image_path
     self.min_backup = min_backup
     self.max_backup = max_backup
+    self.deduplicate_min_file_size = deduplicate_min_file_size
     self.checksum_all = True
     self.encryption_manager = encryption_manager
     self.backups_manager = None
@@ -1738,10 +1791,11 @@ class IntoBackupsMerger(object):
 
         if backup:
           if from_backup:
-            if not self._MergeBackup(backup, from_backup, last_backup):
+            (last_backup_was_modified, success) = self._MergeBackup(
+              backup, from_backup, last_backup)
+            if not success:
               return False
             last_backup = backup
-            last_backup_was_modified = True
             del backups[0]
             del from_backups[0]
             continue
@@ -1771,17 +1825,23 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=MatchAllPathMatcher(), output=self.output, dry_run=self.dry_run,
-      verbose=self.verbose)
+      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
     if not result.success:
-      return False
+      return (result.num_copied != 0, False)
 
-    print >>self.output, 'Paths: %d copied, %d hard links, %d total in source, %d total in result' % (
-      result.num_copied, result.num_hard_linked, result.total_from_paths, result.total_to_paths)
+    out_pieces = ['%d copied' % result.num_copied]
+    if result.num_hard_linked:
+      out_pieces.append('%d hard links' % result.num_hard_linked)
+    if result.num_hard_linked_to_duplicates:
+      out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
+    out_pieces.append('%d total in source' % result.total_from_paths)
+    out_pieces.append('%d total in result' % result.total_to_paths)
+    print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
-    return True
+    return (result.num_copied != 0, True)
 
   def _RetainBackup(self, backup, last_backup, last_backup_was_modified):
     """
@@ -1792,6 +1852,7 @@ class IntoBackupsMerger(object):
     if last_backup is not None and last_backup_was_modified:
       result = DeDuplicateBackups(
         backup=backup, manifest=None, last_backup=last_backup, last_manifest=None,
+        min_file_size=self.deduplicate_min_file_size,
         output=self.output, dry_run=self.dry_run, verbose=self.verbose)
       return result.num_new_dup_files > 0
 
@@ -1803,15 +1864,23 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=MatchAllPathMatcher(), output=self.output, dry_run=self.dry_run,
-      verbose=self.verbose)
+      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
     if not result.success or not result.num_copied:
       raise Exception('Expected to import %s' % from_backup)
 
-    print >>self.output, 'Paths: %d copied, %d hard links, %d total' % (
-      result.num_copied, result.num_hard_linked, result.total_from_paths)
+    if result.to_backup is not None:
+      from_backup.CopyMetadataToBackup(result.to_backup, skip_manifest=True, dry_run=self.dry_run)
+
+    out_pieces = ['%d copied' % result.num_copied]
+    if result.num_hard_linked:
+      out_pieces.append('%d hard links' % result.num_hard_linked)
+    if result.num_hard_linked_to_duplicates:
+      out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
+    out_pieces.append('%d total' % result.total_from_paths)
+    print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
     return result.to_backup
 
@@ -2099,6 +2168,7 @@ def DoExtractFromBackups(args, output):
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   parser.add_argument('--no-encrypt', dest='encrypt', action='store_false')
+  parser.add_argument('--deduplicate-min-file-size', default=DEDUP_MIN_FILE_SIZE, type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2106,7 +2176,8 @@ def DoExtractFromBackups(args, output):
 
   extractor = PathsFromBackupsExtractor(
     config, output=output, output_image_path=cmd_args.output_image_path, paths=paths,
-    min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup, encrypt=cmd_args.encrypt,
+    min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
+    deduplicate_min_file_size=cmd_args.deduplicate_min_file_size, encrypt=cmd_args.encrypt,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
   return extractor.ExtractPaths()
 
@@ -2117,6 +2188,7 @@ def DoMergeIntoBackups(args, output):
   parser.add_argument('--from-image-path', required=True)
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
+  parser.add_argument('--deduplicate-min-file-size', default=DEDUP_MIN_FILE_SIZE, type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2124,6 +2196,7 @@ def DoMergeIntoBackups(args, output):
   merger = IntoBackupsMerger(
     config, output=output, from_image_path=cmd_args.from_image_path,
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
+    deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
   return merger.Merge()
 

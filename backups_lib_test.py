@@ -15,6 +15,7 @@ import lib
 import main
 
 from test_util import AssertEquals
+from test_util import AssertLinesEqual
 from test_util import AssertNotEquals
 from test_util import DoMain
 from test_util import CreateDir
@@ -743,42 +744,42 @@ def PruneBackupsTest():
       backups_manager = backups_lib.BackupsManager.Open(
         config, readonly=True, browseable=False)
       try:
-        AssertEquals(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                     ['.d....... .',
-                      '.d....... 2020-01-02-120000',
-                      '.d....... 2020-01-02-120000/.metadata',
-                      '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                      '.f....... 2020-01-02-120000/.metadata/prune.SKIP',
-                      '.d....... 2020-01-02-120000/.metadata/superseded-2020-01-01-120000',
-                      '.d....... 2020-01-03-120000',
-                      '.d....... 2020-01-03-120000/.metadata',
-                      '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                      '.f....... 2020-01-03-120000/.metadata/prune.SKIP',
-                      '.d....... 2020-01-05-120000',
-                      '.d....... 2020-01-05-120000/.metadata',
-                      '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
-                      '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000',
-                      '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000',
-                      '.d....... 2020-01-12-120000/.metadata',
-                      '.f....... 2020-01-12-120000/.metadata/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000/manifest.pbdata',
-                      '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000',
-                      '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000/manifest.pbdata',
-                      '.d....... 2020-01-14-120000',
-                      '.d....... 2020-01-14-120000/.metadata',
-                      '.f....... 2020-01-14-120000/.metadata/manifest.pbdata',
-                      '.d....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000',
-                      '.f....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000/manifest.pbdata'])
+        AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                         ['.d....... .',
+                          '.d....... 2020-01-02-120000',
+                          '.d....... 2020-01-02-120000/.metadata',
+                          '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                          '.f....... 2020-01-02-120000/.metadata/prune.SKIP',
+                          '.d....... 2020-01-02-120000/.metadata/superseded-2020-01-01-120000',
+                          '.d....... 2020-01-03-120000',
+                          '.d....... 2020-01-03-120000/.metadata',
+                          '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                          '.f....... 2020-01-03-120000/.metadata/prune.SKIP',
+                          '.d....... 2020-01-05-120000',
+                          '.d....... 2020-01-05-120000/.metadata',
+                          '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000',
+                          '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000',
+                          '.d....... 2020-01-12-120000/.metadata',
+                          '.f....... 2020-01-12-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000/manifest.pbdata',
+                          '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000',
+                          '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000/manifest.pbdata',
+                          '.d....... 2020-01-14-120000',
+                          '.d....... 2020-01-14-120000/.metadata',
+                          '.f....... 2020-01-14-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000',
+                          '.f....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000/manifest.pbdata'])
       finally:
         backups_manager.Close()
 
@@ -942,19 +943,19 @@ def DeleteBackupTest():
     backups_manager = backups_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
-      AssertEquals(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                   ['.d....... .',
-                    '.d....... 2020-01-03-120000',
-                    '.d....... 2020-01-03-120000/.metadata',
-                    '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000',
-                    '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000/manifest.pbdata',
-                    '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000',
-                    '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
-                    '.d....... 2020-01-03-120000/Root',
-                    '.f....... 2020-01-03-120000/Root/f3',
-                    '.f....... 2020-01-03-120000/Root/fX',
-                    '.L....... Latest -> 2020-01-03-120000'])
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-03-120000',
+                        '.d....... 2020-01-03-120000/.metadata',
+                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000',
+                        '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000',
+                        '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/Root',
+                        '.f....... 2020-01-03-120000/Root/f3',
+                        '.f....... 2020-01-03-120000/Root/fX',
+                        '.L....... Latest -> 2020-01-03-120000'])
     finally:
       backups_manager.Close()
 
@@ -1443,12 +1444,14 @@ def ExtractFromBackupsTest():
 
     xattr.setxattr(parent2, 'example', 'example_value3')
     file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
+    file9 = CreateFile(parent2, 'f9', contents='2' * 1025)
 
     DoCreateBackup(
       config, backup_name='2020-01-05-120000',
       expected_output=['>fc...... f7',
                        '.d......x par2',
-                       'Transferring 2 of 13 paths (1kb of 4kb)'])
+                       '>f+++++++ par2/f9',
+                       'Transferring 3 of 14 paths (2kb of 5kb)'])
 
     DoApplyToBackups(config, expected_output=None)
 
@@ -1463,11 +1466,11 @@ def ExtractFromBackupsTest():
 
     DoExtractFromBackups(
       config, dry_run=True,
-      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'ln1', 'ln2'],
+      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
       expected_output=['Extracting from 2020-01-01-120000...',
                        '>f+++++++ f1',
                        '>f+++++++ fX',
-                       'Paths: 2 extracted, 0 hard links, 4 total',
+                       'Paths: 2 extracted, 4 total',
                        'Extracting from 2020-01-02-120000...',
                        '*deleting f1',
                        '.f....... fX',
@@ -1495,16 +1498,18 @@ def ExtractFromBackupsTest():
                        '.f....... par!/f4',
                        '.f....... par!/f_\\r \\xc2\\xa9',
                        '.f....... par2/f5',
-                       'Paths: 7 extracted, 4 hard links, 13 total'])
+                       '>f+++++++ par2/f9',
+                       '  duplicate to f7 (size=1kb)',
+                       'Paths: 8 extracted, 5 hard links, 1 duplicates, 14 total'])
     DoExtractFromBackups(
       config,
       output_image_path=extracted_config.image_path,
-      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'ln1', 'ln2'],
+      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
       expected_output=['Extracting from 2020-01-01-120000...',
                        '>f+++++++ f1',
                        '>f+++++++ fX',
                        'Verifying 2020-01-01-120000...',
-                       'Paths: 2 extracted, 0 hard links, 4 total',
+                       'Paths: 2 extracted, 4 total',
                        'Extracting from 2020-01-02-120000...',
                        '*deleting f1',
                        '.f....... fX',
@@ -1534,53 +1539,56 @@ def ExtractFromBackupsTest():
                        '.f....... par!/f4',
                        '.f....... par!/f_\\r \\xc2\\xa9',
                        '.f....... par2/f5',
+                       '>f+++++++ par2/f9',
+                       '  duplicate to f7 (size=1kb)',
                        'Verifying 2020-01-05-120000...',
-                       'Paths: 7 extracted, 4 hard links, 13 total'])
+                       'Paths: 8 extracted, 5 hard links, 1 duplicates, 14 total'])
 
     extracted_manager = backups_lib.BackupsManager.Open(
       extracted_config, readonly=True, browseable=False)
     try:
-      AssertEquals(GetManifestItemized(GetFileTreeManifest(extracted_manager.GetBackupsRootDir())),
-                   ['.d....... .',
-                    '.d....... 2020-01-01-120000',
-                    '.d....... 2020-01-01-120000/.metadata',
-                    '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-01-120000/Root',
-                    '.f....... 2020-01-01-120000/Root/f1',
-                    '.f....... 2020-01-01-120000/Root/fX',
-                    '.d....... 2020-01-02-120000',
-                    '.d....... 2020-01-02-120000/.metadata',
-                    '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-02-120000/Root',
-                    '.f....... 2020-01-02-120000/Root/fX',
-                    '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
-                    '.L....... 2020-01-02-120000/Root/ln2 -> fX',
-                    '.d....... 2020-01-02-120000/Root/par!',
-                    '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-04-120000',
-                    '.d....... 2020-01-04-120000/.metadata',
-                    '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-04-120000/Root',
-                    '.f....... 2020-01-04-120000/Root/f7',
-                    '.f....... 2020-01-04-120000/Root/fX',
-                    '.L....... 2020-01-04-120000/Root/ln2 -> fT',
-                    '.d....... 2020-01-04-120000/Root/par!',
-                    '.f....... 2020-01-04-120000/Root/par!/f4',
-                    '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-04-120000/Root/par2',
-                    '.f....... 2020-01-04-120000/Root/par2/f5',
-                    '.d....... 2020-01-05-120000',
-                    '.d....... 2020-01-05-120000/.metadata',
-                    '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-05-120000/Root',
-                    '.f....... 2020-01-05-120000/Root/f7',
-                    '.f....... 2020-01-05-120000/Root/fX',
-                    '.L....... 2020-01-05-120000/Root/ln2 -> fT',
-                    '.d....... 2020-01-05-120000/Root/par!',
-                    '.f....... 2020-01-05-120000/Root/par!/f4',
-                    '.f....... 2020-01-05-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-05-120000/Root/par2',
-                    '.f....... 2020-01-05-120000/Root/par2/f5'])
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(extracted_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-01-120000',
+                        '.d....... 2020-01-01-120000/.metadata',
+                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-01-120000/Root',
+                        '.f....... 2020-01-01-120000/Root/f1',
+                        '.f....... 2020-01-01-120000/Root/fX',
+                        '.d....... 2020-01-02-120000',
+                        '.d....... 2020-01-02-120000/.metadata',
+                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/Root',
+                        '.f....... 2020-01-02-120000/Root/fX',
+                        '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-02-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-02-120000/Root/par!',
+                        '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f7',
+                        '.f....... 2020-01-04-120000/Root/fX',
+                        '.L....... 2020-01-04-120000/Root/ln2 -> fT',
+                        '.d....... 2020-01-04-120000/Root/par!',
+                        '.f....... 2020-01-04-120000/Root/par!/f4',
+                        '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-04-120000/Root/par2',
+                        '.f....... 2020-01-04-120000/Root/par2/f5',
+                        '.d....... 2020-01-05-120000',
+                        '.d....... 2020-01-05-120000/.metadata',
+                        '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-05-120000/Root',
+                        '.f....... 2020-01-05-120000/Root/f7',
+                        '.f....... 2020-01-05-120000/Root/fX',
+                        '.L....... 2020-01-05-120000/Root/ln2 -> fT',
+                        '.d....... 2020-01-05-120000/Root/par!',
+                        '.f....... 2020-01-05-120000/Root/par!/f4',
+                        '.f....... 2020-01-05-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-05-120000/Root/par2',
+                        '.f....... 2020-01-05-120000/Root/par2/f5',
+                        '.f....... 2020-01-05-120000/Root/par2/f9'])
 
       backup4 = extracted_manager.GetBackup('2020-01-04-120000')
       backup5 = extracted_manager.GetBackup('2020-01-05-120000')
@@ -1588,6 +1596,8 @@ def ExtractFromBackupsTest():
                    os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f5')).st_ino)
       AssertNotEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
                       os.lstat(os.path.join(backup5.GetDiskPath(), 'f7')).st_ino)
+      AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
+                   os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f9')).st_ino)
     finally:
       extracted_manager.Close()
 
@@ -1599,6 +1609,7 @@ def MergeIntoBackupsTest():
     CreateLatestManifestCheckpoint(config)
 
     c1_file1 = CreateFile(config.src_path, 'f1')
+    c1_fileX = CreateFile(config.src_path, 'fX')
     c1_parent1 = CreateDir(config.src_path, 'par')
     c1_file2 = CreateFile(c1_parent1, 'f2')
     c1_ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
@@ -1607,19 +1618,20 @@ def MergeIntoBackupsTest():
     DoCreateBackup(
       config, backup_name='2020-01-02-120000',
       expected_output=['*deleting fT',
-                       '*deleting fX',
                        '>L+++++++ ln1 -> INVALID',
                        '>L+++++++ ln2 -> fX',
                        '>d+++++++ par',
                        '>f+++++++ par/f2',
-                       'Transferring 4 of 6 paths (0b of 0b)'])
+                       'Transferring 4 of 7 paths (0b of 0b)'])
 
     c1_file3_to = CreateFile(c1_parent1, 'f3_to', contents='1'*1025)
+    c1_file9_to = CreateFile(c1_parent1, 'f9_to', contents='4'*1025)
 
     DoCreateBackup(
       config, backup_name='2020-01-04-120000',
       expected_output=['>f+++++++ par/f3_to',
-                       'Transferring 1 of 7 paths (1kb of 1kb)'])
+                       '>f+++++++ par/f9_to',
+                       'Transferring 2 of 9 paths (2kb of 2kb)'])
 
     c1_file4_to = CreateFile(c1_parent1, 'f4_to', contents='2'*1025)
     c1_file5_both = CreateFile(c1_parent1, 'f5_both', contents='3'*1025)
@@ -1628,7 +1640,7 @@ def MergeIntoBackupsTest():
       config, backup_name='2020-01-05-120000',
       expected_output=['>f+++++++ par/f4_to',
                        '>f+++++++ par/f5_both',
-                       'Transferring 2 of 9 paths (2kb of 3kb)'])
+                       'Transferring 2 of 11 paths (2kb of 4kb)'])
 
     DoApplyToBackups(config, expected_output=None)
 
@@ -1636,7 +1648,7 @@ def MergeIntoBackupsTest():
     CreateBackupsBundle(config2)
     CreateLatestManifestCheckpoint(config2)
 
-    c2_file1 = CreateFile(config2.src_path, 'f1')
+    c2_fileX = CreateFile(config2.src_path, 'fX')
     c2_parent1 = CreateDir(config2.src_path, 'par')
     c2_file2 = CreateFile(c2_parent1, 'f2')
     c2_ln1 = CreateSymlink(config2.src_path, 'ln1', 'INVALID')
@@ -1646,8 +1658,8 @@ def MergeIntoBackupsTest():
 
     DoCreateBackup(
       config2, backup_name='2020-01-03-120000',
-      expected_output=['*deleting fT',
-                       '*deleting fX',
+      expected_output=['*deleting f1',
+                       '*deleting fT',
                        '>L+++++++ ln1 -> INVALID',
                        '>L+++++++ ln2 -> fX',
                        '>d+++++++ par',
@@ -1657,24 +1669,34 @@ def MergeIntoBackupsTest():
 
     c2_file7_from = CreateFile(c2_parent1, 'f7_from', contents='5'*1025)
     c2_file5_both = CreateFile(c2_parent1, 'f5_both', contents='3'*1025)
+    c2_file8_from = CreateFile(c2_parent1, 'f8_from', contents='1'*1025)
 
     DoCreateBackup(
       config2, backup_name='2020-01-05-120000',
       expected_output=['>f+++++++ par/f5_both',
                        '>f+++++++ par/f7_from',
-                       'Transferring 2 of 9 paths (2kb of 3kb)'])
+                       '>f+++++++ par/f8_from',
+                       'Transferring 3 of 10 paths (3kb of 4kb)'])
 
     DoApplyToBackups(config2, expected_output=None)
+
+    backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+    try:
+      backup3 = backups_manager2.GetBackup('2020-01-03-120000')
+      c2_metadata3_parent = CreateDir(backup3.GetMetadataPath(), 'metapar')
+      CreateFile(c2_metadata3_parent, 'other_metadata.json', contents='meta')
+    finally:
+      backups_manager2.Close()
 
     DoMergeIntoBackups(
       config, dry_run=True,
       from_image_path=config2.image_path,
       expected_output=[
         'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 0 hard links, 4 total in source, 4 total in result',
+        'Paths: 0 copied, 4 total in source, 4 total in result',
         'Backup 2020-01-02-120000: existing retained.',
-        'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
         'Backup 2020-01-03-120000: importing new...',
+        '*deleting f1',
         '>f+++++++ par/f6_from',
         'Paths: 7 copied, 2 hard links, 7 total',
         'Backup 2020-01-04-120000: existing retained.',
@@ -1682,53 +1704,125 @@ def MergeIntoBackupsTest():
         '>f+++++++ par/f4_to',
         '>f+++++++ par/f5_both',
         '>f+++++++ par/f6_from',
+        '  duplicate to par/f9_to (size=1kb)',
         '>f+++++++ par/f7_from',
-        'Paths: 2 copied, 0 hard links, 9 total in source, 11 total in result'])
+        '>f+++++++ par/f8_from',
+        '  duplicate to par/f3_to (size=1kb)',
+        'Paths: 3 copied, 2 hard links, 2 duplicates, 10 total in source, 14 total in result'])
 
     DoMergeIntoBackups(
       config,
       from_image_path=config2.image_path,
       expected_output=[
         'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 0 hard links, 4 total in source, 4 total in result',
+        'Paths: 0 copied, 4 total in source, 4 total in result',
         'Backup 2020-01-02-120000: existing retained.',
-        'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
         'Backup 2020-01-03-120000: importing new...',
+        '*deleting f1',
         '>f+++++++ par/f6_from',
         'Verifying 2020-01-03-120000...',
         'Paths: 7 copied, 2 hard links, 7 total',
         'Backup 2020-01-04-120000: existing retained.',
         'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
+        'Duplicate path par/f9_to (size=1kb) to:',
+        '  par/f6_from',
+        'Duplicates: 1 new (size=1kb); 2 large files',
         'Backup 2020-01-05-120000: merging...',
         '>f+++++++ par/f4_to',
         '>f+++++++ par/f5_both',
         '>f+++++++ par/f6_from',
+        '  duplicate to par/f9_to (size=1kb)',
         '>f+++++++ par/f7_from',
+        '>f+++++++ par/f8_from',
+        '  duplicate to par/f3_to (size=1kb)',
         'Verifying 2020-01-05-120000...',
-        'Paths: 2 copied, 0 hard links, 9 total in source, 11 total in result'])
+        'Paths: 3 copied, 2 hard links, 2 duplicates, 10 total in source, 14 total in result'])
     DoMergeIntoBackups(
       config,
       from_image_path=config2.image_path,
       expected_output=[
         'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 0 hard links, 4 total in source, 4 total in result',
+        'Paths: 0 copied, 4 total in source, 4 total in result',
         'Backup 2020-01-02-120000: existing retained.',
-        'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
         'Backup 2020-01-03-120000: merging...',
-        'Paths: 0 copied, 0 hard links, 7 total in source, 7 total in result',
+        'Paths: 0 copied, 7 total in source, 7 total in result',
         'Backup 2020-01-04-120000: existing retained.',
-        'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
         'Backup 2020-01-05-120000: merging...',
-        'Paths: 0 copied, 0 hard links, 9 total in source, 11 total in result'])
+        'Paths: 0 copied, 10 total in source, 14 total in result'])
 
     DoVerifyBackups(
       config,
       expected_output=None)
 
-    backups_manager = backups_lib.BackupsManager.Open(
-      config2, readonly=False)
+    backups_manager = backups_lib.BackupsManager.Open(config, readonly=True, browseable=False)
     try:
-      backup5 = backups_manager.GetBackup('2020-01-05-120000')
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-01-120000',
+                        '.d....... 2020-01-01-120000/.metadata',
+                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-01-120000/Root',
+                        '.f....... 2020-01-01-120000/Root/f1',
+                        '.f....... 2020-01-01-120000/Root/fT',
+                        '.f....... 2020-01-01-120000/Root/fX',
+                        '.d....... 2020-01-02-120000',
+                        '.d....... 2020-01-02-120000/.metadata',
+                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/Root',
+                        '.f....... 2020-01-02-120000/Root/f1',
+                        '.f....... 2020-01-02-120000/Root/fX',
+                        '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-02-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-02-120000/Root/par',
+                        '.f....... 2020-01-02-120000/Root/par/f2',
+                        '.d....... 2020-01-03-120000',
+                        '.d....... 2020-01-03-120000/.metadata',
+                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/.metadata/metapar',
+                        '.f....... 2020-01-03-120000/.metadata/metapar/other_metadata.json',
+                        '.d....... 2020-01-03-120000/Root',
+                        '.f....... 2020-01-03-120000/Root/fX',
+                        '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-03-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-03-120000/Root/par',
+                        '.f....... 2020-01-03-120000/Root/par/f2',
+                        '.f....... 2020-01-03-120000/Root/par/f6_from',
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f1',
+                        '.f....... 2020-01-04-120000/Root/fX',
+                        '.L....... 2020-01-04-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-04-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-04-120000/Root/par',
+                        '.f....... 2020-01-04-120000/Root/par/f2',
+                        '.f....... 2020-01-04-120000/Root/par/f3_to',
+                        '.f....... 2020-01-04-120000/Root/par/f9_to',
+                        '.d....... 2020-01-05-120000',
+                        '.d....... 2020-01-05-120000/.metadata',
+                        '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-05-120000/Root',
+                        '.f....... 2020-01-05-120000/Root/f1',
+                        '.f....... 2020-01-05-120000/Root/fX',
+                        '.L....... 2020-01-05-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-05-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-05-120000/Root/par',
+                        '.f....... 2020-01-05-120000/Root/par/f2',
+                        '.f....... 2020-01-05-120000/Root/par/f3_to',
+                        '.f....... 2020-01-05-120000/Root/par/f4_to',
+                        '.f....... 2020-01-05-120000/Root/par/f5_both',
+                        '.f....... 2020-01-05-120000/Root/par/f6_from',
+                        '.f....... 2020-01-05-120000/Root/par/f7_from',
+                        '.f....... 2020-01-05-120000/Root/par/f8_from',
+                        '.f....... 2020-01-05-120000/Root/par/f9_to',
+                        '.L....... Latest -> 2020-01-05-120000'])
+    finally:
+      backups_manager.Close()
+
+    backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+    try:
+      backup5 = backups_manager2.GetBackup('2020-01-05-120000')
       manifest = lib.Manifest(backup5.GetManifestPath())
       manifest.Read()
 
@@ -1745,20 +1839,18 @@ def MergeIntoBackupsTest():
         lib.PathInfo.FromPath(file7_path, file7_full_path), allow_replace=True)
       manifest.Write()
     finally:
-      backups_manager.Close()
+      backups_manager2.Close()
 
     DoMergeIntoBackups(
       config,
       from_image_path=config2.image_path,
       expected_success=False,
       expected_output=['Backup 2020-01-01-120000: merging...',
-                       'Paths: 0 copied, 0 hard links, 4 total in source, 4 total in result',
+                       'Paths: 0 copied, 4 total in source, 4 total in result',
                        'Backup 2020-01-02-120000: existing retained.',
-                       'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
                        'Backup 2020-01-03-120000: merging...',
-                       'Paths: 0 copied, 0 hard links, 7 total in source, 7 total in result',
+                       'Paths: 0 copied, 7 total in source, 7 total in result',
                        'Backup 2020-01-04-120000: existing retained.',
-                       'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
                        'Backup 2020-01-05-120000: merging...',
                        '*** Error: Failed to copy paths: found mismatched existing paths:',
                        '.f......x par/f5_both',
@@ -1823,56 +1915,56 @@ def DeleteInBackupsTest():
     backups_manager = backups_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
-      AssertEquals(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                   ['.d....... .',
-                    '.d....... 2020-01-01-120000',
-                    '.d....... 2020-01-01-120000/.metadata',
-                    '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-01-120000/Root',
-                    '.f....... 2020-01-01-120000/Root/f1',
-                    '.f....... 2020-01-01-120000/Root/fT',
-                    '.f....... 2020-01-01-120000/Root/fX',
-                    '.d....... 2020-01-02-120000',
-                    '.d....... 2020-01-02-120000/.metadata',
-                    '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-02-120000/Root',
-                    '.f....... 2020-01-02-120000/Root/fT',
-                    '.f....... 2020-01-02-120000/Root/fX',
-                    '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
-                    '.L....... 2020-01-02-120000/Root/ln2 -> fX',
-                    '.d....... 2020-01-02-120000/Root/par!',
-                    '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-03-120000',
-                    '.d....... 2020-01-03-120000/.metadata',
-                    '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-03-120000/Root',
-                    '.f....... 2020-01-03-120000/Root/f3',
-                    '.f....... 2020-01-03-120000/Root/fT',
-                    '.f....... 2020-01-03-120000/Root/fX',
-                    '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
-                    '.L....... 2020-01-03-120000/Root/ln2 -> fT',
-                    '.d....... 2020-01-03-120000/Root/par!',
-                    '.f....... 2020-01-03-120000/Root/par!/f4',
-                    '.f....... 2020-01-03-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-03-120000/Root/par2',
-                    '.f....... 2020-01-03-120000/Root/par2/f5',
-                    '.f....... 2020-01-03-120000/Root/par2/f8',
-                    '.d....... 2020-01-04-120000',
-                    '.d....... 2020-01-04-120000/.metadata',
-                    '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-04-120000/Root',
-                    '.f....... 2020-01-04-120000/Root/f3',
-                    '.f....... 2020-01-04-120000/Root/fT',
-                    '.f....... 2020-01-04-120000/Root/fX',
-                    '.L....... 2020-01-04-120000/Root/ln1 -> INVALID',
-                    '.L....... 2020-01-04-120000/Root/ln2 -> fT',
-                    '.d....... 2020-01-04-120000/Root/par!',
-                    '.f....... 2020-01-04-120000/Root/par!/f4',
-                    '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
-                    '.d....... 2020-01-04-120000/Root/par2',
-                    '.f....... 2020-01-04-120000/Root/par2/f5',
-                    '.f....... 2020-01-04-120000/Root/par2/f8',
-                    '.L....... Latest -> 2020-01-04-120000'])
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-01-120000',
+                        '.d....... 2020-01-01-120000/.metadata',
+                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-01-120000/Root',
+                        '.f....... 2020-01-01-120000/Root/f1',
+                        '.f....... 2020-01-01-120000/Root/fT',
+                        '.f....... 2020-01-01-120000/Root/fX',
+                        '.d....... 2020-01-02-120000',
+                        '.d....... 2020-01-02-120000/.metadata',
+                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/Root',
+                        '.f....... 2020-01-02-120000/Root/fT',
+                        '.f....... 2020-01-02-120000/Root/fX',
+                        '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-02-120000/Root/ln2 -> fX',
+                        '.d....... 2020-01-02-120000/Root/par!',
+                        '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-03-120000',
+                        '.d....... 2020-01-03-120000/.metadata',
+                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/Root',
+                        '.f....... 2020-01-03-120000/Root/f3',
+                        '.f....... 2020-01-03-120000/Root/fT',
+                        '.f....... 2020-01-03-120000/Root/fX',
+                        '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-03-120000/Root/ln2 -> fT',
+                        '.d....... 2020-01-03-120000/Root/par!',
+                        '.f....... 2020-01-03-120000/Root/par!/f4',
+                        '.f....... 2020-01-03-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-03-120000/Root/par2',
+                        '.f....... 2020-01-03-120000/Root/par2/f5',
+                        '.f....... 2020-01-03-120000/Root/par2/f8',
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f3',
+                        '.f....... 2020-01-04-120000/Root/fT',
+                        '.f....... 2020-01-04-120000/Root/fX',
+                        '.L....... 2020-01-04-120000/Root/ln1 -> INVALID',
+                        '.L....... 2020-01-04-120000/Root/ln2 -> fT',
+                        '.d....... 2020-01-04-120000/Root/par!',
+                        '.f....... 2020-01-04-120000/Root/par!/f4',
+                        '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
+                        '.d....... 2020-01-04-120000/Root/par2',
+                        '.f....... 2020-01-04-120000/Root/par2/f5',
+                        '.f....... 2020-01-04-120000/Root/par2/f8',
+                        '.L....... Latest -> 2020-01-04-120000'])
     finally:
       backups_manager.Close()
 
@@ -1967,35 +2059,35 @@ def DeleteInBackupsTest():
     backups_manager = backups_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
-      AssertEquals(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                   ['.d....... .',
-                    '.d....... 2020-01-01-120000',
-                    '.d....... 2020-01-01-120000/.metadata',
-                    '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-01-120000/Root',
-                    '.f....... 2020-01-01-120000/Root/fT',
-                    '.d....... 2020-01-02-120000',
-                    '.d....... 2020-01-02-120000/.metadata',
-                    '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-02-120000/Root',
-                    '.f....... 2020-01-02-120000/Root/fT',
-                    '.d....... 2020-01-03-120000',
-                    '.d....... 2020-01-03-120000/.metadata',
-                    '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-03-120000/Root',
-                    '.f....... 2020-01-03-120000/Root/f3',
-                    '.f....... 2020-01-03-120000/Root/fT',
-                    '.d....... 2020-01-03-120000/Root/par2',
-                    '.f....... 2020-01-03-120000/Root/par2/f8',
-                    '.d....... 2020-01-04-120000',
-                    '.d....... 2020-01-04-120000/.metadata',
-                    '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
-                    '.d....... 2020-01-04-120000/Root',
-                    '.f....... 2020-01-04-120000/Root/f3',
-                    '.f....... 2020-01-04-120000/Root/fT',
-                    '.d....... 2020-01-04-120000/Root/par2',
-                    '.f....... 2020-01-04-120000/Root/par2/f8',
-                    '.L....... Latest -> 2020-01-04-120000'])
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-01-120000',
+                        '.d....... 2020-01-01-120000/.metadata',
+                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-01-120000/Root',
+                        '.f....... 2020-01-01-120000/Root/fT',
+                        '.d....... 2020-01-02-120000',
+                        '.d....... 2020-01-02-120000/.metadata',
+                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/Root',
+                        '.f....... 2020-01-02-120000/Root/fT',
+                        '.d....... 2020-01-03-120000',
+                        '.d....... 2020-01-03-120000/.metadata',
+                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-03-120000/Root',
+                        '.f....... 2020-01-03-120000/Root/f3',
+                        '.f....... 2020-01-03-120000/Root/fT',
+                        '.d....... 2020-01-03-120000/Root/par2',
+                        '.f....... 2020-01-03-120000/Root/par2/f8',
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f3',
+                        '.f....... 2020-01-04-120000/Root/fT',
+                        '.d....... 2020-01-04-120000/Root/par2',
+                        '.f....... 2020-01-04-120000/Root/par2/f8',
+                        '.L....... Latest -> 2020-01-04-120000'])
     finally:
       backups_manager.Close()
 

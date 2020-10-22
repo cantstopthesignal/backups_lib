@@ -256,7 +256,8 @@ def DoExtractFromBackups(config, dry_run=False, min_backup=None, max_backup=None
                          expected_output=[]):
   cmd_args = ['extract-from-backups',
               '--backups-config', config.path,
-              '--no-encrypt']
+              '--no-encrypt',
+              '--deduplicate-min-file-size', '1024']
   if output_image_path is not None:
     cmd_args.extend(['--output-image-path', output_image_path])
   for path in paths:
@@ -273,7 +274,8 @@ def DoMergeIntoBackups(config, dry_run=False, min_backup=None, max_backup=None,
                        from_image_path=None, expected_success=True,
                        expected_output=[]):
   cmd_args = ['merge-into-backups',
-              '--backups-config', config.path]
+              '--backups-config', config.path,
+              '--deduplicate-min-file-size', '1024']
   if from_image_path is not None:
     cmd_args.extend(['--from-image-path', from_image_path])
   if min_backup is not None:
