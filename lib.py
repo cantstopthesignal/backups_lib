@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pipes
+import plistlib
 import re
 import select
 import shutil
@@ -374,6 +375,129 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
+class DiskPartitionInfo(object):
+  def __init__(self):
+    self.name = None
+    self.start = None
+    self.length = None
+    self.hint = None
+
+  def IsValid(self):
+    return (self.name is not None and self.start is not None
+            and self.length is not None and self.hint is not None)
+
+  def __str__(self):
+    out = []
+    if self.name:
+      out.append(repr(self.name))
+    out.extend(['start=%d' % self.start,
+                'length=%d' % self.length])
+    if self.hint:
+      out.append('hint=%r' % self.hint)
+    return 'Partition<%s>' % ', '.join(out)
+
+
+def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encrypted=None,
+                               image_uuid=None, dry_run=False):
+  if encrypted is None or image_uuid is None:
+    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+
+  if not os.path.normpath(image_path).endswith('.sparsebundle'):
+    raise Exception('Expected %s to be a sparsebundle image' % image_path)
+
+  plist_data = plistlib.readPlist(os.path.join(image_path, 'Info.plist'))
+  assert plist_data['CFBundleInfoDictionaryVersion'] == '6.0'
+  assert plist_data['bundle-backingstore-version'] == 1
+  assert plist_data['diskimage-bundle-type'] == 'com.apple.diskimage.sparsebundle'
+  band_size = plist_data['band-size']
+
+  cmd = ['hdiutil', 'imageinfo', image_path]
+  if encrypted:
+    cmd.append('-stdinpass')
+    password = encryption_manager.GetPassword(
+      image_path, image_uuid, try_last_password=False)
+  p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT)
+  if encrypted:
+    p.stdin.write(password)
+  p.stdin.close()
+  hdiutil_output = p.stdout.read()
+  if p.wait():
+    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+  block_size = None
+  partitions = []
+
+  current_partition = None
+  in_partitions = False
+  in_partitions_body = False
+  for line in hdiutil_output.split('\n'):
+    if line == 'partitions:':
+      in_partitions = True
+      continue
+    if in_partitions and not line.startswith('\t'):
+      break
+    if not in_partitions:
+      continue
+    m = re.match('^\tblock-size: ([0-9]+)$', line)
+    if m:
+      block_size = int(m.group(1))
+    if line == '\tpartitions:':
+      in_partitions_body = True
+      continue
+    if not in_partitions_body:
+      continue
+    if not line.startswith('\t\t'):
+      break
+    m = re.match('^\t\t[0-9]+:$', line)
+    if m:
+      if current_partition is not None:
+        assert current_partition.IsValid()
+        partitions.append(current_partition)
+        current_partition = None
+      continue
+    m = re.match('^\t\t\tpartition-(name|start|length|hint): (.*)$', line)
+    if not m:
+      continue
+    (key, value) = m.group(1, 2)
+    if current_partition is None:
+      current_partition = DiskPartitionInfo()
+    if key == 'name':
+      current_partition.name = value
+    elif key == 'start':
+      current_partition.start = int(value)
+    elif key == 'length':
+      current_partition.length = int(value)
+    elif key == 'hint':
+      current_partition.hint = value
+
+  if current_partition is not None:
+    assert current_partition.IsValid()
+    partitions.append(current_partition)
+
+  assert block_size is not None
+
+  bands_with_files = set()
+  for band_name in os.listdir(os.path.join(image_path, 'bands')):
+    bands_with_files.add(int(band_name, 16))
+
+  for partition in partitions:
+    if partition.name == '' and partition.hint == 'Apple_Free':
+      start_band = (partition.start * block_size) / band_size
+      end_band = ((partition.start + partition.length) * block_size) / band_size
+      bands_to_delete = set()
+      for band_id in range(start_band + 1, end_band):
+        if band_id in bands_with_files:
+          bands_to_delete.add(band_id)
+      if bands_to_delete:
+        print >>output, 'Deleting %d bands between (%d,%d) for empty partition %s...' % (
+          len(bands_to_delete), start_band, end_band, partition)
+        for band_id in bands_to_delete:
+          band_path = os.path.join(image_path, 'bands', hex(band_id)[2:])
+          if not dry_run:
+            os.unlink(band_path)
+
+
 def CompactImageWithResize(image_path, output, encryption_manager=None, encrypted=None,
                            image_uuid=None, dry_run=False):
   if encrypted is None or image_uuid is None:
@@ -387,6 +511,11 @@ def CompactImageWithResize(image_path, output, encryption_manager=None, encrypte
   ResizeImage(image_path, block_count=min_block_count, output=output,
               encryption_manager=encryption_manager, encrypted=encrypted,
               image_uuid=image_uuid, dry_run=dry_run)
+
+  if os.path.normpath(image_path).endswith('.sparsebundle'):
+    CleanFreeSparsebundleBands(
+      image_path, output=output, encryption_manager=encryption_manager, encrypted=encrypted,
+      image_uuid=image_uuid, dry_run=dry_run)
 
   print >>output, 'Restoring image size to %d blocks...' % current_block_count
   ResizeImage(image_path, block_count=current_block_count, output=output,
