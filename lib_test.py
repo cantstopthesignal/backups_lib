@@ -33,7 +33,6 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=l
   cmd = [lib.GetRsyncBin(),
          '-aXi',
          '--delete',
-         '--no-group',
          '--numeric-ids',
          '--no-specials',
          '--no-devices']

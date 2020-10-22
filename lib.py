@@ -698,10 +698,6 @@ def RsyncDirectoryOnly(src_dir, dest_dir, output, dry_run=False, verbose=False):
          '--no-specials',
          '--no-devices']
 
-  if IGNORE_UID_DIFFS:
-    cmd.append('--no-owner')
-  if IGNORE_GID_DIFFS:
-    cmd.append('--no-group')
   if verbose:
     cmd.append('-i')
   else:
@@ -733,10 +729,6 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
          '--numeric-ids',
          '--no-specials',
          '--no-devices']
-  if IGNORE_UID_DIFFS:
-    cmd.append('--no-owner')
-  if IGNORE_GID_DIFFS:
-    cmd.append('--no-group')
   if verbose:
     cmd.append('-i')
   else:
@@ -808,10 +800,6 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
          '--numeric-ids',
          '--no-specials',
          '--no-devices']
-  if IGNORE_UID_DIFFS:
-    cmd.append('--no-owner')
-  if IGNORE_GID_DIFFS:
-    cmd.append('--no-group')
   if verbose:
     cmd.append('-i')
   else:
