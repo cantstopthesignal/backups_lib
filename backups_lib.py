@@ -115,155 +115,167 @@ def PrintSkippedBackups(skipped_backups, output):
       len(skipped_backups), skipped_backups[0], skipped_backups[-1])
 
 
-class CopyPathsIntoBackupResult(object):
-  def __init__(self):
-    self.to_backup = None
-    self.to_manifest = None
-    self.num_copied = 0
-    self.num_hard_linked = 0
-    self.total_from_paths = 0
-    self.total_to_paths = 0
-    self.success = True
+class PathsIntoBackupCopier(object):
+  class Result(object):
+    def __init__(self):
+      self.to_backup = None
+      self.to_manifest = None
+      self.num_copied = 0
+      self.num_hard_linked = 0
+      self.total_from_paths = 0
+      self.total_to_paths = 0
+      self.success = True
 
+  def __init__(self, from_backup, from_manifest, to_backup_manager, to_backup, last_to_backup,
+               last_to_manifest, path_matcher, output, verify_with_checksums=False, dry_run=False,
+               verbose=False):
+    """
+    Args:
+        to_backup: None to create a new backup matching from_backup's name for the contents,
+            Non-None to use an existing backup to copy to.
+    """
 
-def CopyPathsIntoBackup(
-    from_backup, from_manifest, to_backup_manager, to_backup, last_to_backup,
-    last_to_manifest, path_matcher, output, verify_with_checksums=False, dry_run=False,
-    verbose=False):
-  """
-  Args:
-      to_backup: None to create a new backup matching from_backup's name for the contents,
-          Non-None to use an existing backup to copy to.
-  """
+    self.from_backup = from_backup
+    self.from_manifest = from_manifest
+    self.to_backup_manager = to_backup_manager
+    self.to_backup = to_backup
+    self.last_to_backup = last_to_backup
+    self.last_to_manifest = last_to_manifest
+    self.path_matcher = path_matcher
+    self.output = output
+    self.verify_with_checksums = verify_with_checksums
+    self.dry_run = dry_run
+    self.verbose = verbose
 
-  result = CopyPathsIntoBackupResult()
-  result.to_backup = to_backup
-  to_backup_is_new = to_backup is None
+  def Copy(self):
+    result = PathsIntoBackupCopier.Result()
+    result.to_backup = self.to_backup
+    to_backup_is_new = self.to_backup is None
 
-  if from_manifest is None:
-    from_manifest = lib.Manifest(from_backup.GetManifestPath())
-    from_manifest.Read()
-  result.total_from_paths = from_manifest.GetPathCount()
+    if self.from_manifest is None:
+      self.from_manifest = lib.Manifest(self.from_backup.GetManifestPath())
+      self.from_manifest.Read()
+    result.total_from_paths = self.from_manifest.GetPathCount()
 
-  if last_to_backup is not None and last_to_manifest is None:
-    last_to_manifest = lib.Manifest(last_to_backup.GetManifestPath())
-    last_to_manifest.Read()
+    if self.last_to_backup is not None and self.last_to_manifest is None:
+      self.last_to_manifest = lib.Manifest(self.last_to_backup.GetManifestPath())
+      self.last_to_manifest.Read()
 
-  if result.to_backup is not None:
-    result.to_manifest = lib.Manifest(result.to_backup.GetManifestPath())
-    result.to_manifest.Read()
-    result.total_to_paths = result.to_manifest.GetPathCount()
-  else:
-    result.to_manifest = lib.Manifest()
-
-  paths_to_copy = []
-  paths_to_link = []
-  mismatched_itemized = []
-  all_from_files_matched = True
-
-  for path in from_manifest.GetPaths():
-    if path_matcher.Matches(path):
-      path_info = from_manifest.GetPathInfo(path)
-
-      existing_path_info = result.to_manifest.GetPathInfo(path)
-      if existing_path_info is not None:
-        onto_existing_itemized = lib.PathInfo.GetItemizedDiff(path_info, existing_path_info)
-        if onto_existing_itemized.HasDiffs():
-          mismatched_itemized.append(onto_existing_itemized)
-        continue
-
-      result.to_manifest.AddPathInfo(path_info.Clone())
-      result.total_to_paths += 1
-
-      if path_info.path_type == lib.PathInfo.TYPE_FILE and last_to_manifest is not None:
-        if not lib.PathInfo.GetItemizedDiff(
-            path_info, last_to_manifest.GetPathInfo(path)).HasDiffs():
-          paths_to_link.append(path)
-          continue
-      paths_to_copy.append(path)
+    if result.to_backup is not None:
+      result.to_manifest = lib.Manifest(result.to_backup.GetManifestPath())
+      result.to_manifest.Read()
+      result.total_to_paths = result.to_manifest.GetPathCount()
     else:
-      all_from_files_matched = False
+      result.to_manifest = lib.Manifest()
 
-  if mismatched_itemized:
-    print >>output, '*** Error: Failed to copy paths: found mismatched existing paths:'
-    for itemized in mismatched_itemized:
-      print >>output, itemized
-    result.success = False
-    return result
+    paths_to_copy = []
+    paths_to_link = []
+    mismatched_itemized = []
+    all_from_files_matched = True
 
-  paths_to_sync_set = set(paths_to_copy + paths_to_link)
+    for path in self.from_manifest.GetPaths():
+      if self.path_matcher.Matches(path):
+        path_info = self.from_manifest.GetPathInfo(path)
 
-  if not paths_to_sync_set:
-    return result
+        existing_path_info = result.to_manifest.GetPathInfo(path)
+        if existing_path_info is not None:
+          onto_existing_itemized = lib.PathInfo.GetItemizedDiff(path_info, existing_path_info)
+          if onto_existing_itemized.HasDiffs():
+            mismatched_itemized.append(onto_existing_itemized)
+          continue
 
-  itemizeds = None
-  if last_to_manifest is not None:
-    itemizeds = result.to_manifest.GetDiffItemized(
-      last_to_manifest, include_matching=not all_from_files_matched)
-  else:
-    itemizeds = result.to_manifest.GetItemized()
-  for itemized in itemizeds:
-    if (itemized.path_type == lib.PathInfo.TYPE_DIR
-        and not path_matcher.Matches(itemized.path)):
-      continue
-    print >>output, itemized
-
-  unreferenced_parent_dirs = set()
-  for path in paths_to_sync_set:
-    parent_dir = os.path.dirname(path)
-    while parent_dir:
-      if not result.to_manifest.HasPath(parent_dir):
-        unreferenced_parent_dirs.add(parent_dir)
-      parent_dir = os.path.dirname(parent_dir)
-  if not result.to_manifest.HasPath('.'):
-    unreferenced_parent_dirs.add('.')
-
-  if not dry_run:
-    if to_backup_is_new:
-      assert result.to_backup is None
-      result.to_backup = to_backup_manager.StartNew(name=from_backup.GetName())
-      result.to_backup.SetInProgressState(dry_run=dry_run)
-    try:
-      lib.RsyncPaths(paths_to_copy, from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
-                     output=output, dry_run=dry_run, verbose=verbose)
-
-      for path in sorted(unreferenced_parent_dirs):
-        extracted_full_path = os.path.join(result.to_backup.GetDiskPath(), path)
-        if not os.path.lexists(extracted_full_path):
-          with lib.PreserveParentMtime(extracted_full_path):
-            os.mkdir(extracted_full_path)
-        path_stat = os.lstat(os.path.join(from_backup.GetDiskPath(), path))
-        os.utime(extracted_full_path, (path_stat.st_mtime, path_stat.st_mtime))
-        extracted_path_info = lib.PathInfo.FromPath(path, extracted_full_path)
-        assert extracted_path_info.path_type == lib.PathInfo.TYPE_DIR
-        result.to_manifest.AddPathInfo(extracted_path_info)
+        result.to_manifest.AddPathInfo(path_info.Clone())
         result.total_to_paths += 1
 
-      for path in paths_to_link:
-        last_full_path = os.path.join(last_to_backup.GetDiskPath(), path)
-        full_path = os.path.join(result.to_backup.GetDiskPath(), path)
-        with lib.PreserveParentMtime(full_path):
-          os.link(last_full_path, full_path)
+        if path_info.path_type == lib.PathInfo.TYPE_FILE and self.last_to_manifest is not None:
+          if not lib.PathInfo.GetItemizedDiff(
+              path_info, self.last_to_manifest.GetPathInfo(path)).HasDiffs():
+            paths_to_link.append(path)
+            continue
+        paths_to_copy.append(path)
+      else:
+        all_from_files_matched = False
 
-      result.to_manifest.SetPath(result.to_backup.GetManifestPath())
-      result.to_manifest.Write()
+    if mismatched_itemized:
+      print >>self.output, '*** Error: Failed to copy paths: found mismatched existing paths:'
+      for itemized in mismatched_itemized:
+        print >>self.output, itemized
+      result.success = False
+      return result
 
-      print >>output, 'Verifying %s...' % result.to_backup.GetName()
-      verifier = lib.ManifestVerifier(
-        result.to_manifest, result.to_backup.GetDiskPath(), output, checksum_all=verify_with_checksums,
-        verbose=verbose)
-      if not verifier.Verify():
-        raise Exception('Failed to verify %s' % result.to_backup.GetName())
+    paths_to_sync_set = set(paths_to_copy + paths_to_link)
+
+    if not paths_to_sync_set:
+      return result
+
+    itemizeds = None
+    if self.last_to_manifest is not None:
+      itemizeds = result.to_manifest.GetDiffItemized(
+        self.last_to_manifest, include_matching=not all_from_files_matched)
+    else:
+      itemizeds = result.to_manifest.GetItemized()
+    for itemized in itemizeds:
+      if (itemized.path_type == lib.PathInfo.TYPE_DIR
+          and not self.path_matcher.Matches(itemized.path)):
+        continue
+      print >>self.output, itemized
+
+    unreferenced_parent_dirs = set()
+    for path in paths_to_sync_set:
+      parent_dir = os.path.dirname(path)
+      while parent_dir:
+        if not result.to_manifest.HasPath(parent_dir):
+          unreferenced_parent_dirs.add(parent_dir)
+        parent_dir = os.path.dirname(parent_dir)
+    if not result.to_manifest.HasPath('.'):
+      unreferenced_parent_dirs.add('.')
+
+    if not self.dry_run:
       if to_backup_is_new:
-        result.to_backup.SetDoneState(dry_run=dry_run)
-    except:
-      if to_backup_is_new:
-        result.to_backup.Delete(dry_run=dry_run)
-      raise
+        assert result.to_backup is None
+        result.to_backup = self.to_backup_manager.StartNew(name=self.from_backup.GetName())
+        result.to_backup.SetInProgressState(dry_run=self.dry_run)
+      try:
+        lib.RsyncPaths(paths_to_copy, self.from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
+                       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
 
-  result.num_copied = len(paths_to_sync_set)
-  result.num_hard_linked = len(paths_to_link)
-  return result
+        for path in sorted(unreferenced_parent_dirs):
+          extracted_full_path = os.path.join(result.to_backup.GetDiskPath(), path)
+          if not os.path.lexists(extracted_full_path):
+            with lib.PreserveParentMtime(extracted_full_path):
+              os.mkdir(extracted_full_path)
+          path_stat = os.lstat(os.path.join(self.from_backup.GetDiskPath(), path))
+          os.utime(extracted_full_path, (path_stat.st_mtime, path_stat.st_mtime))
+          extracted_path_info = lib.PathInfo.FromPath(path, extracted_full_path)
+          assert extracted_path_info.path_type == lib.PathInfo.TYPE_DIR
+          result.to_manifest.AddPathInfo(extracted_path_info)
+          result.total_to_paths += 1
+
+        for path in paths_to_link:
+          last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path)
+          full_path = os.path.join(result.to_backup.GetDiskPath(), path)
+          with lib.PreserveParentMtime(full_path):
+            os.link(last_full_path, full_path)
+
+        result.to_manifest.SetPath(result.to_backup.GetManifestPath())
+        result.to_manifest.Write()
+
+        print >>self.output, 'Verifying %s...' % result.to_backup.GetName()
+        verifier = lib.ManifestVerifier(
+          result.to_manifest, result.to_backup.GetDiskPath(), self.output, checksum_all=self.verify_with_checksums,
+          verbose=self.verbose)
+        if not verifier.Verify():
+          raise Exception('Failed to verify %s' % result.to_backup.GetName())
+        if to_backup_is_new:
+          result.to_backup.SetDoneState(dry_run=self.dry_run)
+      except:
+        if to_backup_is_new:
+          result.to_backup.Delete(dry_run=self.dry_run)
+        raise
+
+    result.num_copied = len(paths_to_sync_set)
+    result.num_hard_linked = len(paths_to_link)
+    return result
 
 
 class DeDuplicateBackupsResult(object):
@@ -1646,10 +1658,11 @@ class PathsFromBackupsExtractor(object):
 
     path_matcher = PathsAndPrefixMatcher(self.paths)
 
-    result = CopyPathsIntoBackup(
+    copier = PathsIntoBackupCopier(
       from_backup=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
       to_backup=None, last_to_backup=last_extracted_backup, last_to_manifest=last_extracted_manifest,
       path_matcher=path_matcher, output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+    result = copier.Copy()
 
     if not result.success:
       raise Exception('Failed to copy paths from %s' % backup)
@@ -1755,11 +1768,12 @@ class IntoBackupsMerger(object):
   def _MergeBackup(self, backup, from_backup, last_backup):
     print >>self.output, 'Backup %s: merging...' % backup.GetName()
 
-    result = CopyPathsIntoBackup(
+    copier = PathsIntoBackupCopier(
       from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=MatchAllPathMatcher(), output=self.output, dry_run=self.dry_run,
       verbose=self.verbose)
+    result = copier.Copy()
 
     if not result.success:
       return False
@@ -1786,11 +1800,12 @@ class IntoBackupsMerger(object):
   def _ImportNewBackup(self, from_backup, last_backup):
     print >>self.output, 'Backup %s: importing new...' % from_backup.GetName()
 
-    result = CopyPathsIntoBackup(
+    copier = PathsIntoBackupCopier(
       from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=MatchAllPathMatcher(), output=self.output, dry_run=self.dry_run,
       verbose=self.verbose)
+    result = copier.Copy()
 
     if not result.success or not result.num_copied:
       raise Exception('Expected to import %s' % from_backup)
