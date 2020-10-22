@@ -1783,38 +1783,48 @@ class IntoBackupsMerger(object):
       last_backup = None
       last_backup_was_modified = False
 
-      while True:
-        backup = backups and backups[0] or None
-        from_backup = from_backups and from_backups[0] or None
-        if backup and from_backup:
-          if backup.GetName() < from_backup.GetName():
-            from_backup = None
-          elif backup.GetName() > from_backup.GetName():
-            backup = None
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
+        while True:
+          backup = backups and backups[0] or None
+          from_backup = from_backups and from_backups[0] or None
+          if backup and from_backup:
+            if backup.GetName() < from_backup.GetName():
+              from_backup = None
+            elif backup.GetName() > from_backup.GetName():
+              backup = None
 
-        if backup:
-          if from_backup:
-            (last_backup_was_modified, success) = self._MergeBackup(
-              backup, from_backup, last_backup)
-            if not success:
+          if backup:
+            if escape_key_detector.WasEscapePressed():
+              print >>self.output, '*** Cancelled before backup %s' % backup
               return False
-            last_backup = backup
-            del backups[0]
+            if from_backup:
+              (last_backup_was_modified, success) = self._MergeBackup(
+                backup, from_backup, last_backup)
+              if not success:
+                return False
+              last_backup = backup
+              del backups[0]
+              del from_backups[0]
+              continue
+            else:
+              last_backup_was_modified = self._RetainBackup(
+                backup, last_backup, last_backup_was_modified)
+              last_backup = backup
+              del backups[0]
+              continue
+          elif from_backup:
+            if escape_key_detector.WasEscapePressed():
+              print >>self.output, '*** Cancelled before from backup %s' % from_backup
+              return False
+            last_backup = self._ImportNewBackup(from_backup, last_backup)
+            last_backup_was_modified = True
             del from_backups[0]
             continue
-          else:
-            last_backup_was_modified = self._RetainBackup(
-              backup, last_backup, last_backup_was_modified)
-            last_backup = backup
-            del backups[0]
-            continue
-        elif from_backup:
-          last_backup = self._ImportNewBackup(from_backup, last_backup)
-          last_backup_was_modified = True
-          del from_backups[0]
-          continue
 
-        break
+          break
+      finally:
+        escape_key_detector.Shutdown()
 
       PrintSkippedBackups(skipped_from_backups, self.output)
     finally:
