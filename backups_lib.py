@@ -699,10 +699,10 @@ class BackupsManager(object):
                           browseable=browseable, dry_run=dry_run)
 
   @staticmethod
-  def Create(config, encrypt=True, encryption_manager=None, browseable=True, dry_run=False):
+  def Create(config, volume_name=None, encrypt=True, encryption_manager=None, browseable=True, dry_run=False):
     if os.path.lexists(config.image_path):
       raise Exception('Expected %s to not exist' % config.image_path)
-    lib.CreateDiskImage(config.image_path, encrypt=encrypt,
+    lib.CreateDiskImage(config.image_path, volume_name=volume_name, encrypt=encrypt,
                         encryption_manager=encryption_manager, dry_run=dry_run)
     if not dry_run:
       return BackupsManager(config, encryption_manager=encryption_manager, readonly=False,
@@ -941,9 +941,11 @@ class CheckpointsToBackupsApplier:
 
 
 class BackupsImageCreator(object):
-  def __init__(self, config, output, encrypt=True, encryption_manager=None, dry_run=False, verbose=False):
+  def __init__(self, config, output, volume_name=None, encrypt=True, encryption_manager=None, dry_run=False,
+               verbose=False):
     self.config = config
     self.output = output
+    self.volume_name = volume_name
     self.encrypt = encrypt
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
@@ -952,8 +954,8 @@ class BackupsImageCreator(object):
   def CreateImage(self):
     print >>self.output, 'Creating image %s...' % self.config.image_path
     manager = BackupsManager.Create(
-      self.config, encrypt=self.encrypt, encryption_manager=self.encryption_manager,
-      browseable=False, dry_run=self.dry_run)
+      self.config, volume_name=self.volume_name, encrypt=self.encrypt,
+      encryption_manager=self.encryption_manager, browseable=False, dry_run=self.dry_run)
     if manager is not None:
       manager.Close()
     return True
@@ -1620,12 +1622,13 @@ class UniqueFilesInBackupsDumper(object):
 
 
 class PathsFromBackupsExtractor(object):
-  def __init__(self, config, output, output_image_path=None, paths=[],
+  def __init__(self, config, output, output_image_path=None, output_volume_name=None, paths=[],
                min_backup=None, max_backup=None, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
                encrypt=True, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.output_image_path = output_image_path
+    self.output_volume_name = output_volume_name
     self.paths = paths
     self.min_backup = min_backup
     self.max_backup = max_backup
@@ -1648,8 +1651,8 @@ class PathsFromBackupsExtractor(object):
       output_config = BackupsConfig()
       output_config.image_path = self.output_image_path
       self.extracted_manager = BackupsManager.Create(
-        output_config, encrypt=self.encrypt, encryption_manager=self.encryption_manager,
-        browseable=False, dry_run=self.dry_run)
+        output_config, volume_name=self.output_volume_name, encrypt=self.encrypt,
+        encryption_manager=self.encryption_manager, browseable=False, dry_run=self.dry_run)
     success = False
     try:
       success = self._ExtractPathsInternal()
@@ -2013,6 +2016,7 @@ def DoApplyToBackups(args, output):
 def DoCreateBackupsImage(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-image-path', required=True)
+  parser.add_argument('--volume-name')
   parser.add_argument('--no-encrypt', dest='encrypt', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -2020,8 +2024,8 @@ def DoCreateBackupsImage(args, output):
   config.image_path = cmd_args.backups_image_path
 
   creator = BackupsImageCreator(
-    config, output=output, encrypt=cmd_args.encrypt,
-    encryption_manager=lib.EncryptionManager(),
+    config, output=output, volume_name=cmd_args.volume_name,
+    encrypt=cmd_args.encrypt, encryption_manager=lib.EncryptionManager(),
     dry_run=args.dry_run, verbose=args.verbose)
   return creator.CreateImage()
 
@@ -2165,6 +2169,7 @@ def DoExtractFromBackups(args, output):
   AddBackupsConfigArgs(parser)
   AddPathsArgs(parser)
   parser.add_argument('--output-image-path')
+  parser.add_argument('--output-volume-name')
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   parser.add_argument('--no-encrypt', dest='encrypt', action='store_false')
@@ -2175,7 +2180,8 @@ def DoExtractFromBackups(args, output):
   paths = GetPathsFromArgs(cmd_args)
 
   extractor = PathsFromBackupsExtractor(
-    config, output=output, output_image_path=cmd_args.output_image_path, paths=paths,
+    config, output=output, output_image_path=cmd_args.output_image_path,
+    output_volume_name=cmd_args.output_volume_name, paths=paths,
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size, encrypt=cmd_args.encrypt,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
