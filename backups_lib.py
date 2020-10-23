@@ -1649,7 +1649,7 @@ class PathsFromBackupsExtractor(object):
         print >>self.output, '*** Error: Output image path %s already exists' % self.output_image_path
         return False
       output_config = BackupsConfig()
-      output_config.image_path = self.output_image_path
+      output_config.image_path = os.path.normpath(self.output_image_path)
       self.extracted_manager = BackupsManager.Create(
         output_config, volume_name=self.output_volume_name, encrypt=self.encrypt,
         encryption_manager=self.encryption_manager, browseable=False, dry_run=self.dry_run)
@@ -1749,7 +1749,7 @@ class IntoBackupsMerger(object):
 
   def Merge(self):
     from_backups_config = BackupsConfig()
-    from_backups_config.image_path = self.from_image_path
+    from_backups_config.image_path = os.path.normpath(self.from_image_path)
     self.from_backups_manager = BackupsManager.Open(
       from_backups_config, encryption_manager=self.encryption_manager,
       browseable=False, readonly=True, dry_run=self.dry_run)
@@ -2031,7 +2031,7 @@ def DoCreateBackupsImage(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = BackupsConfig()
-  config.image_path = cmd_args.backups_image_path
+  config.image_path = os.path.normpath(cmd_args.backups_image_path)
 
   creator = BackupsImageCreator(
     config, output=output, volume_name=cmd_args.volume_name,
