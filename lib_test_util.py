@@ -38,3 +38,13 @@ def SetHdiutilCompactOnBatteryAllowed(new_value=False):
     yield
   finally:
     lib.HDIUTIL_COMPACT_ON_BATTERY_ALLOWED = old_value
+
+
+@contextlib.contextmanager
+def SetOmitUidAndGidInPathInfoToString(new_value=True):
+  old_value = lib.OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING
+  lib.OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = new_value
+  try:
+    yield
+  finally:
+    lib.OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = old_value

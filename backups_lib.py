@@ -273,10 +273,11 @@ class PathsIntoBackupCopier(object):
           result.to_manifest.AddPathInfo(extracted_path_info)
           result.total_to_paths += 1
 
-        for path, path_to in paths_to_link_map.items():
-          last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path_to)
-          full_path = os.path.join(result.to_backup.GetDiskPath(), path)
-          with lib.PreserveParentMtime(full_path):
+        with lib.MtimePreserver() as preserver:
+          for path, path_to in paths_to_link_map.items():
+            last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path_to)
+            full_path = os.path.join(result.to_backup.GetDiskPath(), path)
+            preserver.PreserveParentMtime(full_path)
             os.link(last_full_path, full_path)
 
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
@@ -1771,7 +1772,7 @@ class IntoBackupsMerger(object):
       for from_backup in self.from_backups_manager.GetBackupList():
         if ((self.min_backup is not None and from_backup.GetName() < self.min_backup)
             or (self.max_backup is not None and from_backup.GetName() > self.max_backup)):
-          skipped_from_backups.append(backup)
+          skipped_from_backups.append(from_backup)
           continue
 
         PrintSkippedBackups(skipped_from_backups, self.output)

@@ -17,6 +17,7 @@ import main
 
 from test_util import AssertEquals
 from test_util import AssertLinesEqual
+from test_util import AssertNotEquals
 from test_util import CreateDir
 from test_util import CreateFile
 from test_util import CreateSymlink
@@ -1020,6 +1021,28 @@ def EscapeKeyDetectorTest():
   AssertEquals(False, escape_detector.WasEscapePressed())
 
 
+def MtimePreserverTest():
+  with TempDir() as test_dir:
+    dir1 = CreateDir(test_dir, 'dir1')
+    dir2 = CreateDir(dir1, 'dir2')
+    with lib.MtimePreserver() as preserver:
+      file1 = os.path.join(dir1, 'file1')
+      file2 = CreateFile(dir1, 'file2')
+      preserver.PreserveParentMtime(file1)
+      AssertEquals(1500000000.0, os.lstat(dir1).st_mtime)
+      subprocess.check_call(['touch', file1])
+      AssertNotEquals(1500000000.0, os.lstat(dir1).st_mtime)
+      AssertEquals({dir1: 1500000000.0}, preserver.preserved_path_mtimes)
+      preserver.PreserveParentMtime(file1)
+      AssertEquals({dir1: 1500000000.0}, preserver.preserved_path_mtimes)
+      preserver.PreserveMtime(file2)
+      AssertEquals({dir1: 1500000000.0, file2: 1500000000.0}, preserver.preserved_path_mtimes)
+      subprocess.check_call(['touch', file2])
+    AssertEquals(1500000000.0, os.lstat(dir1).st_mtime)
+    AssertNotEquals(1500000000.0, os.lstat(file1).st_mtime)
+    AssertEquals(1500000000.0, os.lstat(file2).st_mtime)
+
+
 def Test(tests=[]):
   if not tests or 'PathInfoTest' in tests:
     PathInfoTest()
@@ -1043,6 +1066,8 @@ def Test(tests=[]):
     FileSizeToStringTest()
   if not tests or 'EscapeKeyDetectorTest' in tests:
     EscapeKeyDetectorTest()
+  if not tests or 'MtimePreserverTest' in tests:
+    MtimePreserverTest()
 
 
 if __name__ == '__main__':

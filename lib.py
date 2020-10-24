@@ -51,6 +51,8 @@ IGNORE_GID_DIFFS = True
 
 HDIUTIL_COMPACT_ON_BATTERY_ALLOWED = False
 
+OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = False
+
 METADATA_DIR_NAME = '.metadata'
 CONTENT_DIR_NAME = 'Root'
 
@@ -176,6 +178,25 @@ def Chdir(new_cwd):
     yield
   finally:
     os.chdir(old_cwd)
+
+
+class MtimePreserver(object):
+  def __init__(self):
+    self.preserved_path_mtimes = {}
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc, exc_traceback):
+    for path, mtime in self.preserved_path_mtimes.items():
+      os.utime(path, (mtime, mtime))
+
+  def PreserveMtime(self, path):
+    if path not in self.preserved_path_mtimes:
+      self.preserved_path_mtimes[path] = os.lstat(path).st_mtime
+
+  def PreserveParentMtime(self, path):
+    self.PreserveMtime(os.path.dirname(path))
 
 
 @contextlib.contextmanager
@@ -1210,8 +1231,10 @@ class PathInfo(object):
       raise Exeption('Unexpected path type')
     if include_path:
       out += ' path=%s,' % EscapePath(self.path)
-    out += (' mode=%d, uid=%d, gid=%d, mtime=%d (%s)'
-            % (self.mode, self.uid, self.gid, self.mtime, UnixTimeToSecondsString(self.mtime)))
+    out += ' mode=%d' % self.mode
+    if not OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING:
+      out += ', uid=%d, gid=%d' % (self.uid, self.gid)
+    out += ', mtime=%d (%s)' % (self.mtime, UnixTimeToSecondsString(self.mtime))
     if self.size is not None:
       out += ', size=%r' % self.size
     if self.link_dest is not None:
