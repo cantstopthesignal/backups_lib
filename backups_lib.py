@@ -177,7 +177,7 @@ class PathsIntoBackupCopier(object):
     else:
       sha256_to_last_pathinfos = None
 
-    paths_to_copy = []
+    paths_to_copy_set = set()
     paths_to_link_map = {}
     mismatched_itemized = []
     all_from_files_matched = True
@@ -196,6 +196,20 @@ class PathsIntoBackupCopier(object):
         result.to_manifest.AddPathInfo(path_info.Clone())
         result.total_to_paths += 1
 
+        parent_dir = os.path.dirname(path)
+        while parent_dir:
+          if not result.to_manifest.HasPath(parent_dir):
+            parent_path_info = self.from_manifest.GetPathInfo(parent_dir)
+            result.to_manifest.AddPathInfo(parent_path_info.Clone())
+            paths_to_copy_set.add(parent_path_info.path)
+            result.total_to_paths += 1
+          parent_dir = os.path.dirname(parent_dir)
+        if not result.to_manifest.HasPath('.'):
+          parent_path_info = self.from_manifest.GetPathInfo('.')
+          result.to_manifest.AddPathInfo(parent_path_info.Clone())
+          paths_to_copy_set.add(parent_path_info.path)
+          result.total_to_paths += 1
+
         if path_info.path_type == lib.PathInfo.TYPE_FILE and self.last_to_manifest is not None:
           if not lib.PathInfo.GetItemizedDiff(
               path_info, self.last_to_manifest.GetPathInfo(path)).HasDiffs():
@@ -208,7 +222,7 @@ class PathsIntoBackupCopier(object):
               paths_to_link_map[path] = dup_path_info.path
               continue
 
-        paths_to_copy.append(path)
+        paths_to_copy_set.add(path)
       else:
         all_from_files_matched = False
 
@@ -219,7 +233,7 @@ class PathsIntoBackupCopier(object):
       result.success = False
       return result
 
-    paths_to_sync_set = set(paths_to_copy)
+    paths_to_sync_set = set(paths_to_copy_set)
     paths_to_sync_set.update(paths_to_link_map.keys())
 
     if not paths_to_sync_set:
@@ -242,36 +256,14 @@ class PathsIntoBackupCopier(object):
         print >>self.output, '  duplicate to %s (size=%s)' % (
           lib.EscapePath(link_to_path), lib.FileSizeToString(path_info.size))
 
-    unreferenced_parent_dirs = set()
-    for path in paths_to_sync_set:
-      parent_dir = os.path.dirname(path)
-      while parent_dir:
-        if not result.to_manifest.HasPath(parent_dir):
-          unreferenced_parent_dirs.add(parent_dir)
-        parent_dir = os.path.dirname(parent_dir)
-    if not result.to_manifest.HasPath('.'):
-      unreferenced_parent_dirs.add('.')
-
     if not self.dry_run:
       if to_backup_is_new:
         assert result.to_backup is None
         result.to_backup = self.to_backup_manager.StartNew(name=self.from_backup.GetName())
         result.to_backup.SetInProgressState(dry_run=self.dry_run)
       try:
-        lib.RsyncPaths(paths_to_copy, self.from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
+        lib.RsyncPaths(sorted(paths_to_copy_set), self.from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
                        output=self.output, dry_run=self.dry_run, verbose=self.verbose)
-
-        for path in sorted(unreferenced_parent_dirs):
-          extracted_full_path = os.path.join(result.to_backup.GetDiskPath(), path)
-          if not os.path.lexists(extracted_full_path):
-            with lib.PreserveParentMtime(extracted_full_path):
-              os.mkdir(extracted_full_path)
-          path_stat = os.lstat(os.path.join(self.from_backup.GetDiskPath(), path))
-          os.utime(extracted_full_path, (path_stat.st_mtime, path_stat.st_mtime))
-          extracted_path_info = lib.PathInfo.FromPath(path, extracted_full_path)
-          assert extracted_path_info.path_type == lib.PathInfo.TYPE_DIR
-          result.to_manifest.AddPathInfo(extracted_path_info)
-          result.total_to_paths += 1
 
         with lib.MtimePreserver() as preserver:
           for path, path_to in paths_to_link_map.items():

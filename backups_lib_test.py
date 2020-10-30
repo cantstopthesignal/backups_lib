@@ -1473,7 +1473,7 @@ def ExtractFromBackupsTest():
       expected_output=['Extracting from 2020-01-01-120000...',
                        '>f+++++++ f1',
                        '>f+++++++ fX',
-                       'Paths: 2 extracted, 4 total',
+                       'Paths: 3 extracted, 4 total',
                        'Extracting from 2020-01-02-120000...',
                        '*deleting f1',
                        '.f....... fX',
@@ -1481,7 +1481,7 @@ def ExtractFromBackupsTest():
                        '>L+++++++ ln2 -> fX',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Paths: 5 extracted, 1 hard links, 7 total',
+                       'Paths: 6 extracted, 1 hard links, 7 total',
                        'Extracting from 2020-01-03-120000...',
                        'Extracting from 2020-01-04-120000...',
                        '>f+++++++ f7',
@@ -1492,7 +1492,7 @@ def ExtractFromBackupsTest():
                        '>f+++++++ par!/f4',
                        '.f....... par!/f_\\r \\xc2\\xa9',
                        '>f+++++++ par2/f5',
-                       'Paths: 7 extracted, 1 hard links, 13 total',
+                       'Paths: 9 extracted, 1 hard links, 13 total',
                        'Extracting from 2020-01-05-120000...',
                        '>fc...... f7',
                        '.f....... fX',
@@ -1503,7 +1503,7 @@ def ExtractFromBackupsTest():
                        '.f....... par2/f5',
                        '>f+++++++ par2/f9',
                        '  duplicate to f7 (size=1kb)',
-                       'Paths: 8 extracted, 5 hard links, 1 duplicates, 14 total'])
+                       'Paths: 10 extracted, 5 hard links, 1 duplicates, 14 total'])
     DoExtractFromBackups(
       config,
       output_image_path=extracted_config.image_path,
@@ -1512,7 +1512,7 @@ def ExtractFromBackupsTest():
                        '>f+++++++ f1',
                        '>f+++++++ fX',
                        'Verifying 2020-01-01-120000...',
-                       'Paths: 2 extracted, 4 total',
+                       'Paths: 3 extracted, 4 total',
                        'Extracting from 2020-01-02-120000...',
                        '*deleting f1',
                        '.f....... fX',
@@ -1521,7 +1521,7 @@ def ExtractFromBackupsTest():
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 5 extracted, 1 hard links, 7 total',
+                       'Paths: 6 extracted, 1 hard links, 7 total',
                        'Extracting from 2020-01-03-120000...',
                        'Extracting from 2020-01-04-120000...',
                        '>f+++++++ f7',
@@ -1533,7 +1533,7 @@ def ExtractFromBackupsTest():
                        '.f....... par!/f_\\r \\xc2\\xa9',
                        '>f+++++++ par2/f5',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 7 extracted, 1 hard links, 13 total',
+                       'Paths: 9 extracted, 1 hard links, 13 total',
                        'Extracting from 2020-01-05-120000...',
                        '>fc...... f7',
                        '.f....... fX',
@@ -1545,7 +1545,7 @@ def ExtractFromBackupsTest():
                        '>f+++++++ par2/f9',
                        '  duplicate to f7 (size=1kb)',
                        'Verifying 2020-01-05-120000...',
-                       'Paths: 8 extracted, 5 hard links, 1 duplicates, 14 total'])
+                       'Paths: 10 extracted, 5 hard links, 1 duplicates, 14 total'])
 
     extracted_manager = backups_lib.BackupsManager.Open(
       extracted_config, readonly=True, browseable=False)
