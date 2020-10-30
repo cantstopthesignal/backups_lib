@@ -115,7 +115,32 @@ def PrintSkippedBackups(skipped_backups, output):
       len(skipped_backups), skipped_backups[0], skipped_backups[-1])
 
 
+class LogThrottler(object):
+  def __init__(self):
+    self.log_always = False
+    self.last_log_time = 0
+
+  def SetLogAlways(self, log_always):
+    self.log_always = log_always
+
+  def GetLogAlways(self):
+    return self.log_always
+
+  def ResetLastLogTime(self):
+    self.last_log_time = 0
+
+  def ShouldLog(self):
+    now = time.time()
+    should_log = self.log_always or (self.last_log_time and now > self.last_log_time + 120)
+    if should_log or not self.last_log_time:
+      self.last_log_time = now
+
+    return should_log
+
+
 class PathsIntoBackupCopier(object):
+  HARD_LINK_LOG_THROTTLER = LogThrottler()
+
   class Result(object):
     def __init__(self):
       self.to_backup = None
@@ -256,6 +281,25 @@ class PathsIntoBackupCopier(object):
         print >>self.output, '  duplicate to %s (size=%s)' % (
           lib.EscapePath(link_to_path), lib.FileSizeToString(path_info.size))
 
+    result.num_copied = len(paths_to_sync_set)
+    for path, path_to in paths_to_link_map.items():
+      result.num_hard_linked += 1
+      if path != path_to:
+        result.num_hard_linked_to_duplicates += 1
+
+    out_pieces = []
+    if result.num_copied:
+      out_pieces = ['%d to copy' % result.num_copied]
+    if result.num_hard_linked:
+      out_pieces.append('%d to hard link' % result.num_hard_linked)
+    if result.num_hard_linked_to_duplicates:
+      out_pieces.append('%d to duplicate' % result.num_hard_linked_to_duplicates)
+    if result.total_from_paths:
+      out_pieces.append('%d total in source' % result.total_from_paths)
+    if result.total_to_paths:
+      out_pieces.append('%d total in result' % result.total_to_paths)
+    print >>self.output, 'Copying paths: %s...' % ', '.join(out_pieces)
+
     if not self.dry_run:
       if to_backup_is_new:
         assert result.to_backup is None
@@ -265,12 +309,20 @@ class PathsIntoBackupCopier(object):
         lib.RsyncPaths(sorted(paths_to_copy_set), self.from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
                        output=self.output, dry_run=self.dry_run, verbose=self.verbose)
 
+        PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ResetLastLogTime()
+        hard_links_total = len(paths_to_link_map)
+        hard_links_remaining = hard_links_total
         with lib.MtimePreserver() as preserver:
           for path, path_to in paths_to_link_map.items():
             last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path_to)
             full_path = os.path.join(result.to_backup.GetDiskPath(), path)
             preserver.PreserveParentMtime(full_path)
             os.link(last_full_path, full_path)
+            hard_links_remaining -= 1
+            if PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ShouldLog() and hard_links_remaining:
+              print >>self.output, '%d/%d hard links remaining (%d%%)...' % (
+                hard_links_remaining, hard_links_total,
+                (hard_links_total - hard_links_remaining) * 100.0 / hard_links_total)
 
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
         result.to_manifest.Write()
@@ -288,11 +340,6 @@ class PathsIntoBackupCopier(object):
           result.to_backup.Delete(dry_run=self.dry_run)
         raise
 
-    result.num_copied = len(paths_to_sync_set)
-    for path, path_to in paths_to_link_map.items():
-      result.num_hard_linked += 1
-      if path != path_to:
-        result.num_hard_linked_to_duplicates += 1
     return result
 
   def _FindBestDup(self, path_info, sha256_to_last_pathinfos):
@@ -1711,13 +1758,6 @@ class PathsFromBackupsExtractor(object):
       raise Exception('Failed to copy paths from %s' % backup)
 
     if result.num_copied:
-      out_pieces = ['%d extracted' % result.num_copied]
-      if result.num_hard_linked:
-        out_pieces.append('%d hard links' % result.num_hard_linked)
-      if result.num_hard_linked_to_duplicates:
-        out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
-      out_pieces.append('%d total' % result.total_from_paths)
-      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
       return (result.to_backup, result.to_manifest)
 
     return (None, None)
@@ -1838,15 +1878,6 @@ class IntoBackupsMerger(object):
     if not result.success:
       return (result.num_copied != 0, False)
 
-    out_pieces = ['%d copied' % result.num_copied]
-    if result.num_hard_linked:
-      out_pieces.append('%d hard links' % result.num_hard_linked)
-    if result.num_hard_linked_to_duplicates:
-      out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
-    out_pieces.append('%d total in source' % result.total_from_paths)
-    out_pieces.append('%d total in result' % result.total_to_paths)
-    print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
-
     return (result.num_copied != 0, True)
 
   def _RetainBackup(self, backup, last_backup, last_backup_was_modified):
@@ -1879,14 +1910,6 @@ class IntoBackupsMerger(object):
 
     if result.to_backup is not None:
       from_backup.CopyMetadataToBackup(result.to_backup, skip_manifest=True, dry_run=self.dry_run)
-
-    out_pieces = ['%d copied' % result.num_copied]
-    if result.num_hard_linked:
-      out_pieces.append('%d hard links' % result.num_hard_linked)
-    if result.num_hard_linked_to_duplicates:
-      out_pieces.append('%d duplicates' % result.num_hard_linked_to_duplicates)
-    out_pieces.append('%d total' % result.total_from_paths)
-    print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
     return result.to_backup
 

@@ -48,6 +48,7 @@ from backups_lib_test_util import DoListBackups
 from backups_lib_test_util import DoMergeIntoBackups
 from backups_lib_test_util import DoPruneBackups
 from backups_lib_test_util import DoVerifyBackups
+from backups_lib_test_util import SetLogThrottlerLogAlways
 from backups_lib_test_util import SetUniqueFilesMaxCounts
 from backups_lib_test_util import VerifyBackupManifest
 
@@ -1379,485 +1380,488 @@ def DumpUniqueFilesInBackupsTest():
 
 
 def ExtractFromBackupsTest():
-  with TempDir() as test_dir:
-    config = CreateConfig(test_dir)
-    CreateBackupsBundle(config)
-    latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
+  with SetLogThrottlerLogAlways(backups_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+    with TempDir() as test_dir:
+      config = CreateConfig(test_dir)
+      CreateBackupsBundle(config)
+      latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
 
-    fileX = CreateFile(config.src_path, 'fX')
-    fileT = CreateFile(config.src_path, 'fT')
-    parent1 = CreateDir(config.src_path, 'par!')
-    file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
-    ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
-    ln2 = CreateSymlink(config.src_path, 'ln2', 'fX')
+      fileX = CreateFile(config.src_path, 'fX')
+      fileT = CreateFile(config.src_path, 'fT')
+      parent1 = CreateDir(config.src_path, 'par!')
+      file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
+      ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
+      ln2 = CreateSymlink(config.src_path, 'ln2', 'fX')
 
-    DoCreateBackup(
-      config, backup_name='2020-01-02-120000',
-      expected_output=['*deleting f1',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Transferring 4 of 7 paths (0b of 0b)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-02-120000',
+        expected_output=['*deleting f1',
+                         '>L+++++++ ln1 -> INVALID',
+                         '>L+++++++ ln2 -> fX',
+                         '>d+++++++ par!',
+                         '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                         'Transferring 4 of 7 paths (0b of 0b)'])
 
-    shutil.rmtree(config.src_path)
-    os.mkdir(config.src_path)
-    SetMTime(config.src_path)
-    fileT = CreateFile(config.src_path, 'fT')
+      shutil.rmtree(config.src_path)
+      os.mkdir(config.src_path)
+      SetMTime(config.src_path)
+      fileT = CreateFile(config.src_path, 'fT')
 
-    DoCreateBackup(
-      config, backup_name='2020-01-03-120000',
-      expected_output=['*deleting fX',
-                       '*deleting ln1',
-                       '*deleting ln2',
-                       '*deleting par!',
-                       '*deleting par!/f_\\r \\xc2\\xa9'])
+      DoCreateBackup(
+        config, backup_name='2020-01-03-120000',
+        expected_output=['*deleting fX',
+                         '*deleting ln1',
+                         '*deleting ln2',
+                         '*deleting par!',
+                         '*deleting par!/f_\\r \\xc2\\xa9'])
 
-    fileX = CreateFile(config.src_path, 'fX')
-    xattr.setxattr(fileX, 'example', 'example_value')
-    SetMTime(fileT, None)
-    file3 = CreateFile(config.src_path, 'f3')
-    parent1 = CreateDir(config.src_path, 'par!')
-    xattr.setxattr(parent1, 'example', 'example_value2')
-    SetMTime(parent1, None)
-    file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
-    file4 = CreateFile(parent1, 'f4')
-    parent2 = CreateDir(config.src_path, 'par2')
-    file5 = CreateFile(parent2, 'f5', contents='5' * 1025)
-    ln2 = CreateSymlink(config.src_path, 'ln2', 'fT')
-    file6 = CreateFile(config.src_path, 'f6', contents='1' * 1025)
-    file7 = CreateFile(config.src_path, 'f7', contents='2' * 1025)
-    file8 = CreateFile(parent2, 'f8', contents='5' * 1025)
+      fileX = CreateFile(config.src_path, 'fX')
+      xattr.setxattr(fileX, 'example', 'example_value')
+      SetMTime(fileT, None)
+      file3 = CreateFile(config.src_path, 'f3')
+      parent1 = CreateDir(config.src_path, 'par!')
+      xattr.setxattr(parent1, 'example', 'example_value2')
+      SetMTime(parent1, None)
+      file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
+      file4 = CreateFile(parent1, 'f4')
+      parent2 = CreateDir(config.src_path, 'par2')
+      file5 = CreateFile(parent2, 'f5', contents='5' * 1025)
+      ln2 = CreateSymlink(config.src_path, 'ln2', 'fT')
+      file6 = CreateFile(config.src_path, 'f6', contents='1' * 1025)
+      file7 = CreateFile(config.src_path, 'f7', contents='2' * 1025)
+      file8 = CreateFile(parent2, 'f8', contents='5' * 1025)
 
-    DoCreateBackup(
-      config, backup_name='2020-01-04-120000',
-      expected_output=['>f+++++++ f3',
-                       '>f+++++++ f6',
-                       '>f+++++++ f7',
-                       '.f..t.... fT',
-                       '>f+++++++ fX',
-                       '>L+++++++ ln2 -> fT',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/f4',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       '>d+++++++ par2',
-                       '>f+++++++ par2/f5',
-                       '>f+++++++ par2/f8',
-                       'Transferring 12 of 13 paths (4kb of 4kb)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-04-120000',
+        expected_output=['>f+++++++ f3',
+                         '>f+++++++ f6',
+                         '>f+++++++ f7',
+                         '.f..t.... fT',
+                         '>f+++++++ fX',
+                         '>L+++++++ ln2 -> fT',
+                         '>d+++++++ par!',
+                         '>f+++++++ par!/f4',
+                         '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                         '>d+++++++ par2',
+                         '>f+++++++ par2/f5',
+                         '>f+++++++ par2/f8',
+                         'Transferring 12 of 13 paths (4kb of 4kb)'])
 
-    xattr.setxattr(parent2, 'example', 'example_value3')
-    file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
-    file9 = CreateFile(parent2, 'f9', contents='2' * 1025)
+      xattr.setxattr(parent2, 'example', 'example_value3')
+      file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
+      file9 = CreateFile(parent2, 'f9', contents='2' * 1025)
 
-    DoCreateBackup(
-      config, backup_name='2020-01-05-120000',
-      expected_output=['>fc...... f7',
-                       '.d......x par2',
-                       '>f+++++++ par2/f9',
-                       'Transferring 3 of 14 paths (2kb of 5kb)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-05-120000',
+        expected_output=['>fc...... f7',
+                         '.d......x par2',
+                         '>f+++++++ par2/f9',
+                         'Transferring 3 of 14 paths (2kb of 5kb)'])
 
-    DoApplyToBackups(config, expected_output=None)
+      DoApplyToBackups(config, expected_output=None)
 
-    DoExtractFromBackups(
-      config,
-      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'ln1', 'ln2'],
-      expected_success=False,
-      expected_output=['*** Error: --output-image-path argument required'])
+      DoExtractFromBackups(
+        config,
+        paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'ln1', 'ln2'],
+        expected_success=False,
+        expected_output=['*** Error: --output-image-path argument required'])
 
-    extracted_config = backups_lib.BackupsConfig()
-    extracted_config.image_path = os.path.join(test_dir, 'extracted.sparsebundle')
+      extracted_config = backups_lib.BackupsConfig()
+      extracted_config.image_path = os.path.join(test_dir, 'extracted.sparsebundle')
 
-    DoExtractFromBackups(
-      config, dry_run=True,
-      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
-      expected_output=['Extracting from 2020-01-01-120000...',
-                       '>f+++++++ f1',
-                       '>f+++++++ fX',
-                       'Paths: 3 extracted, 4 total',
-                       'Extracting from 2020-01-02-120000...',
-                       '*deleting f1',
-                       '.f....... fX',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Paths: 6 extracted, 1 hard links, 7 total',
-                       'Extracting from 2020-01-03-120000...',
-                       'Extracting from 2020-01-04-120000...',
-                       '>f+++++++ f7',
-                       '.f......x fX',
-                       '*deleting ln1',
-                       '.Lc...... ln2 -> fT',
-                       '.d..t...x par!',
-                       '>f+++++++ par!/f4',
-                       '.f....... par!/f_\\r \\xc2\\xa9',
-                       '>f+++++++ par2/f5',
-                       'Paths: 9 extracted, 1 hard links, 13 total',
-                       'Extracting from 2020-01-05-120000...',
-                       '>fc...... f7',
-                       '.f....... fX',
-                       '.L....... ln2 -> fT',
-                       '.d....... par!',
-                       '.f....... par!/f4',
-                       '.f....... par!/f_\\r \\xc2\\xa9',
-                       '.f....... par2/f5',
-                       '>f+++++++ par2/f9',
-                       '  duplicate to f7 (size=1kb)',
-                       'Paths: 10 extracted, 5 hard links, 1 duplicates, 14 total'])
-    DoExtractFromBackups(
-      config,
-      output_image_path=extracted_config.image_path,
-      paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
-      expected_output=['Extracting from 2020-01-01-120000...',
-                       '>f+++++++ f1',
-                       '>f+++++++ fX',
-                       'Verifying 2020-01-01-120000...',
-                       'Paths: 3 extracted, 4 total',
-                       'Extracting from 2020-01-02-120000...',
-                       '*deleting f1',
-                       '.f....... fX',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Verifying 2020-01-02-120000...',
-                       'Paths: 6 extracted, 1 hard links, 7 total',
-                       'Extracting from 2020-01-03-120000...',
-                       'Extracting from 2020-01-04-120000...',
-                       '>f+++++++ f7',
-                       '.f......x fX',
-                       '*deleting ln1',
-                       '.Lc...... ln2 -> fT',
-                       '.d..t...x par!',
-                       '>f+++++++ par!/f4',
-                       '.f....... par!/f_\\r \\xc2\\xa9',
-                       '>f+++++++ par2/f5',
-                       'Verifying 2020-01-04-120000...',
-                       'Paths: 9 extracted, 1 hard links, 13 total',
-                       'Extracting from 2020-01-05-120000...',
-                       '>fc...... f7',
-                       '.f....... fX',
-                       '.L....... ln2 -> fT',
-                       '.d....... par!',
-                       '.f....... par!/f4',
-                       '.f....... par!/f_\\r \\xc2\\xa9',
-                       '.f....... par2/f5',
-                       '>f+++++++ par2/f9',
-                       '  duplicate to f7 (size=1kb)',
-                       'Verifying 2020-01-05-120000...',
-                       'Paths: 10 extracted, 5 hard links, 1 duplicates, 14 total'])
+      DoExtractFromBackups(
+        config, dry_run=True,
+        paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
+        expected_output=[
+          'Extracting from 2020-01-01-120000...',
+          '>f+++++++ f1',
+          '>f+++++++ fX',
+          'Copying paths: 3 to copy, 4 total in source, 3 total in result...',
+          'Extracting from 2020-01-02-120000...',
+          '*deleting f1',
+          '.f....... fX',
+          '>L+++++++ ln1 -> INVALID',
+          '>L+++++++ ln2 -> fX',
+          '>d+++++++ par!',
+          '>f+++++++ par!/f_\\r \\xc2\\xa9',
+          'Copying paths: 6 to copy, 1 to hard link, 7 total in source, 6 total in result...',
+          'Extracting from 2020-01-03-120000...',
+          'Extracting from 2020-01-04-120000...',
+          '>f+++++++ f7',
+          '.f......x fX',
+          '*deleting ln1',
+          '.Lc...... ln2 -> fT',
+          '.d..t...x par!',
+          '>f+++++++ par!/f4',
+          '.f....... par!/f_\\r \\xc2\\xa9',
+          '>f+++++++ par2/f5',
+          'Copying paths: 9 to copy, 1 to hard link, 13 total in source, 9 total in result...',
+          'Extracting from 2020-01-05-120000...',
+          '>fc...... f7',
+          '.f....... fX',
+          '.L....... ln2 -> fT',
+          '.d....... par!',
+          '.f....... par!/f4',
+          '.f....... par!/f_\\r \\xc2\\xa9',
+          '.f....... par2/f5',
+          '>f+++++++ par2/f9',
+          '  duplicate to f7 (size=1kb)',
+          'Copying paths: 10 to copy, 5 to hard link, 1 to duplicate, 14 total in source, 10 total in result...'])
+      DoExtractFromBackups(
+        config,
+        output_image_path=extracted_config.image_path,
+        paths=['f1', 'fX', 'f7', 'par!', 'par3', 'par2/f5', 'par2/f9', 'ln1', 'ln2'],
+        expected_output=[
+          'Extracting from 2020-01-01-120000...',
+          '>f+++++++ f1',
+          '>f+++++++ fX',
+          'Copying paths: 3 to copy, 4 total in source, 3 total in result...',
+          'Verifying 2020-01-01-120000...',
+          'Extracting from 2020-01-02-120000...',
+          '*deleting f1',
+          '.f....... fX',
+          '>L+++++++ ln1 -> INVALID',
+          '>L+++++++ ln2 -> fX',
+          '>d+++++++ par!',
+          '>f+++++++ par!/f_\\r \\xc2\\xa9',
+          'Copying paths: 6 to copy, 1 to hard link, 7 total in source, 6 total in result...',
+          'Verifying 2020-01-02-120000...',
+          'Extracting from 2020-01-03-120000...',
+          'Extracting from 2020-01-04-120000...',
+          '>f+++++++ f7',
+          '.f......x fX',
+          '*deleting ln1',
+          '.Lc...... ln2 -> fT',
+          '.d..t...x par!',
+          '>f+++++++ par!/f4',
+          '.f....... par!/f_\\r \\xc2\\xa9',
+          '>f+++++++ par2/f5',
+          'Copying paths: 9 to copy, 1 to hard link, 13 total in source, 9 total in result...',
+          'Verifying 2020-01-04-120000...',
+          'Extracting from 2020-01-05-120000...',
+          '>fc...... f7',
+          '.f....... fX',
+          '.L....... ln2 -> fT',
+          '.d....... par!',
+          '.f....... par!/f4',
+          '.f....... par!/f_\\r \\xc2\\xa9',
+          '.f....... par2/f5',
+          '>f+++++++ par2/f9',
+          '  duplicate to f7 (size=1kb)',
+          'Copying paths: 10 to copy, 5 to hard link, 1 to duplicate, 14 total in source, 10 total in result...',
+          '4/5 hard links remaining (20%)...',
+          '3/5 hard links remaining (40%)...',
+          '2/5 hard links remaining (60%)...',
+          '1/5 hard links remaining (80%)...',
+          'Verifying 2020-01-05-120000...'])
 
-    extracted_manager = backups_lib.BackupsManager.Open(
-      extracted_config, readonly=True, browseable=False)
-    try:
-      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(extracted_manager.GetBackupsRootDir())),
-                       ['.d....... .',
-                        '.d....... 2020-01-01-120000',
-                        '.d....... 2020-01-01-120000/.metadata',
-                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-01-120000/Root',
-                        '.f....... 2020-01-01-120000/Root/f1',
-                        '.f....... 2020-01-01-120000/Root/fX',
-                        '.d....... 2020-01-02-120000',
-                        '.d....... 2020-01-02-120000/.metadata',
-                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-02-120000/Root',
-                        '.f....... 2020-01-02-120000/Root/fX',
-                        '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
-                        '.L....... 2020-01-02-120000/Root/ln2 -> fX',
-                        '.d....... 2020-01-02-120000/Root/par!',
-                        '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
-                        '.d....... 2020-01-04-120000',
-                        '.d....... 2020-01-04-120000/.metadata',
-                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-04-120000/Root',
-                        '.f....... 2020-01-04-120000/Root/f7',
-                        '.f....... 2020-01-04-120000/Root/fX',
-                        '.L....... 2020-01-04-120000/Root/ln2 -> fT',
-                        '.d....... 2020-01-04-120000/Root/par!',
-                        '.f....... 2020-01-04-120000/Root/par!/f4',
-                        '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
-                        '.d....... 2020-01-04-120000/Root/par2',
-                        '.f....... 2020-01-04-120000/Root/par2/f5',
-                        '.d....... 2020-01-05-120000',
-                        '.d....... 2020-01-05-120000/.metadata',
-                        '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-05-120000/Root',
-                        '.f....... 2020-01-05-120000/Root/f7',
-                        '.f....... 2020-01-05-120000/Root/fX',
-                        '.L....... 2020-01-05-120000/Root/ln2 -> fT',
-                        '.d....... 2020-01-05-120000/Root/par!',
-                        '.f....... 2020-01-05-120000/Root/par!/f4',
-                        '.f....... 2020-01-05-120000/Root/par!/f_\\r \\xc2\\xa9',
-                        '.d....... 2020-01-05-120000/Root/par2',
-                        '.f....... 2020-01-05-120000/Root/par2/f5',
-                        '.f....... 2020-01-05-120000/Root/par2/f9'])
+      extracted_manager = backups_lib.BackupsManager.Open(
+        extracted_config, readonly=True, browseable=False)
+      try:
+        AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(extracted_manager.GetBackupsRootDir())),
+                         ['.d....... .',
+                          '.d....... 2020-01-01-120000',
+                          '.d....... 2020-01-01-120000/.metadata',
+                          '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-01-120000/Root',
+                          '.f....... 2020-01-01-120000/Root/f1',
+                          '.f....... 2020-01-01-120000/Root/fX',
+                          '.d....... 2020-01-02-120000',
+                          '.d....... 2020-01-02-120000/.metadata',
+                          '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-02-120000/Root',
+                          '.f....... 2020-01-02-120000/Root/fX',
+                          '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
+                          '.L....... 2020-01-02-120000/Root/ln2 -> fX',
+                          '.d....... 2020-01-02-120000/Root/par!',
+                          '.f....... 2020-01-02-120000/Root/par!/f_\\r \\xc2\\xa9',
+                          '.d....... 2020-01-04-120000',
+                          '.d....... 2020-01-04-120000/.metadata',
+                          '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-04-120000/Root',
+                          '.f....... 2020-01-04-120000/Root/f7',
+                          '.f....... 2020-01-04-120000/Root/fX',
+                          '.L....... 2020-01-04-120000/Root/ln2 -> fT',
+                          '.d....... 2020-01-04-120000/Root/par!',
+                          '.f....... 2020-01-04-120000/Root/par!/f4',
+                          '.f....... 2020-01-04-120000/Root/par!/f_\\r \\xc2\\xa9',
+                          '.d....... 2020-01-04-120000/Root/par2',
+                          '.f....... 2020-01-04-120000/Root/par2/f5',
+                          '.d....... 2020-01-05-120000',
+                          '.d....... 2020-01-05-120000/.metadata',
+                          '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-05-120000/Root',
+                          '.f....... 2020-01-05-120000/Root/f7',
+                          '.f....... 2020-01-05-120000/Root/fX',
+                          '.L....... 2020-01-05-120000/Root/ln2 -> fT',
+                          '.d....... 2020-01-05-120000/Root/par!',
+                          '.f....... 2020-01-05-120000/Root/par!/f4',
+                          '.f....... 2020-01-05-120000/Root/par!/f_\\r \\xc2\\xa9',
+                          '.d....... 2020-01-05-120000/Root/par2',
+                          '.f....... 2020-01-05-120000/Root/par2/f5',
+                          '.f....... 2020-01-05-120000/Root/par2/f9'])
 
-      backup4 = extracted_manager.GetBackup('2020-01-04-120000')
-      backup5 = extracted_manager.GetBackup('2020-01-05-120000')
-      AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'par2/f5')).st_ino,
-                   os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f5')).st_ino)
-      AssertNotEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
-                      os.lstat(os.path.join(backup5.GetDiskPath(), 'f7')).st_ino)
-      AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
-                   os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f9')).st_ino)
-    finally:
-      extracted_manager.Close()
+        backup4 = extracted_manager.GetBackup('2020-01-04-120000')
+        backup5 = extracted_manager.GetBackup('2020-01-05-120000')
+        AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'par2/f5')).st_ino,
+                     os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f5')).st_ino)
+        AssertNotEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
+                        os.lstat(os.path.join(backup5.GetDiskPath(), 'f7')).st_ino)
+        AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
+                     os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f9')).st_ino)
+      finally:
+        extracted_manager.Close()
 
 
 def MergeIntoBackupsTest():
-  with TempDir() as test_dir:
-    config = CreateConfig(test_dir)
-    CreateBackupsBundle(config)
-    CreateLatestManifestCheckpoint(config)
+  with SetLogThrottlerLogAlways(backups_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+    with TempDir() as test_dir:
+      config = CreateConfig(test_dir)
+      CreateBackupsBundle(config)
+      CreateLatestManifestCheckpoint(config)
 
-    c1_file1 = CreateFile(config.src_path, 'f1')
-    c1_fileX = CreateFile(config.src_path, 'fX')
-    c1_parent1 = CreateDir(config.src_path, 'par')
-    c1_file2 = CreateFile(c1_parent1, 'f2')
-    c1_ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
-    c1_ln2 = CreateSymlink(config.src_path, 'ln2', 'fX')
+      c1_file1 = CreateFile(config.src_path, 'f1')
+      c1_fileX = CreateFile(config.src_path, 'fX')
+      c1_parent1 = CreateDir(config.src_path, 'par')
+      c1_file2 = CreateFile(c1_parent1, 'f2')
+      c1_ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
+      c1_ln2 = CreateSymlink(config.src_path, 'ln2', 'fX')
 
-    DoCreateBackup(
-      config, backup_name='2020-01-02-120000',
-      expected_output=['*deleting fT',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par',
-                       '>f+++++++ par/f2',
-                       'Transferring 4 of 7 paths (0b of 0b)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-02-120000',
+        expected_output=['*deleting fT',
+                         '>L+++++++ ln1 -> INVALID',
+                         '>L+++++++ ln2 -> fX',
+                         '>d+++++++ par',
+                         '>f+++++++ par/f2',
+                         'Transferring 4 of 7 paths (0b of 0b)'])
 
-    c1_file3_to = CreateFile(c1_parent1, 'f3_to', contents='1'*1025)
-    c1_file9_to = CreateFile(c1_parent1, 'f9_to', contents='4'*1025)
+      c1_file3_to = CreateFile(c1_parent1, 'f3_to', contents='1'*1025)
+      c1_file9_to = CreateFile(c1_parent1, 'f9_to', contents='4'*1025)
 
-    DoCreateBackup(
-      config, backup_name='2020-01-04-120000',
-      expected_output=['>f+++++++ par/f3_to',
-                       '>f+++++++ par/f9_to',
-                       'Transferring 2 of 9 paths (2kb of 2kb)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-04-120000',
+        expected_output=['>f+++++++ par/f3_to',
+                         '>f+++++++ par/f9_to',
+                         'Transferring 2 of 9 paths (2kb of 2kb)'])
 
-    c1_file4_to = CreateFile(c1_parent1, 'f4_to', contents='2'*1025)
-    c1_file5_both = CreateFile(c1_parent1, 'f5_both', contents='3'*1025)
+      c1_file4_to = CreateFile(c1_parent1, 'f4_to', contents='2'*1025)
+      c1_file5_both = CreateFile(c1_parent1, 'f5_both', contents='3'*1025)
 
-    DoCreateBackup(
-      config, backup_name='2020-01-05-120000',
-      expected_output=['>f+++++++ par/f4_to',
-                       '>f+++++++ par/f5_both',
-                       'Transferring 2 of 11 paths (2kb of 4kb)'])
+      DoCreateBackup(
+        config, backup_name='2020-01-05-120000',
+        expected_output=['>f+++++++ par/f4_to',
+                         '>f+++++++ par/f5_both',
+                         'Transferring 2 of 11 paths (2kb of 4kb)'])
 
-    DoApplyToBackups(config, expected_output=None)
+      DoApplyToBackups(config, expected_output=None)
 
-    config2 = CreateConfig(test_dir, backups_filename_prefix='backups2')
-    CreateBackupsBundle(config2)
-    CreateLatestManifestCheckpoint(config2)
+      config2 = CreateConfig(test_dir, backups_filename_prefix='backups2')
+      CreateBackupsBundle(config2)
+      CreateLatestManifestCheckpoint(config2)
 
-    c2_fileX = CreateFile(config2.src_path, 'fX')
-    c2_parent1 = CreateDir(config2.src_path, 'par')
-    c2_file2 = CreateFile(c2_parent1, 'f2')
-    c2_ln1 = CreateSymlink(config2.src_path, 'ln1', 'INVALID')
-    c2_ln2 = CreateSymlink(config2.src_path, 'ln2', 'fX')
+      c2_fileX = CreateFile(config2.src_path, 'fX')
+      c2_parent1 = CreateDir(config2.src_path, 'par')
+      c2_file2 = CreateFile(c2_parent1, 'f2')
+      c2_ln1 = CreateSymlink(config2.src_path, 'ln1', 'INVALID')
+      c2_ln2 = CreateSymlink(config2.src_path, 'ln2', 'fX')
 
-    c2_file6_from = CreateFile(c2_parent1, 'f6_from', contents='4'*1025)
+      c2_file6_from = CreateFile(c2_parent1, 'f6_from', contents='4'*1025)
 
-    DoCreateBackup(
-      config2, backup_name='2020-01-03-120000',
-      expected_output=['*deleting f1',
-                       '*deleting fT',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par',
-                       '>f+++++++ par/f2',
-                       '>f+++++++ par/f6_from',
-                       'Transferring 5 of 7 paths (1kb of 1kb)'])
+      DoCreateBackup(
+        config2, backup_name='2020-01-03-120000',
+        expected_output=['*deleting f1',
+                         '*deleting fT',
+                         '>L+++++++ ln1 -> INVALID',
+                         '>L+++++++ ln2 -> fX',
+                         '>d+++++++ par',
+                         '>f+++++++ par/f2',
+                         '>f+++++++ par/f6_from',
+                         'Transferring 5 of 7 paths (1kb of 1kb)'])
 
-    c2_file7_from = CreateFile(c2_parent1, 'f7_from', contents='5'*1025)
-    c2_file5_both = CreateFile(c2_parent1, 'f5_both', contents='3'*1025)
-    c2_file8_from = CreateFile(c2_parent1, 'f8_from', contents='1'*1025)
+      c2_file7_from = CreateFile(c2_parent1, 'f7_from', contents='5'*1025)
+      c2_file5_both = CreateFile(c2_parent1, 'f5_both', contents='3'*1025)
+      c2_file8_from = CreateFile(c2_parent1, 'f8_from', contents='1'*1025)
 
-    DoCreateBackup(
-      config2, backup_name='2020-01-05-120000',
-      expected_output=['>f+++++++ par/f5_both',
-                       '>f+++++++ par/f7_from',
-                       '>f+++++++ par/f8_from',
-                       'Transferring 3 of 10 paths (3kb of 4kb)'])
+      DoCreateBackup(
+        config2, backup_name='2020-01-05-120000',
+        expected_output=['>f+++++++ par/f5_both',
+                         '>f+++++++ par/f7_from',
+                         '>f+++++++ par/f8_from',
+                         'Transferring 3 of 10 paths (3kb of 4kb)'])
 
-    DoApplyToBackups(config2, expected_output=None)
+      DoApplyToBackups(config2, expected_output=None)
 
-    backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
-    try:
-      backup3 = backups_manager2.GetBackup('2020-01-03-120000')
-      c2_metadata3_parent = CreateDir(backup3.GetMetadataPath(), 'metapar')
-      CreateFile(c2_metadata3_parent, 'other_metadata.json', contents='meta')
-    finally:
-      backups_manager2.Close()
+      backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+      try:
+        backup3 = backups_manager2.GetBackup('2020-01-03-120000')
+        c2_metadata3_parent = CreateDir(backup3.GetMetadataPath(), 'metapar')
+        CreateFile(c2_metadata3_parent, 'other_metadata.json', contents='meta')
+      finally:
+        backups_manager2.Close()
 
-    DoMergeIntoBackups(
-      config, dry_run=True,
-      from_image_path=config2.image_path,
-      expected_output=[
-        'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 4 total in source, 4 total in result',
-        'Backup 2020-01-02-120000: existing retained.',
-        'Backup 2020-01-03-120000: importing new...',
-        '*deleting f1',
-        '>f+++++++ par/f6_from',
-        'Paths: 7 copied, 2 hard links, 7 total',
-        'Backup 2020-01-04-120000: existing retained.',
-        'Backup 2020-01-05-120000: merging...',
-        '>f+++++++ par/f4_to',
-        '>f+++++++ par/f5_both',
-        '>f+++++++ par/f6_from',
-        '  duplicate to par/f9_to (size=1kb)',
-        '>f+++++++ par/f7_from',
-        '>f+++++++ par/f8_from',
-        '  duplicate to par/f3_to (size=1kb)',
-        'Paths: 3 copied, 2 hard links, 2 duplicates, 10 total in source, 14 total in result'])
+      DoMergeIntoBackups(
+        config, dry_run=True,
+        from_image_path=config2.image_path,
+        expected_output=[
+          'Backup 2020-01-01-120000: merging...',
+          'Backup 2020-01-02-120000: existing retained.',
+          'Backup 2020-01-03-120000: importing new...',
+          '*deleting f1',
+          '>f+++++++ par/f6_from',
+          'Copying paths: 7 to copy, 2 to hard link, 7 total in source, 7 total in result...',
+          'Backup 2020-01-04-120000: existing retained.',
+          'Backup 2020-01-05-120000: merging...',
+          '>f+++++++ par/f4_to',
+          '>f+++++++ par/f5_both',
+          '>f+++++++ par/f6_from',
+          '  duplicate to par/f9_to (size=1kb)',
+          '>f+++++++ par/f7_from',
+          '>f+++++++ par/f8_from',
+          '  duplicate to par/f3_to (size=1kb)',
+          'Copying paths: 3 to copy, 2 to hard link, 2 to duplicate, 10 total in source, 14 total in result...'])
 
-    DoMergeIntoBackups(
-      config,
-      from_image_path=config2.image_path,
-      expected_output=[
-        'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 4 total in source, 4 total in result',
-        'Backup 2020-01-02-120000: existing retained.',
-        'Backup 2020-01-03-120000: importing new...',
-        '*deleting f1',
-        '>f+++++++ par/f6_from',
-        'Verifying 2020-01-03-120000...',
-        'Paths: 7 copied, 2 hard links, 7 total',
-        'Backup 2020-01-04-120000: existing retained.',
-        'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
-        'Duplicate path par/f9_to (size=1kb) to:',
-        '  par/f6_from',
-        'Duplicates: 1 new (size=1kb); 2 large files',
-        'Backup 2020-01-05-120000: merging...',
-        '>f+++++++ par/f4_to',
-        '>f+++++++ par/f5_both',
-        '>f+++++++ par/f6_from',
-        '  duplicate to par/f9_to (size=1kb)',
-        '>f+++++++ par/f7_from',
-        '>f+++++++ par/f8_from',
-        '  duplicate to par/f3_to (size=1kb)',
-        'Verifying 2020-01-05-120000...',
-        'Paths: 3 copied, 2 hard links, 2 duplicates, 10 total in source, 14 total in result'])
-    DoMergeIntoBackups(
-      config,
-      from_image_path=config2.image_path,
-      expected_output=[
-        'Backup 2020-01-01-120000: merging...',
-        'Paths: 0 copied, 4 total in source, 4 total in result',
-        'Backup 2020-01-02-120000: existing retained.',
-        'Backup 2020-01-03-120000: merging...',
-        'Paths: 0 copied, 7 total in source, 7 total in result',
-        'Backup 2020-01-04-120000: existing retained.',
-        'Backup 2020-01-05-120000: merging...',
-        'Paths: 0 copied, 10 total in source, 14 total in result'])
+      DoMergeIntoBackups(
+        config,
+        from_image_path=config2.image_path,
+        expected_output=[
+          'Backup 2020-01-01-120000: merging...',
+          'Backup 2020-01-02-120000: existing retained.',
+          'Backup 2020-01-03-120000: importing new...',
+          '*deleting f1',
+          '>f+++++++ par/f6_from',
+          'Copying paths: 7 to copy, 2 to hard link, 7 total in source, 7 total in result...',
+          '1/2 hard links remaining (50%)...',
+          'Verifying 2020-01-03-120000...',
+          'Backup 2020-01-04-120000: existing retained.',
+          'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
+          'Duplicate path par/f9_to (size=1kb) to:',
+          '  par/f6_from',
+          'Duplicates: 1 new (size=1kb); 2 large files',
+          'Backup 2020-01-05-120000: merging...',
+          '>f+++++++ par/f4_to',
+          '>f+++++++ par/f5_both',
+          '>f+++++++ par/f6_from',
+          '  duplicate to par/f9_to (size=1kb)',
+          '>f+++++++ par/f7_from',
+          '>f+++++++ par/f8_from',
+          '  duplicate to par/f3_to (size=1kb)',
+          'Copying paths: 3 to copy, 2 to hard link, 2 to duplicate, 10 total in source, 14 total in result...',
+          '1/2 hard links remaining (50%)...',
+          'Verifying 2020-01-05-120000...'])
+      DoMergeIntoBackups(
+        config,
+        from_image_path=config2.image_path,
+        expected_output=[
+          'Backup 2020-01-01-120000: merging...',
+          'Backup 2020-01-02-120000: existing retained.',
+          'Backup 2020-01-03-120000: merging...',
+          'Backup 2020-01-04-120000: existing retained.',
+          'Backup 2020-01-05-120000: merging...'])
 
-    DoVerifyBackups(
-      config,
-      expected_output=None)
+      DoVerifyBackups(
+        config,
+        expected_output=None)
 
-    backups_manager = backups_lib.BackupsManager.Open(config, readonly=True, browseable=False)
-    try:
-      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                       ['.d....... .',
-                        '.d....... 2020-01-01-120000',
-                        '.d....... 2020-01-01-120000/.metadata',
-                        '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-01-120000/Root',
-                        '.f....... 2020-01-01-120000/Root/f1',
-                        '.f....... 2020-01-01-120000/Root/fT',
-                        '.f....... 2020-01-01-120000/Root/fX',
-                        '.d....... 2020-01-02-120000',
-                        '.d....... 2020-01-02-120000/.metadata',
-                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-02-120000/Root',
-                        '.f....... 2020-01-02-120000/Root/f1',
-                        '.f....... 2020-01-02-120000/Root/fX',
-                        '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
-                        '.L....... 2020-01-02-120000/Root/ln2 -> fX',
-                        '.d....... 2020-01-02-120000/Root/par',
-                        '.f....... 2020-01-02-120000/Root/par/f2',
-                        '.d....... 2020-01-03-120000',
-                        '.d....... 2020-01-03-120000/.metadata',
-                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-03-120000/.metadata/metapar',
-                        '.f....... 2020-01-03-120000/.metadata/metapar/other_metadata.json',
-                        '.d....... 2020-01-03-120000/Root',
-                        '.f....... 2020-01-03-120000/Root/fX',
-                        '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
-                        '.L....... 2020-01-03-120000/Root/ln2 -> fX',
-                        '.d....... 2020-01-03-120000/Root/par',
-                        '.f....... 2020-01-03-120000/Root/par/f2',
-                        '.f....... 2020-01-03-120000/Root/par/f6_from',
-                        '.d....... 2020-01-04-120000',
-                        '.d....... 2020-01-04-120000/.metadata',
-                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-04-120000/Root',
-                        '.f....... 2020-01-04-120000/Root/f1',
-                        '.f....... 2020-01-04-120000/Root/fX',
-                        '.L....... 2020-01-04-120000/Root/ln1 -> INVALID',
-                        '.L....... 2020-01-04-120000/Root/ln2 -> fX',
-                        '.d....... 2020-01-04-120000/Root/par',
-                        '.f....... 2020-01-04-120000/Root/par/f2',
-                        '.f....... 2020-01-04-120000/Root/par/f3_to',
-                        '.f....... 2020-01-04-120000/Root/par/f9_to',
-                        '.d....... 2020-01-05-120000',
-                        '.d....... 2020-01-05-120000/.metadata',
-                        '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-05-120000/Root',
-                        '.f....... 2020-01-05-120000/Root/f1',
-                        '.f....... 2020-01-05-120000/Root/fX',
-                        '.L....... 2020-01-05-120000/Root/ln1 -> INVALID',
-                        '.L....... 2020-01-05-120000/Root/ln2 -> fX',
-                        '.d....... 2020-01-05-120000/Root/par',
-                        '.f....... 2020-01-05-120000/Root/par/f2',
-                        '.f....... 2020-01-05-120000/Root/par/f3_to',
-                        '.f....... 2020-01-05-120000/Root/par/f4_to',
-                        '.f....... 2020-01-05-120000/Root/par/f5_both',
-                        '.f....... 2020-01-05-120000/Root/par/f6_from',
-                        '.f....... 2020-01-05-120000/Root/par/f7_from',
-                        '.f....... 2020-01-05-120000/Root/par/f8_from',
-                        '.f....... 2020-01-05-120000/Root/par/f9_to',
-                        '.L....... Latest -> 2020-01-05-120000'])
-    finally:
-      backups_manager.Close()
+      backups_manager = backups_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+      try:
+        AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                         ['.d....... .',
+                          '.d....... 2020-01-01-120000',
+                          '.d....... 2020-01-01-120000/.metadata',
+                          '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-01-120000/Root',
+                          '.f....... 2020-01-01-120000/Root/f1',
+                          '.f....... 2020-01-01-120000/Root/fT',
+                          '.f....... 2020-01-01-120000/Root/fX',
+                          '.d....... 2020-01-02-120000',
+                          '.d....... 2020-01-02-120000/.metadata',
+                          '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-02-120000/Root',
+                          '.f....... 2020-01-02-120000/Root/f1',
+                          '.f....... 2020-01-02-120000/Root/fX',
+                          '.L....... 2020-01-02-120000/Root/ln1 -> INVALID',
+                          '.L....... 2020-01-02-120000/Root/ln2 -> fX',
+                          '.d....... 2020-01-02-120000/Root/par',
+                          '.f....... 2020-01-02-120000/Root/par/f2',
+                          '.d....... 2020-01-03-120000',
+                          '.d....... 2020-01-03-120000/.metadata',
+                          '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-03-120000/.metadata/metapar',
+                          '.f....... 2020-01-03-120000/.metadata/metapar/other_metadata.json',
+                          '.d....... 2020-01-03-120000/Root',
+                          '.f....... 2020-01-03-120000/Root/fX',
+                          '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
+                          '.L....... 2020-01-03-120000/Root/ln2 -> fX',
+                          '.d....... 2020-01-03-120000/Root/par',
+                          '.f....... 2020-01-03-120000/Root/par/f2',
+                          '.f....... 2020-01-03-120000/Root/par/f6_from',
+                          '.d....... 2020-01-04-120000',
+                          '.d....... 2020-01-04-120000/.metadata',
+                          '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-04-120000/Root',
+                          '.f....... 2020-01-04-120000/Root/f1',
+                          '.f....... 2020-01-04-120000/Root/fX',
+                          '.L....... 2020-01-04-120000/Root/ln1 -> INVALID',
+                          '.L....... 2020-01-04-120000/Root/ln2 -> fX',
+                          '.d....... 2020-01-04-120000/Root/par',
+                          '.f....... 2020-01-04-120000/Root/par/f2',
+                          '.f....... 2020-01-04-120000/Root/par/f3_to',
+                          '.f....... 2020-01-04-120000/Root/par/f9_to',
+                          '.d....... 2020-01-05-120000',
+                          '.d....... 2020-01-05-120000/.metadata',
+                          '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+                          '.d....... 2020-01-05-120000/Root',
+                          '.f....... 2020-01-05-120000/Root/f1',
+                          '.f....... 2020-01-05-120000/Root/fX',
+                          '.L....... 2020-01-05-120000/Root/ln1 -> INVALID',
+                          '.L....... 2020-01-05-120000/Root/ln2 -> fX',
+                          '.d....... 2020-01-05-120000/Root/par',
+                          '.f....... 2020-01-05-120000/Root/par/f2',
+                          '.f....... 2020-01-05-120000/Root/par/f3_to',
+                          '.f....... 2020-01-05-120000/Root/par/f4_to',
+                          '.f....... 2020-01-05-120000/Root/par/f5_both',
+                          '.f....... 2020-01-05-120000/Root/par/f6_from',
+                          '.f....... 2020-01-05-120000/Root/par/f7_from',
+                          '.f....... 2020-01-05-120000/Root/par/f8_from',
+                          '.f....... 2020-01-05-120000/Root/par/f9_to',
+                          '.L....... Latest -> 2020-01-05-120000'])
+      finally:
+        backups_manager.Close()
 
-    backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
-    try:
-      backup5 = backups_manager2.GetBackup('2020-01-05-120000')
-      manifest = lib.Manifest(backup5.GetManifestPath())
-      manifest.Read()
+      backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+      try:
+        backup5 = backups_manager2.GetBackup('2020-01-05-120000')
+        manifest = lib.Manifest(backup5.GetManifestPath())
+        manifest.Read()
 
-      file5_path = 'par/f5_both'
-      file5_full_path = os.path.join(backup5.GetDiskPath(), file5_path)
-      file7_path = 'par/f7_from'
-      file7_full_path = os.path.join(backup5.GetDiskPath(), file7_path)
-      xattr.setxattr(file5_full_path, 'example', 'v1')
-      xattr.setxattr(file7_full_path, 'example', 'v1')
+        file5_path = 'par/f5_both'
+        file5_full_path = os.path.join(backup5.GetDiskPath(), file5_path)
+        file7_path = 'par/f7_from'
+        file7_full_path = os.path.join(backup5.GetDiskPath(), file7_path)
+        xattr.setxattr(file5_full_path, 'example', 'v1')
+        xattr.setxattr(file7_full_path, 'example', 'v1')
 
-      manifest.AddPathInfo(
-        lib.PathInfo.FromPath(file5_path, file5_full_path), allow_replace=True)
-      manifest.AddPathInfo(
-        lib.PathInfo.FromPath(file7_path, file7_full_path), allow_replace=True)
-      manifest.Write()
-    finally:
-      backups_manager2.Close()
+        manifest.AddPathInfo(
+          lib.PathInfo.FromPath(file5_path, file5_full_path), allow_replace=True)
+        manifest.AddPathInfo(
+          lib.PathInfo.FromPath(file7_path, file7_full_path), allow_replace=True)
+        manifest.Write()
+      finally:
+        backups_manager2.Close()
 
-    DoMergeIntoBackups(
-      config,
-      from_image_path=config2.image_path,
-      expected_success=False,
-      expected_output=['Backup 2020-01-01-120000: merging...',
-                       'Paths: 0 copied, 4 total in source, 4 total in result',
-                       'Backup 2020-01-02-120000: existing retained.',
-                       'Backup 2020-01-03-120000: merging...',
-                       'Paths: 0 copied, 7 total in source, 7 total in result',
-                       'Backup 2020-01-04-120000: existing retained.',
-                       'Backup 2020-01-05-120000: merging...',
-                       '*** Error: Failed to copy paths: found mismatched existing paths:',
-                       '.f......x par/f5_both',
-                       '.f......x par/f7_from'])
+      DoMergeIntoBackups(
+        config,
+        from_image_path=config2.image_path,
+        expected_success=False,
+        expected_output=['Backup 2020-01-01-120000: merging...',
+                         'Backup 2020-01-02-120000: existing retained.',
+                         'Backup 2020-01-03-120000: merging...',
+                         'Backup 2020-01-04-120000: existing retained.',
+                         'Backup 2020-01-05-120000: merging...',
+                         '*** Error: Failed to copy paths: found mismatched existing paths:',
+                         '.f......x par/f5_both',
+                         '.f......x par/f7_from'])
 
 
 def DeleteInBackupsTest():

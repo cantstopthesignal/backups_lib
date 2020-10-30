@@ -109,6 +109,16 @@ def SetUniqueFilesMaxCounts(new_max_dup_find_count=10, new_max_dup_printout_coun
     backups_lib.UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT = old_printout_value
 
 
+@contextlib.contextmanager
+def SetLogThrottlerLogAlways(log_throttler):
+  old_value = log_throttler.GetLogAlways()
+  log_throttler.SetLogAlways(True)
+  try:
+    yield
+  finally:
+    log_throttler.SetLogAlways(old_value)
+
+
 def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
                        last_checkpoint_path=None, filter_merge_path=None):
   args = ['create',
