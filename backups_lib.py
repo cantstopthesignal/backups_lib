@@ -1701,7 +1701,10 @@ class PathsFromBackupsExtractor(object):
       if self.extracted_manager is not None:
         self.extracted_manager.Close()
         if not success:
-          shutil.rmtree(self.output_image_path)
+          if os.path.isdir(self.output_image_path):
+            shutil.rmtree(self.output_image_path)
+          else:
+            os.unlink(self.output_image_path)
 
   def _ExtractPathsInternal(self):
     backups_manager = BackupsManager.Open(
