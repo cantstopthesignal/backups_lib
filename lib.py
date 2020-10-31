@@ -1053,10 +1053,10 @@ class ItemizedPathChange:
     self.xattr_diff = xattr_diff
     self.link_dest = link_dest
 
-  def HasDiffs(self):
-    if not IGNORE_UID_DIFFS and self.uid_diff:
+  def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS):
+    if not ignore_uid_diffs and self.uid_diff:
       return True
-    if not IGNORE_GID_DIFFS and self.gid_diff:
+    if not ignore_gid_diffs and self.gid_diff:
       return True
     return (self.new_path or self.replace_path or self.delete_path or self.error_path
             or self.checksum_diff or self.size_diff or self.time_diff or self.permission_diff
@@ -1366,7 +1366,8 @@ class Manifest(object):
       itemizeds.append(itemized)
     return itemizeds
 
-  def GetDiffItemized(self, other_manifest, include_matching=False):
+  def GetDiffItemized(self, other_manifest, include_matching=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
+                      ignore_gid_diffs=IGNORE_GID_DIFFS):
     itemized_results = []
     all_paths = set(self.path_map.keys())
     all_paths.update(other_manifest.path_map.keys())
@@ -1375,13 +1376,16 @@ class Manifest(object):
       path_info = self.path_map.get(path)
 
       itemized = PathInfo.GetItemizedDiff(path_info, other_path_info)
-      has_diffs = itemized.HasDiffs()
+      has_diffs = itemized.HasDiffs(ignore_uid_diffs=ignore_uid_diffs, ignore_gid_diffs=ignore_gid_diffs)
       if has_diffs or include_matching:
         itemized_results.append(itemized)
     return itemized_results
 
-  def DumpDiff(self, other_manifest, output, verbose=False):
-    for itemized in self.GetDiffItemized(other_manifest, include_matching=verbose):
+  def DumpDiff(self, other_manifest, output, verbose=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
+               ignore_gid_diffs=IGNORE_GID_DIFFS):
+    for itemized in self.GetDiffItemized(
+        other_manifest, include_matching=verbose, ignore_uid_diffs=ignore_uid_diffs,
+        ignore_gid_diffs=ignore_gid_diffs):
       print >>output, itemized
 
   def CreateSha256ToPathInfosMap(self, min_file_size=1):
@@ -2120,6 +2124,14 @@ def DoDiffManifests(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('first_path', metavar='first_manifest_or_checkpoint_path')
   parser.add_argument('second_path', metavar='second_manifest_or_checkpoint_path')
+  if IGNORE_UID_DIFFS:
+    parser.add_argument('--no-ignore-uid-diffs', dest='ignore_uid_diffs', action='store_false')
+  else:
+    parser.add_argument('--ignore-uid-diffs', dest='ignore_uid_diffs', action='store_true')
+  if IGNORE_GID_DIFFS:
+    parser.add_argument('--no-ignore-gid-diffs', dest='ignore_gid_diffs', action='store_false')
+  else:
+    parser.add_argument('--ignore-gid-diffs', dest='ignore_gid_diffs', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
   encryption_manager = EncryptionManager()
@@ -2128,7 +2140,8 @@ def DoDiffManifests(args, output):
     cmd_args.first_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   second_manifest = ReadManifestFromCheckpointOrPath(
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
-  second_manifest.DumpDiff(first_manifest, output, verbose=args.verbose)
+  second_manifest.DumpDiff(first_manifest, output, verbose=args.verbose, ignore_uid_diffs=cmd_args.ignore_uid_diffs,
+                           ignore_gid_diffs=cmd_args.ignore_gid_diffs)
   return True
 
 
