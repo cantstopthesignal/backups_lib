@@ -12,18 +12,17 @@ import xattr
 
 import backups_lib
 import lib
-import main
 
 from test_util import AssertEquals
 from test_util import AssertLinesEqual
 from test_util import AssertNotEquals
-from test_util import DoMain
 from test_util import CreateDir
 from test_util import CreateDirs
 from test_util import CreateFile
 from test_util import CreateSymlink
 from test_util import DeleteFileOrDir
 from test_util import SetMTime
+from test_util import SetPacificTimezone
 from test_util import TempDir
 
 from lib_test_util import GetFileTreeManifest
@@ -2200,5 +2199,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('tests', nargs='*', default=[])
   args = parser.parse_args()
+
+  SetPacificTimezone()
 
   Test(tests=args.tests)

@@ -6,7 +6,7 @@ import os
 import time
 import subprocess
 
-import main
+import backups_main
 
 
 @contextlib.contextmanager
@@ -118,7 +118,12 @@ def DeleteFileOrDir(path):
   SetMTime(parent_dir, parent_mtime)
 
 
-def DoMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
+def SetPacificTimezone():
+  os.environ['TZ'] = 'US/Pacific'
+  time.tzset()
+
+
+def DoBackupsMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
   args = []
   if dry_run:
     args.append('--dry-run')
@@ -127,7 +132,7 @@ def DoMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expect
   args.extend(cmd_args)
   output = StringIO.StringIO()
   try:
-    success = main.Main(args, output)
+    success = backups_main.Main(args, output)
   except:
     print output.getvalue().rstrip()
     raise

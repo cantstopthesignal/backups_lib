@@ -13,7 +13,7 @@ import time
 import xattr
 
 import lib
-import main
+import backups_main
 
 from test_util import AssertEquals
 from test_util import AssertLinesEqual
@@ -22,8 +22,9 @@ from test_util import CreateDir
 from test_util import CreateFile
 from test_util import CreateSymlink
 from test_util import DeleteFileOrDir
-from test_util import DoMain
+from test_util import DoBackupsMain
 from test_util import SetMTime
+from test_util import SetPacificTimezone
 from test_util import TempDir
 
 from lib_test_util import GetManifestItemized
@@ -165,7 +166,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
   if filter_merge_path:
     args.extend(['--filter-merge-path', filter_merge_path])
   output = StringIO.StringIO()
-  AssertEquals(main.Main(args, output), True)
+  AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   checkpoint_path = None
   for line in output.getvalue().strip().split('\n'):
@@ -197,7 +198,7 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
                '--src-checkpoint-path', src_checkpoint_path,
                '--dest-root', dest_root])
   output = StringIO.StringIO()
-  AssertEquals(main.Main(args, output), True)
+  AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   for line in output.getvalue().strip().split('\n'):
     if not line:
@@ -214,7 +215,7 @@ def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[])
                '--src-root', src_root,
                manifest_path])
   output = StringIO.StringIO()
-  AssertEquals(main.Main(args, output), expected_success)
+  AssertEquals(backups_main.Main(args, output), expected_success)
   output_lines = []
   for line in output.getvalue().strip().split('\n'):
     if not line:
@@ -232,7 +233,7 @@ def DoStrip(checkpoint_path, defragment=True, defragment_iterations=None,
     cmd_args.append('--no-defragment')
   if defragment_iterations is not None:
     cmd_args.extend(['--defragment-iterations', str(defragment_iterations)])
-  output_lines = DoMain(cmd_args, dry_run=dry_run, expected_output=None)
+  output_lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=None)
   output_lines = CollapseApfsOperationsInOutput(output_lines)
   AssertLinesEqual(output_lines, expected_output)
 
@@ -245,7 +246,7 @@ def DoCompact(checkpoint_path, defragment=True, defragment_iterations=None,
     cmd_args.append('--no-defragment')
   if defragment_iterations is not None:
     cmd_args.extend(['--defragment-iterations', str(defragment_iterations)])
-  output_lines = DoMain(cmd_args, dry_run=dry_run, expected_output=None)
+  output_lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=None)
   output_lines = CollapseApfsOperationsInOutput(output_lines)
   AssertLinesEqual(output_lines, expected_output)
 
@@ -1074,5 +1075,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('tests', nargs='*', default=[])
   args = parser.parse_args()
+
+  SetPacificTimezone()
 
   Test(tests=args.tests)

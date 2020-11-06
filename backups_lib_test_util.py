@@ -5,14 +5,14 @@ import re
 import subprocess
 
 import backups_lib
+import backups_main
 import lib
-import main
 
 from test_util import AssertEquals
 from test_util import AssertLinesEqual
 from test_util import CreateDir
 from test_util import CreateFile
-from test_util import DoMain
+from test_util import DoBackupsMain
 
 
 def CreateConfig(parent_dir, backups_filename_prefix='backups', filter_merge_path=None):
@@ -53,14 +53,14 @@ def CreateLatestManifestCheckpoint(config):
   try:
     last_backup = backups_manager.GetLastDone()
     src_root = last_backup.GetDiskPath()
-    output_lines = DoMain(['create',
-                           '--src-root', src_root,
-                           '--checksum-all',
-                           '--manifest-only',
-                           '--no-encrypt',
-                           '--checkpoint-name', last_backup.GetName(),
-                           '--checkpoints-dir', config.checkpoints_dir],
-                          expected_output=None)
+    output_lines = DoBackupsMain(['create',
+                                  '--src-root', src_root,
+                                  '--checksum-all',
+                                  '--manifest-only',
+                                  '--no-encrypt',
+                                  '--checkpoint-name', last_backup.GetName(),
+                                  '--checkpoints-dir', config.checkpoints_dir],
+                                 expected_output=None)
     m = re.match('^Created checkpoint at (.+)$', output_lines[-1])
     assert m
     checkpoint_path = m.group(1)
@@ -132,7 +132,7 @@ def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_outp
   if filter_merge_path is not None:
     args.extend(['--filter-merge-path', filter_merge_path])
   output = StringIO.StringIO()
-  AssertEquals(main.Main(args, output), True)
+  AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   checkpoint_path = None
   for line in output.getvalue().strip().split('\n'):
@@ -152,7 +152,7 @@ def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[]):
               '--backups-config', config.path]
   if backup_name is not None:
     cmd_args.extend(['--backup-name', backup_name])
-  lines = DoMain(cmd_args, dry_run=dry_run, expected_output=None)
+  lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=None)
   checkpoint_path = None
   output_lines = []
   for line in lines:
@@ -168,14 +168,14 @@ def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[]):
 def DoApplyToBackups(config, dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['apply-to-backups',
               '--backups-config', config.path]
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoListBackups(config, dry_run=False, expected_backups=[]):
   cmd_args = ['list-backups',
               '--backups-config', config.path]
-  DoMain(cmd_args, dry_run=dry_run, expected_output=expected_backups)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=expected_backups)
 
 
 def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
@@ -191,14 +191,14 @@ def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
     cmd_args.append('--no-full')
   if continue_on_error:
     cmd_args.append('--continue-on-error')
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoAddMissingManifestsToBackups(config, expected_output=[]):
   cmd_args = ['add-missing-manifests-to-backups',
               '--backups-config', config.path]
-  DoMain(cmd_args, expected_output=expected_output)
+  DoBackupsMain(cmd_args, expected_output=expected_output)
 
 
 def DoDeduplicateBackups(
@@ -210,7 +210,7 @@ def DoDeduplicateBackups(
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
     cmd_args.extend(['--max-backup', max_backup])
-  DoMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_output=expected_output)
 
 
 def DoPruneBackups(config, dry_run=False, did_prune=True, expected_output=[]):
@@ -222,23 +222,23 @@ def DoPruneBackups(config, dry_run=False, did_prune=True, expected_output=[]):
       'Reclaiming free space\xe2\x80\xa6',
       'Finishing compaction\xe2\x80\xa6',
       re.compile('^Reclaimed .* out of .* possible[.]$')]
-  DoMain(cmd_args, dry_run=dry_run, expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=expected_output)
 
 
 def DoCloneBackup(config, backup_name, dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['clone-backup',
               '--backups-config', config.path,
               '--backup-name', backup_name]
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoDeleteBackup(config, backup_name, dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['delete-backup',
               '--backups-config', config.path,
               '--backup-name', backup_name]
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoDumpUniqueFilesInBackups(config, backup_name=None, min_backup=None, max_backup=None,
@@ -257,8 +257,8 @@ def DoDumpUniqueFilesInBackups(config, backup_name=None, min_backup=None, max_ba
     cmd_args.append('--ignore-matching-renames')
   if match_previous_only:
     cmd_args.append('--match-previous-only')
-  DoMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoExtractFromBackups(config, dry_run=False, min_backup=None, max_backup=None,
@@ -276,8 +276,8 @@ def DoExtractFromBackups(config, dry_run=False, min_backup=None, max_backup=None
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
     cmd_args.extend(['--max-backup', max_backup])
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoMergeIntoBackups(config, dry_run=False, min_backup=None, max_backup=None,
@@ -292,8 +292,8 @@ def DoMergeIntoBackups(config, dry_run=False, min_backup=None, max_backup=None,
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
     cmd_args.extend(['--max-backup', max_backup])
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoDeleteInBackups(config, dry_run=False, min_backup=None, max_backup=None,
@@ -306,5 +306,5 @@ def DoDeleteInBackups(config, dry_run=False, min_backup=None, max_backup=None,
     cmd_args.extend(['--max-backup', max_backup])
   for path in paths:
     cmd_args.extend(['--path', path])
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)

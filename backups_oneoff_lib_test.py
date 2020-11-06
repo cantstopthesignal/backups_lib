@@ -14,17 +14,17 @@ import xattr
 import backups_lib
 import backups_oneoff_lib
 import lib
-import main
 
 from test_util import AssertEquals
 from test_util import AssertNotEquals
-from test_util import DoMain
 from test_util import CreateDir
 from test_util import CreateDirs
 from test_util import CreateFile
 from test_util import CreateSymlink
 from test_util import DeleteFileOrDir
+from test_util import DoBackupsMain
 from test_util import SetMTime
+from test_util import SetPacificTimezone
 from test_util import TempDir
 
 from lib_test_util import GetManifestItemized
@@ -76,8 +76,8 @@ def DoOneoffUpdateIgnoredXattrsTest(
     cmd_args.extend(['--old-ignored-xattr', xattr_key])
   for xattr_key in new_ignored_xattrs:
     cmd_args.extend(['--new-ignored-xattr', xattr_key])
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def DoOneoffUpdateSomeFiles(
@@ -89,8 +89,8 @@ def DoOneoffUpdateSomeFiles(
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
     cmd_args.extend(['--max-backup', max_backup])
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def OneoffUpdateIgnoredXattrsTest():
@@ -430,5 +430,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('tests', nargs='*', default=[])
   args = parser.parse_args()
+
+  SetPacificTimezone()
 
   Test(tests=args.tests)

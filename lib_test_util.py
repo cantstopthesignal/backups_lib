@@ -1,7 +1,7 @@
 import contextlib
 import lib
 
-from test_util import DoMain
+from test_util import DoBackupsMain
 
 
 def GetManifestItemized(manifest):
@@ -17,8 +17,8 @@ def DoVerifyManifest(src_root, manifest_or_checkpoint_path, dry_run=False,
               '--src-root', src_root,
               manifest_or_checkpoint_path,
               '--checksum-all']
-  DoMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
-         expected_output=expected_output)
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
 
 
 def GetFileTreeManifest(parent_path):
