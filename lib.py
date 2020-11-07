@@ -1290,6 +1290,11 @@ class FileEnumerator(object):
       yield path
 
 
+class ManifestError(Exception):
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+
 class Manifest(object):
   @staticmethod
   def Load(path):
@@ -1309,7 +1314,7 @@ class Manifest(object):
 
   def Read(self):
     if not os.path.isfile(self.path):
-      raise Exception('Manifest file %s should exist' % self.path)
+      raise ManifestError('Manifest file %s should exist' % self.path)
 
     with open(self.path, 'rb') as f:
       pb = staged_backup_pb2.ManifestProto()
@@ -1947,13 +1952,14 @@ class ImageCompactor(object):
 
 
 class ManifestVerifier(object):
-  def __init__(self, manifest, src_root, output, checksum_all=False, verbose=False):
+  def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True, checksum_all=False, verbose=False):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
     self.checksum_all = checksum_all
     self.verbose = verbose
-    self.file_enumerator = FileEnumerator(src_root, output, verbose=verbose)
+    self.manifest_on_top = manifest_on_top
+    self.file_enumerator = FileEnumerator(src_root, output, filters=filters, verbose=verbose)
     self.has_diffs = False
 
   def Verify(self):
@@ -1978,7 +1984,10 @@ class ManifestVerifier(object):
     self.has_diffs = True
 
     itemized = src_path_info.GetItemized()
-    itemized.delete_path = True
+    if self.manifest_on_top:
+      itemized.delete_path = True
+    else:
+      itemized.new_path = True
     print >>self.output, itemized
 
   def _CheckCommonPath(self, path, src_path_info, manifest_path_info):
@@ -2019,7 +2028,10 @@ class ManifestVerifier(object):
       if next_present_path != next_missing_path:
         self.has_diffs = True
         itemized = self.manifest.GetPathInfo(next_missing_path).GetItemized()
-        itemized.new_path = True
+        if self.manifest_on_top:
+          itemized.new_path = True
+        else:
+          itemized.delete_path = True
         print >>self.output, itemized
       del missing_paths[0]
 
