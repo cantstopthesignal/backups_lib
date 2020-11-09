@@ -166,6 +166,7 @@ class ChecksumsSyncer(object):
     self.manifest = None
     self.scan_manifest = None
     self.file_enumerator = lib.FileEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
+    self.escape_key_detector = None
     self.sha256_to_basis_pathinfos = None
     self.size_to_pathinfos = None
     self.total_paths = 0
@@ -187,13 +188,14 @@ class ChecksumsSyncer(object):
     self.manifest.SetPath(GetManifestNewPath(self.basis_manifest.GetPath()))
     self.scan_manifest = lib.Manifest()
 
-    escape_key_detector = lib.EscapeKeyDetector()
+    self.escape_key_detector = lib.EscapeKeyDetector()
     try:
-      self._SyncInternal(escape_key_detector)
-      if not self.interactive and escape_key_detector.WasEscapePressed():
+      self._SyncInternal()
+      if not self.interactive and self.escape_key_detector.WasEscapePressed():
         return False
     finally:
-      escape_key_detector.Shutdown()
+      self.escape_key_detector.Shutdown()
+      self.escape_key_detector = None
 
     self._PrintResults()
 
@@ -213,7 +215,7 @@ class ChecksumsSyncer(object):
 
     return True
 
-  def _SyncInternal(self, escape_key_detector):
+  def _SyncInternal(self):
     existing_paths = self.basis_manifest.GetPaths()
 
     for path in self.file_enumerator.Scan():
@@ -225,7 +227,7 @@ class ChecksumsSyncer(object):
         self.total_size += path_info.size
 
     for path in self.scan_manifest.GetPaths():
-      if escape_key_detector.WasEscapePressed():
+      if self.escape_key_detector.WasEscapePressed():
         print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
         return
 
@@ -244,6 +246,11 @@ class ChecksumsSyncer(object):
   def _HandleExistingPaths(self, existing_paths, next_new_path=None):
     while existing_paths:
       next_existing_path = existing_paths[0]
+
+      if self.escape_key_detector.WasEscapePressed():
+        print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(next_existing_path)
+        return
+
       if next_new_path is not None and next_existing_path > next_new_path:
         break
       if next_new_path != next_existing_path:

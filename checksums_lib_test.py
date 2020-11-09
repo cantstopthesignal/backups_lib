@@ -142,7 +142,7 @@ def SyncTest():
     CreateFile(root_dir, '.DS_Store')
     CreateFile(parent1, '.DS_Store')
 
-    with SetEscapeKeyDetectorCancelAtInvocation(5):
+    with SetEscapeKeyDetectorCancelAtInvocation(14):
       DoSync(
         root_dir, dry_run=True,
         expected_success=False,
@@ -297,7 +297,7 @@ def SyncTest():
                               '*deleting par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
                               'Paths: 7 paths (3kb), 7 mismatched, 3 checksummed (2kb)'])
-    with SetEscapeKeyDetectorCancelAtInvocation(5):
+    with SetEscapeKeyDetectorCancelAtInvocation(15):
       DoSync(
         root_dir, dry_run=True,
         expected_success=False,
@@ -309,7 +309,7 @@ def SyncTest():
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(False)
-      with SetEscapeKeyDetectorCancelAtInvocation(5):
+      with SetEscapeKeyDetectorCancelAtInvocation(15):
         DoSync(
           root_dir, interactive=True,
           expected_success=False,
@@ -324,7 +324,7 @@ def SyncTest():
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(True)
-      with SetEscapeKeyDetectorCancelAtInvocation(5):
+      with SetEscapeKeyDetectorCancelAtInvocation(15):
         DoSync(
           root_dir, interactive=True,
           expected_output=['.d......x .',
