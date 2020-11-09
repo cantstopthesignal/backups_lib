@@ -14,6 +14,14 @@ from test_util import CreateDir
 from test_util import CreateFile
 
 
+@contextlib.contextmanager
+def InteractiveCheckerReadyResults(interactive_checker):
+  try:
+    yield interactive_checker
+  finally:
+    interactive_checker.ClearReadyResults()
+
+
 def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
   args = []
   if dry_run:
@@ -57,9 +65,12 @@ def DoVerify(root_path, dry_run=False, checksum_all=False, expected_success=True
                   expected_output=expected_output)
 
 
-def DoSync(root_path, dry_run=False, checksum_all=False, expected_success=True, expected_output=[]):
+def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, expected_success=True,
+           expected_output=[]):
   cmd_args = ['sync', root_path]
   if checksum_all:
     cmd_args.append('--checksum-all')
+  if interactive:
+    cmd_args.append('--interactive')
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)

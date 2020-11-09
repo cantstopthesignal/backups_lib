@@ -21,6 +21,33 @@ CHECKSUM_FILTERS = [lib.RsyncFilterDirMerge(FILTER_DIR_MERGE_FILENAME),
                     lib.RsyncExclude('.DS_Store')]
 
 
+def GetManifestNewPath(manifest_path):
+  path = '%s.new' % manifest_path
+  assert path.endswith('.pbdata.new')
+  return path
+
+
+class InteractiveChecker:
+  def __init__(self):
+    self.ready_results = []
+
+  def AddReadyResult(self, result):
+    self.ready_results.append(result)
+
+  def ClearReadyResults(self):
+    self.ready_results = []
+
+  def Confirm(self, message, output):
+    if self.ready_results:
+      result = self.ready_results[0]
+      del self.ready_results[0]
+      print >>output, '%s (y/N): %s' % (message, result and 'y' or 'n')
+      return result
+
+    print >>output, '%s (y/N):' % message,
+    return raw_input() == 'y'
+
+
 class ChecksumsError(Exception):
   def __init__(self, message):
     Exception.__init__(self, message)
@@ -104,24 +131,36 @@ class ChecksumsVerifier(object):
       print >>self.output, '*** Error: %s' % e.message
       return False
 
-    verifier = lib.ManifestVerifier(
-      self.checksums.GetManifest(), self.root_path, output=self.output,
-      filters=self.filters, manifest_on_top=False, checksum_all=self.checksum_all, verbose=self.verbose)
-    return verifier.Verify()
+    escape_key_detector = lib.EscapeKeyDetector()
+    try:
+      verifier = lib.ManifestVerifier(
+        self.checksums.GetManifest(), self.root_path, output=self.output,
+        filters=self.filters, manifest_on_top=False, checksum_all=self.checksum_all,
+        escape_key_detector=escape_key_detector, verbose=self.verbose)
+      verify_result = verifier.Verify()
+      stats = verifier.GetStats()
+      print >>self.output, 'Paths: %d paths (%s), %d mismatched, %d checksummed (%s)' % (
+        stats.total_paths, lib.FileSizeToString(stats.total_size), stats.total_mismatched_paths,
+        stats.total_checksummed, lib.FileSizeToString(stats.total_checksummed_size))
+      return verify_result
+    finally:
+      escape_key_detector.Shutdown()
 
 
 class ChecksumsSyncer(object):
-  PRE_SYNC_CONTENTS_TEST_HOOK = None
+  INTERACTIVE_CHECKER = InteractiveChecker()
 
-  def __init__(self, root_path, output, checksum_all=False, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, checksum_all=False, interactive=False, dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output = output
     self.checksum_all = checksum_all
+    self.interactive = interactive
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
+    self.basis_manifest = None
     self.manifest = None
     self.file_enumerator = lib.FileEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
     self.total_paths = 0
@@ -138,21 +177,48 @@ class ChecksumsSyncer(object):
       print >>self.output, '*** Error: %s' % e.message
       return False
 
-    self.manifest = self.checksums.GetManifest()
-    existing_paths = self.manifest.GetPaths()
+    self.basis_manifest = self.checksums.GetManifest()
+    self.manifest = self.basis_manifest.Clone()
+    self.manifest.SetPath(GetManifestNewPath(self.basis_manifest.GetPath()))
+
+    escape_key_detector = lib.EscapeKeyDetector()
+    try:
+      self._SyncInternal(escape_key_detector)
+      if not self.interactive and escape_key_detector.WasEscapePressed():
+        return False
+    finally:
+      escape_key_detector.Shutdown()
+
+    self._PrintResults()
+
+    if self.total_synced_paths:
+      if not self.dry_run:
+        self.manifest.Write()
+
+      if self.interactive:
+        if not ChecksumsSyncer.INTERACTIVE_CHECKER.Confirm('Apply update?', self.output):
+          print >>self.output, '*** Cancelled ***'
+          if not self.dry_run:
+            os.unlink(self.manifest.GetPath())
+          return False
+
+      if not self.dry_run:
+        os.rename(self.manifest.GetPath(), self.basis_manifest.GetPath())
+
+    return True
+
+  def _SyncInternal(self, escape_key_detector):
+    existing_paths = self.basis_manifest.GetPaths()
 
     for path in self.file_enumerator.Scan():
+      if escape_key_detector.WasEscapePressed():
+        print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+        return
+
       self._HandleExistingPaths(existing_paths, next_new_path=path)
       self._SyncPathIfChanged(path)
 
     self._HandleExistingPaths(existing_paths, next_new_path=None)
-
-    if not self.dry_run:
-      self.manifest.Write()
-
-    self._PrintResults()
-
-    return True
 
   def _PrintResults(self):
     if self.total_synced_paths > 0:
@@ -167,7 +233,7 @@ class ChecksumsSyncer(object):
       if next_new_path is not None and next_existing_path > next_new_path:
         break
       if next_new_path != next_existing_path:
-        itemized = self.manifest.GetPathInfo(next_existing_path).GetItemized()
+        itemized = self.basis_manifest.GetPathInfo(next_existing_path).GetItemized()
         itemized.delete_path = True
         print >>self.output, itemized
         self.manifest.RemovePathInfo(next_existing_path)
@@ -180,7 +246,7 @@ class ChecksumsSyncer(object):
     if path_info.size is not None:
       self.total_size += path_info.size
 
-    basis_path_info = self.manifest.GetPathInfo(path)
+    basis_path_info = self.basis_manifest.GetPathInfo(path)
     if basis_path_info is None:
       self._SyncPath(path, full_path, path_info)
       return
@@ -257,11 +323,12 @@ def DoSync(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
   parser.add_argument('--checksum-all', action='store_true')
+  parser.add_argument('--interactive', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
     cmd_args.root_path, output=output, checksum_all=cmd_args.checksum_all,
-    dry_run=args.dry_run, verbose=args.verbose)
+    interactive=cmd_args.interactive, dry_run=args.dry_run, verbose=args.verbose)
   return checksums_syncer.Sync()
 
 

@@ -1359,6 +1359,12 @@ class Manifest(object):
   def GetPathCount(self):
     return len(self.path_map)
 
+  def Clone(self):
+    clone = Manifest(self.path)
+    for path, path_info in self.path_map.items():
+      clone.path_map[path] = path_info.Clone()
+    return clone
+
   def Dump(self, output):
     for path in sorted(self.path_map.keys()):
       print >>output, self.path_map[path]
@@ -1524,7 +1530,7 @@ def ReadManifestFromCheckpointOrPath(path, encryption_manager=None, dry_run=Fals
       return Manifest.Load(os.path.join(checkpoint.GetMetadataPath(), MANIFEST_FILENAME))
     finally:
       checkpoint.Close()
-  elif path.endswith('.pbdata') or path.endswith('.pbdata.bak'):
+  elif path.endswith('.pbdata') or path.endswith('.pbdata.bak') or path.endswith('.pbdata.new'):
     return Manifest.Load(path)
   else:
     raise Exception('Expected a .sparseimage or .pbdata file but got %r', path)
@@ -1951,25 +1957,45 @@ class ImageCompactor(object):
     return True
 
 
+class ManifestVerifierStats(object):
+  def __init__(self):
+    self.total_paths = 0
+    self.total_size = 0
+    self.total_mismatched_paths = 0
+    self.total_checksummed = 0
+    self.total_checksummed_size = 0
+
+
 class ManifestVerifier(object):
-  def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True, checksum_all=False, verbose=False):
+  def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True, checksum_all=False,
+               escape_key_detector=None, verbose=False):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
     self.checksum_all = checksum_all
+    self.escape_key_detector = escape_key_detector
     self.verbose = verbose
     self.manifest_on_top = manifest_on_top
     self.file_enumerator = FileEnumerator(src_root, output, filters=filters, verbose=verbose)
     self.has_diffs = False
+    self.stats = ManifestVerifierStats()
 
   def Verify(self):
     missing_paths = self.manifest.GetPaths()
 
     for path in self.file_enumerator.Scan():
+      if self.escape_key_detector is not None and self.escape_key_detector.WasEscapePressed():
+        print >>self.output, '*** Cancelled at path %s' % EscapePath(path)
+        return False
+
       self._HandleMissingPaths(missing_paths, next_present_path=path)
 
       full_path = os.path.join(self.src_root, path)
       src_path_info = PathInfo.FromPath(path, full_path)
+      self.stats.total_paths += 1
+      if src_path_info.size is not None:
+        self.stats.total_size += src_path_info.size
+
       manifest_path_info = self.manifest.GetPathInfo(path)
       if manifest_path_info is None:
         self._ExtraPath(src_path_info)
@@ -1980,6 +2006,9 @@ class ManifestVerifier(object):
 
     return not self.has_diffs
 
+  def GetStats(self):
+    return self.stats
+
   def _ExtraPath(self, src_path_info):
     self.has_diffs = True
 
@@ -1989,6 +2018,7 @@ class ManifestVerifier(object):
     else:
       itemized.new_path = True
     print >>self.output, itemized
+    self.stats.total_mismatched_paths += 1
 
   def _CheckCommonPath(self, path, src_path_info, manifest_path_info):
     full_path = os.path.join(self.src_root, src_path_info.path)
@@ -2001,6 +2031,8 @@ class ManifestVerifier(object):
       return
     if src_path_info.path_type == PathInfo.TYPE_FILE:
       src_path_info.sha256 = Sha256(full_path)
+      self.stats.total_checksummed += 1
+      self.stats.total_checksummed_size += src_path_info.size
     if src_path_info.sha256 != manifest_path_info.sha256:
       itemized.checksum_diff = True
       itemized.replace_path = True
@@ -2011,6 +2043,7 @@ class ManifestVerifier(object):
       return
 
     print >>self.output, itemized
+    self.stats.total_mismatched_paths += 1
     if self.verbose:
       if src_path_info is not None:
         print >>self.output, '<', src_path_info.ToString(
@@ -2033,6 +2066,7 @@ class ManifestVerifier(object):
         else:
           itemized.delete_path = True
         print >>self.output, itemized
+        self.stats.total_mismatched_paths += 1
       del missing_paths[0]
 
 
