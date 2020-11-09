@@ -74,3 +74,14 @@ def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, expe
     cmd_args.append('--interactive')
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
+
+
+def DoRenamePaths(root_path, path_regex_from=None, path_regex_to=None, dry_run=False, expected_success=True,
+                  expected_output=[]):
+  cmd_args = ['rename-paths', root_path]
+  if path_regex_from is not None:
+    cmd_args.extend(['--path-regex-from', path_regex_from])
+  if path_regex_to is not None:
+    cmd_args.extend(['--path-regex-to', path_regex_to])
+  DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                  expected_output=expected_output)

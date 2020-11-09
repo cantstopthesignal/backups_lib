@@ -30,6 +30,7 @@ from lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 from checksums_lib_test_util import DoCreate
 from checksums_lib_test_util import DoVerify
 from checksums_lib_test_util import DoSync
+from checksums_lib_test_util import DoRenamePaths
 from checksums_lib_test_util import InteractiveCheckerReadyResults
 
 
@@ -350,6 +351,69 @@ def SyncTest():
              expected_output=['Paths: 7 paths (3kb), 0 mismatched, 4 checksummed (3kb)'])
 
 
+def RenamePathsTest():
+  with TempDir() as test_dir:
+    root_dir = CreateDir(test_dir, 'root')
+
+    DoCreate(root_dir, expected_output=None)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='1'*1025)
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+
+    DoSync(
+      root_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       '>f+++++++ par! \\r/f3',
+                       'Paths: 5 synced of 5 paths (2kb of 2kb), 3 checksummed (2kb)'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoRenamePaths(root_dir, dry_run=True,
+                  path_regex_from='f2', path_regex_to='f2_new',
+                  expected_output=['.f....... par! \\r/f2',
+                                   '  renamed to par! \\r/f2_new',
+                                   'Paths: 5 paths, 1 renamed'])
+
+    DoRenamePaths(root_dir, dry_run=True,
+                  path_regex_from='f2', path_regex_to='f3',
+                  expected_success=False,
+                  expected_output=['*** Error: renamed to path par! \\r/f3 already in manifest'])
+
+    DoRenamePaths(root_dir, dry_run=True,
+                  path_regex_from='^par[!] \\r/', path_regex_to='',
+                  expected_output=['.f....... par! \\r/f2',
+                                   '  renamed to f2',
+                                   '.f....... par! \\r/f3',
+                                   '  renamed to f3',
+                                   'Paths: 5 paths, 2 renamed'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoRenamePaths(root_dir, dry_run=False,
+                  path_regex_from='^par[!] \\r/', path_regex_to='',
+                  expected_output=['.f....... par! \\r/f2',
+                                   '  renamed to f2',
+                                   '.f....... par! \\r/f3',
+                                   '  renamed to f3',
+                                   'Paths: 5 paths, 2 renamed'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_success=False,
+             expected_output=['*deleting f2',
+                              '*deleting f3',
+                              '>f+++++++ par! \\r/f2',
+                              '>f+++++++ par! \\r/f3',
+                              'Paths: 5 paths (2kb), 4 mismatched, 1 checksummed (3b)'])
+
+    RenameFile(file2, os.path.join(root_dir, 'f2'))
+    RenameFile(file3, os.path.join(root_dir, 'f3'))
+
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 5 paths (2kb), 0 mismatched, 3 checksummed (2kb)'])
+
+
 def Test(tests=[]):
   if not tests or 'CreateTest' in tests:
     CreateTest()
@@ -357,6 +421,8 @@ def Test(tests=[]):
     VerifyTest()
   if not tests or 'SyncTest' in tests:
     SyncTest()
+  if not tests or 'RenamePathsTest' in tests:
+    RenamePathsTest()
 
 
 if __name__ == '__main__':

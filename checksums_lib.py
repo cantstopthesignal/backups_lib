@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 
 import lib
 
@@ -7,11 +8,13 @@ import lib
 COMMAND_CREATE = 'create'
 COMMAND_VERIFY = 'verify'
 COMMAND_SYNC = 'sync'
+COMMAND_RENAME_PATHS = 'rename-paths'
 
 COMMANDS = [
   COMMAND_CREATE,
   COMMAND_VERIFY,
-  COMMAND_SYNC
+  COMMAND_SYNC,
+  COMMAND_RENAME_PATHS
 ]
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
@@ -361,6 +364,55 @@ class ChecksumsSyncer(object):
       self.total_synced_size += path_info.size
 
 
+class ChecksumsPathRenamer(object):
+  def __init__(self, root_path, output, path_regex_from, path_regex_to, dry_run=False, verbose=False):
+    if root_path is None:
+      raise Exception('root_path cannot be None')
+    self.root_path = root_path
+    self.output = output
+    self.path_regex_from = re.compile(path_regex_from)
+    self.path_regex_to = path_regex_to
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.checksums = None
+
+  def RenamePaths(self):
+    try:
+      self.checksums = Checksums.Open(self.root_path, dry_run=self.dry_run)
+    except (ChecksumsError, lib.ManifestError), e:
+      print >>self.output, '*** Error: %s' % e.message
+      return False
+
+    manifest = self.checksums.GetManifest()
+
+    total_paths = 0
+    total_renamed_paths = 0
+
+    for path in manifest.GetPaths():
+      path_info = manifest.GetPathInfo(path)
+      total_paths += 1
+
+      new_path = self.path_regex_from.sub(self.path_regex_to, path)
+      if new_path != path:
+        if manifest.HasPath(new_path):
+          print >>self.output, '*** Error: renamed to path %s already in manifest' % lib.EscapePath(new_path)
+          return False
+
+        print >>self.output, path_info.GetItemized()
+        print >>self.output, '  renamed to %s' % lib.EscapePath(new_path)
+        total_renamed_paths += 1
+
+        manifest.RemovePathInfo(path)
+        path_info.path = new_path
+        manifest.AddPathInfo(path_info)
+
+    if not self.dry_run and total_renamed_paths:
+      manifest.Write()
+
+    print >>self.output, 'Paths: %d paths, %d renamed' % (total_paths, total_renamed_paths)
+    return True
+
+
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
@@ -396,6 +448,19 @@ def DoSync(args, output):
   return checksums_syncer.Sync()
 
 
+def DoRenamePaths(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('root_path')
+  parser.add_argument('--path-regex-from', required=True)
+  parser.add_argument('--path-regex-to', required=True)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  checksums_path_renamer = ChecksumsPathRenamer(
+    cmd_args.root_path, output=output, path_regex_from=cmd_args.path_regex_from,
+    path_regex_to=cmd_args.path_regex_to, dry_run=args.dry_run, verbose=args.verbose)
+  return checksums_path_renamer.RenamePaths()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
@@ -403,6 +468,8 @@ def DoCommand(args, output):
     return DoVerify(args, output=output)
   elif args.command == COMMAND_SYNC:
     return DoSync(args, output=output)
+  elif args.command == COMMAND_RENAME_PATHS:
+    return DoRenamePaths(args, output=output)
 
   print >>output, '*** Error: Unknown command %s' % args.command
   return False
