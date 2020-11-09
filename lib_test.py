@@ -282,6 +282,39 @@ def PathInfoTest():
     AssertEquals('>Lc...... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
     AssertEquals('.L....... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, ln1_path_info)))
 
+  class PathInfoLike:
+    def __init__(self, path):
+      self.path = path
+
+  def RunTest(path, paths, expected_paths):
+    path_infos = [ PathInfoLike(p) for p in paths ]
+    sorted_path_infos = lib.PathInfo.SortedByPathSimilarity(path, path_infos)
+    sorted_paths = [ p.path for p in sorted_path_infos ]
+
+    AssertEquals(expected_paths, sorted_paths)
+
+  RunTest('/tmp/thepath',
+          paths=[
+            '/tmp/to/something',
+            '/tmp/from/something',
+            '/tmp/other/thepath',
+            '/tmp/other_longer/thepath'],
+          expected_paths=[
+            '/tmp/other/thepath',
+            '/tmp/other_longer/thepath',
+            '/tmp/to/something',
+            '/tmp/from/something'])
+
+  RunTest('/tmp/a',
+          paths=[
+            '/tmp/d',
+            '/tmp/c',
+            '/tmp/b'],
+          expected_paths=[
+            '/tmp/b',
+            '/tmp/c',
+            '/tmp/d'])
+
 
 def ItemizedPathChangeTest():
   AssertEquals(

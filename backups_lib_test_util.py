@@ -97,19 +97,6 @@ def VerifyBackupManifest(backup, path=None):
 
 
 @contextlib.contextmanager
-def SetUniqueFilesMaxCounts(new_max_dup_find_count=10, new_max_dup_printout_count=5):
-  old_find_value = backups_lib.UNIQUE_FILES_MAX_DUP_FIND_COUNT
-  old_printout_value = backups_lib.UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT
-  backups_lib.UNIQUE_FILES_MAX_DUP_FIND_COUNT = new_max_dup_find_count
-  backups_lib.UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT = new_max_dup_printout_count
-  try:
-    yield
-  finally:
-    backups_lib.UNIQUE_FILES_MAX_DUP_FIND_COUNT = old_find_value
-    backups_lib.UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT = old_printout_value
-
-
-@contextlib.contextmanager
 def SetLogThrottlerLogAlways(log_throttler):
   old_value = log_throttler.GetLogAlways()
   log_throttler.SetLogAlways(True)

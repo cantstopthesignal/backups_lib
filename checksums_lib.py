@@ -20,6 +20,8 @@ CHECKSUM_FILTERS = [lib.RsyncFilterDirMerge(FILTER_DIR_MERGE_FILENAME),
                     lib.RsyncExclude('/.metadata'),
                     lib.RsyncExclude('.DS_Store')]
 
+MIN_RENAME_DETECTION_FILE_SIZE = 1
+
 
 def GetManifestNewPath(manifest_path):
   path = '%s.new' % manifest_path
@@ -162,7 +164,10 @@ class ChecksumsSyncer(object):
     self.checksums = None
     self.basis_manifest = None
     self.manifest = None
+    self.scan_manifest = None
     self.file_enumerator = lib.FileEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
+    self.sha256_to_basis_pathinfos = None
+    self.size_to_pathinfos = None
     self.total_paths = 0
     self.total_synced_paths = 0
     self.total_size = 0
@@ -180,6 +185,7 @@ class ChecksumsSyncer(object):
     self.basis_manifest = self.checksums.GetManifest()
     self.manifest = self.basis_manifest.Clone()
     self.manifest.SetPath(GetManifestNewPath(self.basis_manifest.GetPath()))
+    self.scan_manifest = lib.Manifest()
 
     escape_key_detector = lib.EscapeKeyDetector()
     try:
@@ -211,6 +217,14 @@ class ChecksumsSyncer(object):
     existing_paths = self.basis_manifest.GetPaths()
 
     for path in self.file_enumerator.Scan():
+      full_path = os.path.join(self.root_path, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+      self.scan_manifest.AddPathInfo(path_info)
+      self.total_paths += 1
+      if path_info.size is not None:
+        self.total_size += path_info.size
+
+    for path in self.scan_manifest.GetPaths():
       if escape_key_detector.WasEscapePressed():
         print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
         return
@@ -233,27 +247,25 @@ class ChecksumsSyncer(object):
       if next_new_path is not None and next_existing_path > next_new_path:
         break
       if next_new_path != next_existing_path:
-        itemized = self.basis_manifest.GetPathInfo(next_existing_path).GetItemized()
-        itemized.delete_path = True
-        print >>self.output, itemized
-        self.manifest.RemovePathInfo(next_existing_path)
+        self._SyncRemovedPath(next_existing_path)
       del existing_paths[0]
 
   def _SyncPathIfChanged(self, path):
     full_path = os.path.join(self.root_path, path)
-    path_info = lib.PathInfo.FromPath(path, full_path)
-    self.total_paths += 1
-    if path_info.size is not None:
-      self.total_size += path_info.size
+    path_info = self.scan_manifest.GetPathInfo(path)
 
     basis_path_info = self.basis_manifest.GetPathInfo(path)
     if basis_path_info is None:
-      self._SyncPath(path, full_path, path_info)
+      self._SyncNewPath(path, full_path, path_info)
       return
 
-    if path_info.path_type == lib.PathInfo.TYPE_FILE:
-      path_info.sha256 = basis_path_info.sha256
     self.manifest.AddPathInfo(path_info, allow_replace=True)
+
+    checksum_copied = False
+    if path_info.path_type == lib.PathInfo.TYPE_FILE:
+      if path_info.sha256 is None:
+        path_info.sha256 = basis_path_info.sha256
+        checksum_copied = True
 
     itemized = lib.PathInfo.GetItemizedDiff(path_info, basis_path_info)
     matches = not itemized.HasDiffs()
@@ -262,9 +274,10 @@ class ChecksumsSyncer(object):
         print >>self.output, itemized
       return
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
-      path_info.sha256 = lib.Sha256(full_path)
-      self.total_checksummed += 1
-      self.total_checksummed_size += path_info.size
+      if checksum_copied:
+        path_info.sha256 = lib.Sha256(full_path)
+        self.total_checksummed += 1
+        self.total_checksummed_size += path_info.size
     if path_info.sha256 != basis_path_info.sha256:
       itemized.checksum_diff = True
       itemized.replace_path = True
@@ -278,18 +291,62 @@ class ChecksumsSyncer(object):
 
     self._AddStatsForSyncedPath(path_info)
 
-  def _SyncPath(self, path, full_path, path_info):
+  def _SyncNewPath(self, path, full_path, path_info):
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
-      path_info.sha256 = lib.Sha256(full_path)
-      self.total_checksummed += 1
-      self.total_checksummed_size += path_info.size
+      if path_info.sha256 is None:
+        path_info.sha256 = lib.Sha256(full_path)
+        self.total_checksummed += 1
+        self.total_checksummed_size += path_info.size
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
     print >>self.output, itemized
-
     self.manifest.AddPathInfo(path_info)
+
+    if path_info.path_type == lib.PathInfo.TYPE_FILE and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE:
+      if self.sha256_to_basis_pathinfos is None:
+        self.sha256_to_basis_pathinfos = self.basis_manifest.CreateSha256ToPathInfosMap(
+          min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
+
+      dup_path_infos = self.sha256_to_basis_pathinfos.get(path_info.sha256, [])
+      self._OutputDupPathInfos(path_info, dup_path_infos, replacing_previous=True)
+
     self._AddStatsForSyncedPath(path_info)
+
+  def _SyncRemovedPath(self, path):
+    basis_path_info = self.basis_manifest.GetPathInfo(path)
+    itemized = basis_path_info.GetItemized()
+    itemized.delete_path = True
+    print >>self.output, itemized
+    self.manifest.RemovePathInfo(path)
+
+    self.total_synced_paths += 1
+
+    if basis_path_info.path_type == lib.PathInfo.TYPE_FILE and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE:
+      if self.size_to_pathinfos is None:
+        self.size_to_pathinfos = self.scan_manifest.CreateSizeToPathInfosMap(
+          min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
+
+      matching_size_path_infos = self.size_to_pathinfos.get(basis_path_info.size, [])
+
+      dup_path_infos = []
+      for path_info in matching_size_path_infos:
+        if path_info.sha256 is None:
+          full_path = os.path.join(self.root_path, path_info.path)
+          path_info.sha256 = lib.Sha256(full_path)
+          self.total_checksummed += 1
+          self.total_checksummed_size += path_info.size
+        assert basis_path_info.sha256 is not None
+        if path_info.sha256 == basis_path_info.sha256:
+          dup_path_infos.append(path_info)
+
+      self._OutputDupPathInfos(basis_path_info, dup_path_infos, replacing_previous=False)
+
+  def _OutputDupPathInfos(self, path_info, dup_path_infos, replacing_previous):
+    analyze_result = lib.AnalyzePathInfoDups(
+      path_info, dup_path_infos, replacing_previous=replacing_previous, verbose=self.verbose)
+    for dup_output_line in analyze_result.dup_output_lines:
+      print >>self.output, dup_output_line
 
   def _AddStatsForSyncedPath(self, path_info):
     self.total_synced_paths += 1

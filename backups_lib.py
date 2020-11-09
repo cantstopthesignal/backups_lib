@@ -7,7 +7,6 @@ import re
 import shutil
 import stat
 import sys
-import difflib
 
 import lib
 
@@ -50,9 +49,6 @@ BACKUPS_SUBDIR = 'Backups'
 DEDUP_MIN_FILE_SIZE = 100 * 1024
 DEDUP_WITH_EXTRA_SHA256_ASSERT = False
 
-UNIQUE_FILES_MAX_DUP_FIND_COUNT = 10
-UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT = 5
-
 PRUNE_SKIP_FILENAME = 'prune.SKIP'
 SUPERSEDED_METADATA_PREFIX = 'superseded-'
 
@@ -87,15 +83,6 @@ class BackupCheckpoint(object):
 
   def GetName(self):
     return self.name
-
-
-def SortedPathInfosByPathSimilarity(path, path_infos):
-  sorting_list = []
-  for path_info in path_infos:
-    sorting_list.append(
-      (-difflib.SequenceMatcher(a=path, b=path_info.path).ratio(), path_info.path, path_info))
-  sorting_list.sort()
-  return [ path_info for (ratio, path, path_info) in sorting_list ]
 
 
 def ListBackupCheckpoints(checkpoints_dir):
@@ -343,7 +330,7 @@ class PathsIntoBackupCopier(object):
     return result
 
   def _FindBestDup(self, path_info, sha256_to_last_pathinfos):
-    dup_path_infos = SortedPathInfosByPathSimilarity(
+    dup_path_infos = lib.PathInfo.SortedByPathSimilarity(
       path_info.path, sha256_to_last_pathinfos.get(path_info.sha256, []))
     for dup_path_info in dup_path_infos:
       itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
@@ -390,7 +377,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     assert path_info.sha256 is not None
 
     num_large_files += 1
-    dup_path_infos = SortedPathInfosByPathSimilarity(
+    dup_path_infos = lib.PathInfo.SortedByPathSimilarity(
       path, sha256_to_last_pathinfos.get(path_info.sha256, []))
     if not dup_path_infos:
       continue
@@ -1598,44 +1585,15 @@ class UniqueFilesInBackupsDumper(object):
 
       dup_output_lines = []
       if itemized.new_path and path_info.path_type == lib.PathInfo.TYPE_FILE:
-        for sha256_to_other_pathinfos, verb in [
-            (sha256_to_next_pathinfos, 'replaced by'), (sha256_to_previous_pathinfos, 'replacing')]:
+        for sha256_to_other_pathinfos, replacing_previous in [
+            (sha256_to_next_pathinfos, False), (sha256_to_previous_pathinfos, True)]:
           if sha256_to_other_pathinfos is not None:
             dup_path_infos = sha256_to_other_pathinfos.get(path_info.sha256, [])
-            if len(dup_path_infos) < UNIQUE_FILES_MAX_DUP_FIND_COUNT:
-              dup_path_infos = SortedPathInfosByPathSimilarity(path_info.path, dup_path_infos)
-            similar_dup_info = []
-            dup_info = []
-            for dup_path_info in dup_path_infos:
-              dup_itemized = lib.PathInfo.GetItemizedDiff(
-                dup_path_info, path_info, ignore_paths=True)
-              if dup_itemized.HasDiffs():
-                similar_dup_info.append((dup_itemized, dup_path_info))
-              else:
-                found_matching_rename = True
-                dup_info.append((dup_itemized, dup_path_info))
-            if len(dup_path_infos) < UNIQUE_FILES_MAX_DUP_FIND_COUNT:
-              for dup_itemized, dup_path_info in dup_info[:UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT]:
-                dup_output_lines.append('  %s duplicate: %s' % (verb, dup_itemized))
-                if self.verbose:
-                  dup_output_lines.append('    %s' % dup_path_info.ToString(
-                    include_path=False, shorten_sha256=True, shorten_xattr_hash=True))
-              if len(dup_info) > UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT:
-                dup_output_lines.append('  and %s %d other duplicates' % (
-                  verb, len(dup_info) - UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT))
-              for dup_itemized, dup_path_info in similar_dup_info[:UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT]:
-                dup_output_lines.append('  %s similar: %s' % (verb, dup_itemized))
-                if self.verbose:
-                  dup_output_lines.append('    %s' % dup_path_info.ToString(
-                    include_path=False, shorten_sha256=True, shorten_xattr_hash=True))
-              if len(similar_dup_info) > UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT:
-                dup_output_lines.append('  and %s %d other similar' % (
-                  verb, len(similar_dup_info) - UNIQUE_FILES_MAX_DUP_PRINTOUT_COUNT))
-            else:
-              if dup_info:
-                dup_output_lines.append('  %s %d duplicates' % (verb, len(dup_info)))
-              if similar_dup_info:
-                dup_output_lines.append('  %s %d similar' % (verb, len(similar_dup_info)))
+            analyze_result = lib.AnalyzePathInfoDups(
+              path_info, dup_path_infos, replacing_previous=replacing_previous, verbose=self.verbose)
+            dup_output_lines.extend(analyze_result.dup_output_lines)
+            if analyze_result.found_matching_rename:
+              found_matching_rename = True
 
       if not self.ignore_matching_renames or not found_matching_rename:
         num_unique += 1

@@ -48,3 +48,25 @@ def SetOmitUidAndGidInPathInfoToString(new_value=True):
     yield
   finally:
     lib.OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = old_value
+
+
+@contextlib.contextmanager
+def SetMaxDupCounts(new_max_dup_find_count=10, new_max_dup_printout_count=5):
+  old_find_value = lib.MAX_DUP_FIND_COUNT
+  old_printout_value = lib.MAX_DUP_PRINTOUT_COUNT
+  lib.MAX_DUP_FIND_COUNT = new_max_dup_find_count
+  lib.MAX_DUP_PRINTOUT_COUNT = new_max_dup_printout_count
+  try:
+    yield
+  finally:
+    lib.MAX_DUP_FIND_COUNT = old_find_value
+    lib.MAX_DUP_PRINTOUT_COUNT = old_printout_value
+
+
+@contextlib.contextmanager
+def SetEscapeKeyDetectorCancelAtInvocation(invocation_num):
+  lib.EscapeKeyDetector.SetCancelAtInvocation(invocation_num)
+  try:
+    yield
+  finally:
+    lib.EscapeKeyDetector.ClearCancelAtInvocation()

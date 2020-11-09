@@ -1,6 +1,7 @@
 import argparse
 import binascii
 import contextlib
+import difflib
 import getpass
 import hashlib
 import json
@@ -55,6 +56,9 @@ OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = False
 
 METADATA_DIR_NAME = '.metadata'
 CONTENT_DIR_NAME = 'Root'
+
+MAX_DUP_FIND_COUNT = 10
+MAX_DUP_PRINTOUT_COUNT = 5
 
 
 def GetManifestBackupPath(manifest_path):
@@ -226,7 +230,21 @@ def ClearPathHardlinks(path, dry_run=False):
 
 
 class EscapeKeyDetector(threading.Thread):
+  INSTANCE = None
+  CANCEL_AT_INVOCATION = None
+
+  @staticmethod
+  def SetCancelAtInvocation(invocation_num):
+    EscapeKeyDetector.CANCEL_AT_INVOCATION = invocation_num
+
+  @staticmethod
+  def ClearCancelAtInvocation():
+    EscapeKeyDetector.CANCEL_AT_INVOCATION = None
+
   def __init__(self, input_stream=sys.stdin):
+    assert EscapeKeyDetector.INSTANCE is None
+    EscapeKeyDetector.INSTANCE = self
+
     threading.Thread.__init__(self)
     self.condition = threading.Condition()
     self.input_stream = input_stream
@@ -250,6 +268,12 @@ class EscapeKeyDetector(threading.Thread):
       termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_terminal_settings)
 
   def WasEscapePressed(self):
+    if EscapeKeyDetector.CANCEL_AT_INVOCATION is not None:
+      if EscapeKeyDetector.CANCEL_AT_INVOCATION == 0:
+        return True
+      EscapeKeyDetector.CANCEL_AT_INVOCATION -= 1
+      return False
+
     with self.condition:
       return self.escape_pressed
 
@@ -258,6 +282,9 @@ class EscapeKeyDetector(threading.Thread):
       self.shutdown = True
       self.condition.notify()
     self.join()
+
+    assert EscapeKeyDetector.INSTANCE == self
+    EscapeKeyDetector.INSTANCE = None
 
 
 def Sha256(path):
@@ -843,6 +870,64 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
     raise Exception('Rsync failed')
 
 
+class AnalyzePathInfoDupsResult(object):
+  def __init__(self):
+    self.dup_output_lines = []
+    self.found_matching_rename = False
+
+
+def AnalyzePathInfoDups(
+    path_info, dup_path_infos, replacing_previous=True, verbose=False,
+    max_dup_find_count=None, max_dup_printout_count=None):
+  result = AnalyzePathInfoDupsResult()
+
+  if max_dup_find_count is None:
+    max_dup_find_count = MAX_DUP_FIND_COUNT
+  if max_dup_printout_count is None:
+    max_dup_printout_count = MAX_DUP_PRINTOUT_COUNT
+
+  if replacing_previous:
+    verb = 'replacing'
+  else:
+    verb = 'replaced by'
+
+  if len(dup_path_infos) < max_dup_find_count:
+    dup_path_infos = PathInfo.SortedByPathSimilarity(path_info.path, dup_path_infos)
+  similar_dup_info = []
+  dup_info = []
+  for dup_path_info in dup_path_infos:
+    dup_itemized = PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
+    if dup_itemized.HasDiffs():
+      similar_dup_info.append((dup_itemized, dup_path_info))
+    else:
+      result.found_matching_rename = True
+      dup_info.append((dup_itemized, dup_path_info))
+  if len(dup_path_infos) < max_dup_find_count:
+    for dup_itemized, dup_path_info in dup_info[:max_dup_printout_count]:
+      result.dup_output_lines.append('  %s duplicate: %s' % (verb, dup_itemized))
+      if verbose:
+        result.dup_output_lines.append('    %s' % dup_path_info.ToString(
+          include_path=False, shorten_sha256=True, shorten_xattr_hash=True))
+    if len(dup_info) > max_dup_printout_count:
+      result.dup_output_lines.append('  and %s %d other duplicates' % (
+        verb, len(dup_info) - max_dup_printout_count))
+    for dup_itemized, dup_path_info in similar_dup_info[:max_dup_printout_count]:
+      result.dup_output_lines.append('  %s similar: %s' % (verb, dup_itemized))
+      if verbose:
+        result.dup_output_lines.append('    %s' % dup_path_info.ToString(
+          include_path=False, shorten_sha256=True, shorten_xattr_hash=True))
+    if len(similar_dup_info) > max_dup_printout_count:
+      result.dup_output_lines.append('  and %s %d other similar' % (
+        verb, len(similar_dup_info) - max_dup_printout_count))
+  else:
+    if dup_info:
+      result.dup_output_lines.append('  %s %d duplicates' % (verb, len(dup_info)))
+    if similar_dup_info:
+      result.dup_output_lines.append('  %s %d similar' % (verb, len(similar_dup_info)))
+
+  return result
+
+
 class EncryptionManager(object):
   def __init__(self):
     self.image_uuid_password_map = {}
@@ -1196,6 +1281,15 @@ class PathInfo(object):
       itemized.xattr_diff = True
     return itemized
 
+  @staticmethod
+  def SortedByPathSimilarity(path, path_infos):
+    sorting_list = []
+    for path_info in path_infos:
+      sorting_list.append(
+        (-difflib.SequenceMatcher(a=path, b=path_info.path).ratio(), path_info.path, path_info))
+    sorting_list.sort()
+    return [ path_info for (ratio, path, path_info) in sorting_list ]
+
   def __init__(self, path, path_type, mode, uid, gid, mtime, size, link_dest, sha256, xattr_hash,
                dev_inode=None):
     self.path = path
@@ -1346,6 +1440,9 @@ class Manifest(object):
   def HasPath(self, path):
     return path in self.path_map
 
+  def GetPathMap(self):
+    return self.path_map
+
   def AddPathInfo(self, path_info, allow_replace=False):
     if not allow_replace:
       assert path_info.path not in self.path_map
@@ -1410,6 +1507,18 @@ class Manifest(object):
           sha256_to_pathinfos[path_info.sha256] = []
         sha256_to_pathinfos[path_info.sha256].append(path_info)
     return sha256_to_pathinfos
+
+  def CreateSizeToPathInfosMap(self, min_file_size=1):
+    size_to_pathinfos = {}
+    for path in self.GetPaths():
+      path_info = self.GetPathInfo(path)
+      if path_info.path_type == PathInfo.TYPE_FILE:
+        assert path_info.size is not None
+        if path_info.size >= min_file_size:
+          if path_info.size not in size_to_pathinfos:
+            size_to_pathinfos[path_info.size] = []
+          size_to_pathinfos[path_info.size].append(path_info)
+    return size_to_pathinfos
 
 
 class Checkpoint(object):

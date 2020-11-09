@@ -28,6 +28,7 @@ from test_util import TempDir
 from lib_test_util import GetFileTreeManifest
 from lib_test_util import GetManifestItemized
 from lib_test_util import SetHdiutilCompactOnBatteryAllowed
+from lib_test_util import SetMaxDupCounts
 from lib_test_util import SetOmitUidAndGidInPathInfoToString
 
 from backups_lib_test_util import CreateBackupsBundle
@@ -48,7 +49,6 @@ from backups_lib_test_util import DoMergeIntoBackups
 from backups_lib_test_util import DoPruneBackups
 from backups_lib_test_util import DoVerifyBackups
 from backups_lib_test_util import SetLogThrottlerLogAlways
-from backups_lib_test_util import SetUniqueFilesMaxCounts
 from backups_lib_test_util import VerifyBackupManifest
 
 
@@ -785,41 +785,6 @@ def PruneBackupsTest():
         backups_manager.Close()
 
 
-def SortedPathInfosByPathSimilarityTest():
-  class PathInfoLike:
-    def __init__(self, path):
-      self.path = path
-
-  def RunTest(path, paths, expected_paths):
-    path_infos = [ PathInfoLike(p) for p in paths ]
-    sorted_path_infos = backups_lib.SortedPathInfosByPathSimilarity(path, path_infos)
-    sorted_paths = [ p.path for p in sorted_path_infos ]
-
-    AssertEquals(expected_paths, sorted_paths)
-
-  RunTest('/tmp/thepath',
-          paths=[
-            '/tmp/to/something',
-            '/tmp/from/something',
-            '/tmp/other/thepath',
-            '/tmp/other_longer/thepath'],
-          expected_paths=[
-            '/tmp/other/thepath',
-            '/tmp/other_longer/thepath',
-            '/tmp/to/something',
-            '/tmp/from/something'])
-
-  RunTest('/tmp/a',
-          paths=[
-            '/tmp/d',
-            '/tmp/c',
-            '/tmp/b'],
-          expected_paths=[
-            '/tmp/b',
-            '/tmp/c',
-            '/tmp/d'])
-
-
 def CloneBackupTest():
   with TempDir() as test_dir:
     config = CreateConfig(test_dir)
@@ -1277,7 +1242,7 @@ def DumpUniqueFilesInBackupsTest():
                        '.d..t.... par2',
                        'Paths: 3 unique (2kb), 13 total'])
 
-    with SetUniqueFilesMaxCounts(new_max_dup_printout_count=1):
+    with SetMaxDupCounts(new_max_dup_printout_count=1):
       DoDumpUniqueFilesInBackups(
         config, backup_name='2020-01-03-120000',
         ignore_matching_renames=True,
@@ -1290,7 +1255,7 @@ def DumpUniqueFilesInBackupsTest():
                          '.d..t.... par2',
                          'Paths: 3 unique (2kb), 13 total'])
 
-    with SetUniqueFilesMaxCounts(new_max_dup_find_count=1):
+    with SetMaxDupCounts(new_max_dup_find_count=1):
       DoDumpUniqueFilesInBackups(
         config, backup_name='2020-01-03-120000',
         ignore_matching_renames=True,
@@ -2175,8 +2140,6 @@ def Test(tests=[]):
     DeDuplicateBackupsTest()
   if not tests or 'PruneBackupsTest' in tests:
     PruneBackupsTest()
-  if not tests or 'SortedPathInfosByPathSimilarityTest' in tests:
-    SortedPathInfosByPathSimilarityTest()
   if not tests or 'CloneBackupTest' in tests:
     CloneBackupTest()
   if not tests or 'DeleteBackupTest' in tests:

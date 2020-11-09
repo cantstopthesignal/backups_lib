@@ -118,6 +118,16 @@ def DeleteFileOrDir(path):
   SetMTime(parent_dir, parent_mtime)
 
 
+def RenameFile(old_path, new_path):
+  old_parent_dir = os.path.dirname(os.path.normpath(old_path))
+  old_parent_mtime = os.lstat(old_parent_dir).st_mtime
+  new_parent_dir = os.path.dirname(os.path.normpath(new_path))
+  new_parent_mtime = os.lstat(new_parent_dir).st_mtime
+  os.rename(old_path, new_path)
+  SetMTime(old_parent_dir, old_parent_mtime)
+  SetMTime(new_parent_dir, new_parent_mtime)
+
+
 def SetPacificTimezone():
   os.environ['TZ'] = 'US/Pacific'
   time.tzset()
