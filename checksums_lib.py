@@ -19,9 +19,9 @@ COMMANDS = [
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
 
-CHECKSUM_FILTERS = [lib.RsyncFilterDirMerge(FILTER_DIR_MERGE_FILENAME),
-                    lib.RsyncExclude('/.metadata'),
-                    lib.RsyncExclude('.DS_Store')]
+CHECKSUM_FILTERS = [lib.RsyncExclude('/.metadata'),
+                    lib.RsyncExclude('.DS_Store'),
+                    lib.RsyncFilterDirMerge(FILTER_DIR_MERGE_FILENAME)]
 
 MIN_RENAME_DETECTION_FILE_SIZE = 1
 
