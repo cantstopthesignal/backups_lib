@@ -2,6 +2,7 @@ import argparse
 import binascii
 import contextlib
 import difflib
+import fcntl
 import getpass
 import hashlib
 import json
@@ -12,9 +13,11 @@ import re
 import select
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import termios
 import termios
 import threading
 import time
@@ -295,6 +298,44 @@ def Sha256(path):
     while len(buf) > 0:
       hasher.update(buf)
       buf = f.read(BLOCKSIZE)
+  return hasher.digest()
+
+
+def GetTerminalSize(output):
+  if output.isatty():
+    cr = struct.unpack('hh', fcntl.ioctl(output, termios.TIOCGWINSZ, '1234'))
+    return int(cr[1]), int(cr[0])
+
+
+def Sha256WithProgress(full_path, path_info, output):
+  BLOCKSIZE = 65536
+  hasher = hashlib.sha256()
+  read_bytes = 0
+  read_bytes_str_max_len = 0
+  message_max_len = 0
+  with open(full_path, 'rb') as f:
+    buf = f.read(BLOCKSIZE)
+    read_bytes += len(buf)
+    while len(buf) > 0:
+      time.sleep(.05)
+      hasher.update(buf)
+      buf = f.read(BLOCKSIZE)
+      read_bytes += len(buf)
+      if output.isatty():
+        terminal_width = GetTerminalSize(output)[0]
+        read_bytes_str = FileSizeToString(read_bytes)
+        read_bytes_str_max_len = max(read_bytes_str_max_len, len(read_bytes_str))
+        read_bytes_str = read_bytes_str + ' ' * (read_bytes_str_max_len - len(read_bytes_str))
+        message = '[%s/%s] ' % (read_bytes_str, FileSizeToString(path_info.size))
+        max_path_len = terminal_width - len(message) - 2
+        if len(path_info.path) > max_path_len:
+          message += '\xe2\x80\xa6' + path_info.path[len(path_info.path)-max_path_len+1:]
+        else:
+          message += path_info.path
+        message_max_len = max(message_max_len, len(message))
+        output.write('\033[K%s\r' % message)
+  if output.isatty() and message_max_len:
+    output.write("\033[K")
   return hasher.digest()
 
 
@@ -1767,7 +1808,7 @@ class CheckpointCreator(object):
         print >>self.output, itemized
       return
     if path_info.path_type == PathInfo.TYPE_FILE:
-      path_info.sha256 = Sha256(full_path)
+      path_info.sha256 = Sha256WithProgress(full_path, path_info, output=self.output)
     if path_info.sha256 != basis_path_info.sha256:
       itemized.checksum_diff = True
       itemized.replace_path = True
@@ -1783,7 +1824,7 @@ class CheckpointCreator(object):
 
   def _AddPath(self, path, full_path, path_info, allow_replace=False):
     if path_info.path_type == PathInfo.TYPE_FILE:
-      path_info.sha256 = Sha256(full_path)
+      path_info.sha256 = Sha256WithProgress(full_path, path_info, output=self.output)
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
@@ -1833,7 +1874,7 @@ class CheckpointCreator(object):
     itemized = PathInfo.GetItemizedDiff(checkpoint_path_info, expected_path_info)
     if not itemized.HasDiffs():
       if checkpoint_path_info.path_type == PathInfo.TYPE_FILE:
-        checkpoint_path_info.sha256 = Sha256(full_path)
+        checkpoint_path_info.sha256 = Sha256WithProgress(full_path, checkpoint_path_info, output=self.output)
       if checkpoint_path_info.sha256 == expected_path_info.sha256:
         return False
     if first_requeued:
@@ -1935,7 +1976,7 @@ class CheckpointApplier(object):
         print >>self.output, itemized
       return
     if dest_path_info.path_type == PathInfo.TYPE_FILE:
-      dest_path_info.sha256 = Sha256(full_path)
+      dest_path_info.sha256 = Sha256WithProgress(full_path, dest_path_info, output=self.output)
     if dest_path_info.sha256 != src_path_info.sha256:
       itemized.checksum_diff = True
       itemized.replace_path = True
@@ -2142,7 +2183,7 @@ class ManifestVerifier(object):
         print >>self.output, itemized
       return
     if src_path_info.path_type == PathInfo.TYPE_FILE:
-      src_path_info.sha256 = Sha256(full_path)
+      src_path_info.sha256 = Sha256WithProgress(full_path, src_path_info, output=self.output)
       self.stats.total_checksummed_paths += 1
       self.stats.total_checksummed_size += src_path_info.size
     if src_path_info.sha256 != manifest_path_info.sha256:

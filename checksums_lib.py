@@ -306,7 +306,7 @@ class ChecksumsSyncer(object):
       return
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
       if checksum_copied:
-        path_info.sha256 = lib.Sha256(full_path)
+        path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
         self.total_checksummed_paths += 1
         self.total_checksummed_size += path_info.size
     if path_info.sha256 != basis_path_info.sha256:
@@ -325,7 +325,7 @@ class ChecksumsSyncer(object):
   def _SyncNewPath(self, path, full_path, path_info):
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
       if path_info.sha256 is None:
-        path_info.sha256 = lib.Sha256(full_path)
+        path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
         self.total_checksummed_paths += 1
         self.total_checksummed_size += path_info.size
 
@@ -367,7 +367,7 @@ class ChecksumsSyncer(object):
       for path_info in matching_size_path_infos:
         if path_info.sha256 is None:
           full_path = os.path.join(self.root_path, path_info.path)
-          path_info.sha256 = lib.Sha256(full_path)
+          path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
           self.total_checksummed_paths += 1
           self.total_checksummed_size += path_info.size
         assert basis_path_info.sha256 is not None

@@ -47,7 +47,6 @@ COMMANDS = [
 BACKUPS_SUBDIR = 'Backups'
 
 DEDUP_MIN_FILE_SIZE = 100 * 1024
-DEDUP_WITH_EXTRA_SHA256_ASSERT = False
 
 PRUNE_SKIP_FILENAME = 'prune.SKIP'
 SUPERSEDED_METADATA_PREFIX = 'superseded-'
@@ -428,8 +427,6 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     matching_dup_full_path = os.path.join(last_backup.GetDiskPath(), matching_dup_path_info.path)
 
     assert full_path != matching_dup_full_path
-    if DEDUP_WITH_EXTRA_SHA256_ASSERT:
-      assert lib.Sha256(full_path) == lib.Sha256(matching_dup_full_path)
 
     if not dry_run:
       parent_dir = os.path.dirname(full_path)
@@ -1109,7 +1106,7 @@ class BackupsVerifier(object):
             print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
             return (False, None)
 
-          path_info.sha256 = lib.Sha256(full_path)
+          path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
           num_checksummed += 1
           total_checksummed_size += path_info.size
         else:
@@ -1179,7 +1176,7 @@ class BackupsVerifier(object):
             print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
             return (False, None)
 
-          new_path_info.sha256 = lib.Sha256(full_path)
+          new_path_info.sha256 = lib.Sha256WithProgress(full_path, new_path_info, output=self.output)
           num_checksummed += 1
           total_checksummed_size += new_path_info.size
       new_manifest.AddPathInfo(new_path_info)
@@ -1377,7 +1374,7 @@ class MissingManifestsToBackupsAdder(object):
         assert path_info.dev_inode is not None
         path_info.sha256 = dev_inodes_to_sha256.get(path_info.dev_inode)
         if path_info.sha256 is None:
-          path_info.sha256 = lib.Sha256(full_path)
+          path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
           num_checksummed += 1
           total_checksummed_size += path_info.size
         else:
