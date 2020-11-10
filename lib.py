@@ -63,6 +63,8 @@ CONTENT_DIR_NAME = 'Root'
 MAX_DUP_FIND_COUNT = 10
 MAX_DUP_PRINTOUT_COUNT = 5
 
+MIN_SIZE_FOR_SHA256_PROGRESS = 1024 * 1024 * 10
+
 
 def GetManifestBackupPath(manifest_path):
   path = '%s.bak' % manifest_path
@@ -312,16 +314,15 @@ def Sha256WithProgress(full_path, path_info, output):
   hasher = hashlib.sha256()
   read_bytes = 0
   read_bytes_str_max_len = 0
-  message_max_len = 0
+  print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
   with open(full_path, 'rb') as f:
     buf = f.read(BLOCKSIZE)
     read_bytes += len(buf)
     while len(buf) > 0:
-      time.sleep(.05)
       hasher.update(buf)
       buf = f.read(BLOCKSIZE)
       read_bytes += len(buf)
-      if output.isatty():
+      if print_progress:
         terminal_width = GetTerminalSize(output)[0]
         read_bytes_str = FileSizeToString(read_bytes)
         read_bytes_str_max_len = max(read_bytes_str_max_len, len(read_bytes_str))
@@ -332,9 +333,8 @@ def Sha256WithProgress(full_path, path_info, output):
           message += '\xe2\x80\xa6' + path_info.path[len(path_info.path)-max_path_len+1:]
         else:
           message += path_info.path
-        message_max_len = max(message_max_len, len(message))
         output.write('\033[K%s\r' % message)
-  if output.isatty() and message_max_len:
+  if print_progress:
     output.write("\033[K")
   return hasher.digest()
 
