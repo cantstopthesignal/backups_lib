@@ -2071,7 +2071,8 @@ class ManifestVerifierStats(object):
     self.total_paths = 0
     self.total_size = 0
     self.total_mismatched_paths = 0
-    self.total_checksummed = 0
+    self.total_mismatched_size = 0
+    self.total_checksummed_paths = 0
     self.total_checksummed_size = 0
 
 
@@ -2128,6 +2129,8 @@ class ManifestVerifier(object):
       itemized.new_path = True
     print >>self.output, itemized
     self.stats.total_mismatched_paths += 1
+    if src_path_info.size:
+      self.stats.total_mismatched_size += src_path_info.size
 
   def _CheckCommonPath(self, path, src_path_info, manifest_path_info):
     full_path = os.path.join(self.src_root, src_path_info.path)
@@ -2140,7 +2143,7 @@ class ManifestVerifier(object):
       return
     if src_path_info.path_type == PathInfo.TYPE_FILE:
       src_path_info.sha256 = Sha256(full_path)
-      self.stats.total_checksummed += 1
+      self.stats.total_checksummed_paths += 1
       self.stats.total_checksummed_size += src_path_info.size
     if src_path_info.sha256 != manifest_path_info.sha256:
       itemized.checksum_diff = True
@@ -2153,6 +2156,8 @@ class ManifestVerifier(object):
 
     print >>self.output, itemized
     self.stats.total_mismatched_paths += 1
+    if src_path_info.size:
+      self.stats.total_mismatched_size += src_path_info.size
     if self.verbose:
       if src_path_info is not None:
         print >>self.output, '<', src_path_info.ToString(
@@ -2169,13 +2174,16 @@ class ManifestVerifier(object):
         break
       if next_present_path != next_missing_path:
         self.has_diffs = True
-        itemized = self.manifest.GetPathInfo(next_missing_path).GetItemized()
+        path_info = self.manifest.GetPathInfo(next_missing_path)
+        itemized = path_info.GetItemized()
         if self.manifest_on_top:
           itemized.new_path = True
         else:
           itemized.delete_path = True
         print >>self.output, itemized
         self.stats.total_mismatched_paths += 1
+        if path_info.size:
+          self.stats.total_mismatched_size += path_info.size
       del missing_paths[0]
 
 

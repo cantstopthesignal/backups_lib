@@ -144,9 +144,16 @@ class ChecksumsVerifier(object):
         escape_key_detector=escape_key_detector, verbose=self.verbose)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
-      print >>self.output, 'Paths: %d paths (%s), %d mismatched, %d checksummed (%s)' % (
-        stats.total_paths, lib.FileSizeToString(stats.total_size), stats.total_mismatched_paths,
-        stats.total_checksummed, lib.FileSizeToString(stats.total_checksummed_size))
+
+      out_pieces = ['%d total (%s)' % (stats.total_paths, lib.FileSizeToString(stats.total_size))]
+      if stats.total_mismatched_paths:
+        out_pieces.append('%d mismatched (%s)' % (
+          stats.total_mismatched_paths, lib.FileSizeToString(stats.total_mismatched_size)))
+      if stats.total_checksummed_paths:
+        out_pieces.append('%d checksummed (%s)' % (
+          stats.total_checksummed_paths, lib.FileSizeToString(stats.total_checksummed_size)))
+      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
+
       return verify_result
     finally:
       escape_key_detector.Shutdown()
@@ -173,11 +180,15 @@ class ChecksumsSyncer(object):
     self.sha256_to_basis_pathinfos = None
     self.size_to_pathinfos = None
     self.total_paths = 0
-    self.total_synced_paths = 0
     self.total_size = 0
+    self.total_synced_paths = 0
     self.total_synced_size = 0
-    self.total_checksummed = 0
+    self.total_checksummed_paths = 0
     self.total_checksummed_size = 0
+    self.total_renamed_paths = 0
+    self.total_renamed_size = 0
+    self.total_deleted_paths = 0
+    self.total_deleted_size = 0
 
   def Sync(self):
     try:
@@ -240,11 +251,21 @@ class ChecksumsSyncer(object):
     self._HandleExistingPaths(existing_paths, next_new_path=None)
 
   def _PrintResults(self):
-    if self.total_synced_paths > 0:
-      print >>self.output, 'Paths: %d synced of %d paths (%s of %s), %d checksummed (%s)' % (
-        self.total_synced_paths, self.total_paths,
-        lib.FileSizeToString(self.total_synced_size), lib.FileSizeToString(self.total_size),
-        self.total_checksummed, lib.FileSizeToString(self.total_checksummed_size))
+    if self.total_paths:
+      out_pieces = ['%d total (%s)' % (self.total_paths, lib.FileSizeToString(self.total_size))]
+      if self.total_synced_paths:
+        out_pieces.append('%d synced (%s)' % (
+          self.total_synced_paths, lib.FileSizeToString(self.total_synced_size)))
+      if self.total_renamed_paths:
+        out_pieces.append('%d renamed (%s)' % (
+          self.total_renamed_paths, lib.FileSizeToString(self.total_renamed_size)))
+      if self.total_deleted_paths:
+        out_pieces.append('%d deleted (%s)' % (
+          self.total_deleted_paths, lib.FileSizeToString(self.total_deleted_size)))
+      if self.total_checksummed_paths:
+        out_pieces.append('%d checksummed (%s)' % (
+          self.total_checksummed_paths, lib.FileSizeToString(self.total_checksummed_size)))
+      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
   def _HandleExistingPaths(self, existing_paths, next_new_path=None):
     while existing_paths:
@@ -286,7 +307,7 @@ class ChecksumsSyncer(object):
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
       if checksum_copied:
         path_info.sha256 = lib.Sha256(full_path)
-        self.total_checksummed += 1
+        self.total_checksummed_paths += 1
         self.total_checksummed_size += path_info.size
     if path_info.sha256 != basis_path_info.sha256:
       itemized.checksum_diff = True
@@ -305,7 +326,7 @@ class ChecksumsSyncer(object):
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
       if path_info.sha256 is None:
         path_info.sha256 = lib.Sha256(full_path)
-        self.total_checksummed += 1
+        self.total_checksummed_paths += 1
         self.total_checksummed_size += path_info.size
 
     itemized = path_info.GetItemized()
@@ -319,7 +340,10 @@ class ChecksumsSyncer(object):
           min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
 
       dup_path_infos = self.sha256_to_basis_pathinfos.get(path_info.sha256, [])
-      self._OutputDupPathInfos(path_info, dup_path_infos, replacing_previous=True)
+      analyze_result = lib.AnalyzePathInfoDups(
+        path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
+      for dup_output_line in analyze_result.dup_output_lines:
+        print >>self.output, dup_output_line
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -344,19 +368,24 @@ class ChecksumsSyncer(object):
         if path_info.sha256 is None:
           full_path = os.path.join(self.root_path, path_info.path)
           path_info.sha256 = lib.Sha256(full_path)
-          self.total_checksummed += 1
+          self.total_checksummed_paths += 1
           self.total_checksummed_size += path_info.size
         assert basis_path_info.sha256 is not None
         if path_info.sha256 == basis_path_info.sha256:
           dup_path_infos.append(path_info)
 
-      self._OutputDupPathInfos(basis_path_info, dup_path_infos, replacing_previous=False)
-
-  def _OutputDupPathInfos(self, path_info, dup_path_infos, replacing_previous):
-    analyze_result = lib.AnalyzePathInfoDups(
-      path_info, dup_path_infos, replacing_previous=replacing_previous, verbose=self.verbose)
-    for dup_output_line in analyze_result.dup_output_lines:
-      print >>self.output, dup_output_line
+      analyze_result = lib.AnalyzePathInfoDups(
+        basis_path_info, dup_path_infos, replacing_previous=False, verbose=self.verbose)
+      for dup_output_line in analyze_result.dup_output_lines:
+        print >>self.output, dup_output_line
+      if analyze_result.found_matching_rename:
+        self.total_renamed_paths += 1
+        self.total_renamed_size += basis_path_info.size
+      else:
+        self.total_deleted_paths += 1
+        self.total_deleted_size += basis_path_info.size
+    else:
+      self.total_deleted_paths += 1
 
   def _AddStatsForSyncedPath(self, path_info):
     self.total_synced_paths += 1

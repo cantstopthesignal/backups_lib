@@ -75,7 +75,7 @@ def VerifyTest():
                        '>L+++++++ ln1 -> INVALID',
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f2',
-                       'Paths: 5 paths (1kb), 5 mismatched, 0 checksummed (0b)'])
+                       'Paths: 5 total (1kb), 5 mismatched (1kb)'])
 
 
 def SyncTest():
@@ -92,23 +92,23 @@ def SyncTest():
     DoSync(
       root_dir, dry_run=True,
       expected_output=['>d+++++++ .',
-                       'Paths: 1 synced of 1 paths (0b of 0b), 0 checksummed (0b)'])
+                       'Paths: 1 total (0b), 1 synced (0b)'])
 
     DoVerify(
       root_dir, checksum_all=True,
       expected_success=False,
       expected_output=['>d+++++++ .',
-                       'Paths: 1 paths (0b), 1 mismatched, 0 checksummed (0b)'])
+                       'Paths: 1 total (0b), 1 mismatched (0b)'])
     DoSync(
       root_dir,
       expected_output=['>d+++++++ .',
-                       'Paths: 1 synced of 1 paths (0b of 0b), 0 checksummed (0b)'])
+                       'Paths: 1 total (0b), 1 synced (0b)'])
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(False)
       DoSync(
         root_dir, interactive=True,
-        expected_output=[])
+        expected_output=['Paths: 1 total (0b)'])
 
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
@@ -123,16 +123,16 @@ def SyncTest():
                        '>L+++++++ ln1 -> INVALID',
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f2',
-                       'Paths: 4 synced of 5 paths (1kb of 1kb), 2 checksummed (1kb)'])
+                       'Paths: 5 total (1kb), 4 synced (1kb), 2 checksummed (1kb)'])
     DoSync(
       root_dir,
       expected_output=['>f+++++++ f1',
                        '>L+++++++ ln1 -> INVALID',
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f2',
-                       'Paths: 4 synced of 5 paths (1kb of 1kb), 2 checksummed (1kb)'])
+                       'Paths: 5 total (1kb), 4 synced (1kb), 2 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 5 paths (1kb), 0 mismatched, 2 checksummed (1kb)'])
+             expected_output=['Paths: 5 total (1kb), 2 checksummed (1kb)'])
 
     file1 = CreateFile(root_dir, 'f1', contents='DEF')
     file2 = CreateFile(parent1, 'f2', contents='1'*1025, mtime=None)
@@ -157,7 +157,7 @@ def SyncTest():
                        '>f+++++++ par! \\r/f3',
                        '>f+++++++ par! \\r/f4',
                        '>d+++++++ par2',
-                       'Paths: 5 synced of 8 paths (2kb of 2kb), 3 checksummed (2kb)'])
+                       'Paths: 8 total (2kb), 5 synced (2kb), 3 checksummed (2kb)'])
     DoSync(
       root_dir, dry_run=True, checksum_all=True,
       expected_output=['>fc...... f1',
@@ -166,7 +166,7 @@ def SyncTest():
                        '>f+++++++ par! \\r/f3',
                        '>f+++++++ par! \\r/f4',
                        '>d+++++++ par2',
-                       'Paths: 6 synced of 8 paths (2kb of 2kb), 4 checksummed (2kb)'])
+                       'Paths: 8 total (2kb), 6 synced (2kb), 4 checksummed (2kb)'])
     DoVerify(root_dir,
              expected_success=False,
              expected_output=['.Lc...... ln1 -> f1',
@@ -174,7 +174,7 @@ def SyncTest():
                               '>f+++++++ par! \\r/f3',
                               '>f+++++++ par! \\r/f4',
                               '>d+++++++ par2',
-                              'Paths: 8 paths (2kb), 5 mismatched, 1 checksummed (1kb)'])
+                              'Paths: 8 total (2kb), 5 mismatched (2kb), 1 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
              expected_output=['>fc...... f1',
@@ -183,7 +183,7 @@ def SyncTest():
                               '>f+++++++ par! \\r/f3',
                               '>f+++++++ par! \\r/f4',
                               '>d+++++++ par2',
-                              'Paths: 8 paths (2kb), 6 mismatched, 2 checksummed (1kb)'])
+                              'Paths: 8 total (2kb), 6 mismatched (2kb), 2 checksummed (1kb)'])
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(False)
@@ -195,7 +195,7 @@ def SyncTest():
                          '>f+++++++ par! \\r/f3',
                          '>f+++++++ par! \\r/f4',
                          '>d+++++++ par2',
-                         'Paths: 5 synced of 8 paths (2kb of 2kb), 3 checksummed (2kb)',
+                         'Paths: 8 total (2kb), 5 synced (2kb), 3 checksummed (2kb)',
                          'Apply update? (y/N): n',
                          '*** Cancelled ***'])
     with InteractiveCheckerReadyResults(
@@ -208,14 +208,14 @@ def SyncTest():
                          '>f+++++++ par! \\r/f3',
                          '>f+++++++ par! \\r/f4',
                          '>d+++++++ par2',
-                         'Paths: 5 synced of 8 paths (2kb of 2kb), 3 checksummed (2kb)',
+                         'Paths: 8 total (2kb), 5 synced (2kb), 3 checksummed (2kb)',
                          'Apply update? (y/N): y'])
     DoSync(
       root_dir, checksum_all=True,
       expected_output=['>fc...... f1',
-                       'Paths: 1 synced of 8 paths (3b of 2kb), 4 checksummed (2kb)'])
+                       'Paths: 8 total (2kb), 1 synced (3b), 4 checksummed (2kb)'])
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 8 paths (2kb), 0 mismatched, 4 checksummed (2kb)'])
+             expected_output=['Paths: 8 total (2kb), 4 checksummed (2kb)'])
 
     file1 = CreateFile(root_dir, 'f1', contents='GHI', mtime=None)
     file2 = CreateFile(parent1, 'f2', contents='2'*1025, mtime=None)
@@ -239,29 +239,30 @@ def SyncTest():
                               '*deleting par! \\r/f4',
                               '>f+++++++ par! \\r/f4_renamed',
                               '*deleting par2',
-                              'Paths: 8 paths (4kb), 10 mismatched, 2 checksummed (1kb)'])
+                              'Paths: 8 total (4kb), 10 mismatched (5kb), 2 checksummed (1kb)'])
     DoSync(
       root_dir,
-      expected_output=['.d......x .',
-                       '>fc.t.... f1',
-                       '.d......x par! \\r',
-                       '>f+++++++ par! \\r/f2_renamed',
-                       '  replacing duplicate: .f....... par! \\r/f2',
-                       '>f+++++++ par! \\r/f2_renamed2',
-                       '  replacing similar: .f..t.... par! \\r/f2',
-                       '*deleting par! \\r/f3',
-                       '*deleting par! \\r/f4',
-                       '  replaced by duplicate: .f....... par! \\r/f4_renamed',
-                       '>f+++++++ par! \\r/f4_renamed',
-                       '  replacing duplicate: .f....... par! \\r/f4',
-                       '*deleting par2',
-                       'Paths: 9 synced of 8 paths (3kb of 4kb), 4 checksummed (3kb)'])
+      expected_output=[
+        '.d......x .',
+        '>fc.t.... f1',
+        '.d......x par! \\r',
+        '>f+++++++ par! \\r/f2_renamed',
+        '  replacing duplicate: .f....... par! \\r/f2',
+        '>f+++++++ par! \\r/f2_renamed2',
+        '  replacing similar: .f..t.... par! \\r/f2',
+        '*deleting par! \\r/f3',
+        '*deleting par! \\r/f4',
+        '  replaced by duplicate: .f....... par! \\r/f4_renamed',
+        '>f+++++++ par! \\r/f4_renamed',
+        '  replacing duplicate: .f....... par! \\r/f4',
+        '*deleting par2',
+        'Paths: 8 total (4kb), 9 synced (3kb), 1 renamed (1kb), 2 deleted (0b), 4 checksummed (3kb)'])
     DoSync(
       root_dir, checksum_all=True,
       expected_output=['>fc...... par! \\r/f2',
-                       'Paths: 1 synced of 8 paths (1kb of 4kb), 5 checksummed (4kb)'])
+                       'Paths: 8 total (4kb), 1 synced (1kb), 5 checksummed (4kb)'])
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 8 paths (4kb), 0 mismatched, 5 checksummed (4kb)'])
+             expected_output=['Paths: 8 total (4kb), 5 checksummed (4kb)'])
 
     RenameFile(file4 + '_renamed', file4)
 
@@ -269,16 +270,16 @@ def SyncTest():
              expected_success=False,
              expected_output=['>f+++++++ par! \\r/f4',
                               '*deleting par! \\r/f4_renamed',
-                              'Paths: 8 paths (4kb), 2 mismatched, 4 checksummed (3kb)'])
+                              'Paths: 8 total (4kb), 2 mismatched (2kb), 4 checksummed (3kb)'])
     DoSync(
       root_dir,
       expected_output=['>f+++++++ par! \\r/f4',
                        '  replacing duplicate: .f....... par! \\r/f4_renamed',
                        '*deleting par! \\r/f4_renamed',
                        '  replaced by duplicate: .f....... par! \\r/f4',
-                       'Paths: 2 synced of 8 paths (1kb of 4kb), 1 checksummed (1kb)'])
+                       'Paths: 8 total (4kb), 2 synced (1kb), 1 renamed (1kb), 1 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 8 paths (4kb), 0 mismatched, 5 checksummed (4kb)'])
+             expected_output=['Paths: 8 total (4kb), 5 checksummed (4kb)'])
 
     file1 = CreateFile(root_dir, 'f1', contents='GHI')
     file2 = CreateFile(parent1, 'f2', contents='3'*1025)
@@ -297,7 +298,7 @@ def SyncTest():
                               '*deleting par! \\r/f2_renamed',
                               '*deleting par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
-                              'Paths: 7 paths (3kb), 7 mismatched, 3 checksummed (2kb)'])
+                              'Paths: 7 total (3kb), 7 mismatched (4kb), 3 checksummed (2kb)'])
     with SetEscapeKeyDetectorCancelAtInvocation(15):
       DoSync(
         root_dir, dry_run=True,
@@ -319,7 +320,7 @@ def SyncTest():
                            '.d......x par! \\r',
                            '>fc.t.... par! \\r/f2',
                            '*** Cancelled at path par! \\r/f4',
-                           'Paths: 4 synced of 7 paths (1kb of 3kb), 2 checksummed (1kb)',
+                           'Paths: 7 total (3kb), 4 synced (1kb), 2 checksummed (1kb)',
                            'Apply update? (y/N): n',
                            '*** Cancelled ***'])
     with InteractiveCheckerReadyResults(
@@ -333,22 +334,22 @@ def SyncTest():
                            '.d......x par! \\r',
                            '>fc.t.... par! \\r/f2',
                            '*** Cancelled at path par! \\r/f4',
-                           'Paths: 4 synced of 7 paths (1kb of 3kb), 2 checksummed (1kb)',
+                           'Paths: 7 total (3kb), 4 synced (1kb), 2 checksummed (1kb)',
                            'Apply update? (y/N): y'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
              expected_output=['*deleting par! \\r/f2_renamed',
                               '*deleting par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
-                              'Paths: 7 paths (3kb), 3 mismatched, 3 checksummed (2kb)'])
+                              'Paths: 7 total (3kb), 3 mismatched (3kb), 3 checksummed (2kb)'])
     DoSync(
       root_dir,
       expected_output=['*deleting par! \\r/f2_renamed',
                        '*deleting par! \\r/f2_renamed2',
                        '>f+++++++ par! \\r/f5',
-                       'Paths: 3 synced of 7 paths (1kb of 3kb), 1 checksummed (1kb)'])
+                       'Paths: 7 total (3kb), 3 synced (1kb), 2 deleted (2kb), 1 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 7 paths (3kb), 0 mismatched, 4 checksummed (3kb)'])
+             expected_output=['Paths: 7 total (3kb), 4 checksummed (3kb)'])
 
 
 def RenamePathsTest():
@@ -369,7 +370,7 @@ def RenamePathsTest():
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f2',
                        '>f+++++++ par! \\r/f3',
-                       'Paths: 5 synced of 5 paths (2kb of 2kb), 3 checksummed (2kb)'])
+                       'Paths: 5 total (2kb), 5 synced (2kb), 3 checksummed (2kb)'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
     DoRenamePaths(root_dir, dry_run=True,
@@ -405,13 +406,13 @@ def RenamePathsTest():
                               '*deleting f3',
                               '>f+++++++ par! \\r/f2',
                               '>f+++++++ par! \\r/f3',
-                              'Paths: 5 paths (2kb), 4 mismatched, 1 checksummed (3b)'])
+                              'Paths: 5 total (2kb), 4 mismatched (4kb), 1 checksummed (3b)'])
 
     RenameFile(file2, os.path.join(root_dir, 'f2'))
     RenameFile(file3, os.path.join(root_dir, 'f3'))
 
     DoVerify(root_dir, checksum_all=True,
-             expected_output=['Paths: 5 paths (2kb), 0 mismatched, 3 checksummed (2kb)'])
+             expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
 
 
 def Test(tests=[]):
