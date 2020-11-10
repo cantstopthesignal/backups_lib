@@ -64,6 +64,7 @@ MAX_DUP_FIND_COUNT = 10
 MAX_DUP_PRINTOUT_COUNT = 5
 
 MIN_SIZE_FOR_SHA256_PROGRESS = 1024 * 1024 * 10
+PRINT_PROGRESS_MIN_INTERVAL = .05
 
 
 def GetManifestBackupPath(manifest_path):
@@ -83,10 +84,10 @@ def FileSizeStringToBytes(size_str):
   return int(size_str[:-1])
 
 
-def FileSizeToString(size):
+def FileSizeToString(size, strip_trailing_zero=True):
   def SizeFormat(sz, suffix):
     sz_str = '%.1f' % sz
-    if sz_str.endswith('.0'):
+    if sz_str.endswith('.0') and strip_trailing_zero:
       sz_str = sz_str[:-2]
     return sz_str + suffix
   if size < 1024 and size > -1024:
@@ -315,6 +316,7 @@ def Sha256WithProgress(full_path, path_info, output):
   read_bytes = 0
   read_bytes_str_max_len = 0
   print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
+  last_progress_time = 0
   with open(full_path, 'rb') as f:
     buf = f.read(BLOCKSIZE)
     read_bytes += len(buf)
@@ -322,12 +324,16 @@ def Sha256WithProgress(full_path, path_info, output):
       hasher.update(buf)
       buf = f.read(BLOCKSIZE)
       read_bytes += len(buf)
-      if print_progress:
+      now = time.time()
+      if print_progress and now > last_progress_time + PRINT_PROGRESS_MIN_INTERVAL:
+        last_progress_time = now
         terminal_width = GetTerminalSize(output)[0]
-        read_bytes_str = FileSizeToString(read_bytes)
+        read_bytes_str = FileSizeToString(read_bytes, strip_trailing_zero=False)
+        total_bytes_str = FileSizeToString(path_info.size, strip_trailing_zero=False)
         read_bytes_str_max_len = max(read_bytes_str_max_len, len(read_bytes_str))
+        read_bytes_str_max_len = max(read_bytes_str_max_len, len(total_bytes_str))
         read_bytes_str = read_bytes_str + ' ' * (read_bytes_str_max_len - len(read_bytes_str))
-        message = '[%s/%s] ' % (read_bytes_str, FileSizeToString(path_info.size))
+        message = '[%s/%s] ' % (read_bytes_str, total_bytes_str)
         max_path_len = terminal_width - len(message) - 2
         if len(path_info.path) > max_path_len:
           message += '\xe2\x80\xa6' + path_info.path[len(path_info.path)-max_path_len+1:]
