@@ -1862,10 +1862,16 @@ class CheckpointCreator(object):
       RsyncPaths(self.paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
                  output=self.output, dry_run=self.dry_run, verbose=self.verbose)
 
-      paths_just_synced = self.paths_to_sync
+      paths_just_synced_set = set()
+      for path in self.paths_to_sync:
+        paths_just_synced_set.add(path)
+        parent_dir = os.path.dirname(path)
+        if parent_dir:
+          paths_just_synced_set.add(parent_dir)
       self.paths_to_sync = []
+
       first_requeued = True
-      for path in paths_just_synced:
+      for path in sorted(paths_just_synced_set):
         if self._ReQueuePathsModifiedSinceManifest(path, first_requeued):
           first_requeued = False
 
@@ -1880,8 +1886,11 @@ class CheckpointCreator(object):
     itemized = PathInfo.GetItemizedDiff(checkpoint_path_info, expected_path_info)
     if not itemized.HasDiffs():
       if checkpoint_path_info.path_type == PathInfo.TYPE_FILE:
-        checkpoint_path_info.sha256 = Sha256WithProgress(full_path, checkpoint_path_info, output=self.output)
-      if checkpoint_path_info.sha256 == expected_path_info.sha256:
+        checkpoint_path_info.sha256 = Sha256WithProgress(
+          full_path, checkpoint_path_info, output=self.output)
+        if checkpoint_path_info.sha256 == expected_path_info.sha256:
+          return False
+      else:
         return False
     if first_requeued:
       print >>self.output, "*** Warning: Paths changed since syncing, checking..."

@@ -547,6 +547,51 @@ def CreateTest():
     finally:
       lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = None
 
+    file4 = CreateFile(parent1, 'f4')
+    SetMTime(parent1, 1510000000)
+
+    def PreSyncContentsTestHook(checkpoint_creator):
+      file4_stat = os.lstat(os.path.join(parent1, 'f4'))
+      if file4_stat.st_mtime == 1500000000:
+        CreateFile(parent1, 'f4', mtime=1520000000)
+      elif file4_stat.st_mtime == 1520000000:
+        CreateFile(parent1, 'f4', mtime=1530000000)
+        SetMTime(parent1, 1530000000)
+
+    lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = PreSyncContentsTestHook
+    try:
+      checkpoint5, manifest5 = DoCreate(
+        src_root, checkpoints_dir, '5',
+        last_checkpoint_path=checkpoint4.GetImagePath(),
+        readonly=False,
+        expected_output=['.d..t.... par!',
+                         '>f+++++++ par!/f4',
+                         '*** Warning: Paths changed since syncing, checking...',
+                         '>f+++++++ par!/f4',
+                         '*** Warning: Paths changed since syncing, checking...',
+                         '.d..t.... par!',
+                         '>f+++++++ par!/f4',
+                         'Transferring 5 of 10 paths (0b of 32b)'])
+      try:
+        AssertLinesEqual(GetManifestDiffItemized(manifest4, manifest5),
+                         ['.d..t.... par!',
+                          '>f+++++++ par!/f4'])
+        AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
+                         ['.d..t.....x ./',
+                          '>f+++++++++ .staged_backup_filter',
+                          '>f+++++++++ par!/f2',
+                          '>f+++++++++ par!/f3',
+                          '>f+++++++++ par!/f_\r'])
+        AssertBasisInfoFileEquals(checkpoint5.GetMetadataPath(), checkpoint4.GetImagePath())
+        DoVerify(manifest5.GetPath(), checkpoint5.GetContentRootPath())
+      finally:
+        checkpoint5.Close()
+    finally:
+      lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = None
+
+    file5 = CreateFile(src_root, 'f5')
+    SetMTime(src_root, 1510000000)
+
 
 def CreateWithFilterMergeTest():
   with TempDir() as test_dir:
