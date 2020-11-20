@@ -370,6 +370,10 @@ class ChecksumsSyncer(object):
       dup_path_infos = []
       for path_info in matching_size_path_infos:
         if path_info.sha256 is None:
+          if self.escape_key_detector.WasEscapePressed():
+            print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+            return
+
           full_path = os.path.join(self.root_path, path_info.path)
           path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
           self.total_checksummed_paths += 1
