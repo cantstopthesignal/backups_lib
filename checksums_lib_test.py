@@ -241,6 +241,19 @@ def SyncTest():
                               '*deleting par2',
                               'Paths: 8 total (4kb), 10 mismatched (5kb), 2 checksummed (1kb)'])
     DoSync(
+      root_dir, dry_run=True, detect_renames=False,
+      expected_output=[
+        '.d......x .',
+        '>fc.t.... f1',
+        '.d......x par! \\r',
+        '>f+++++++ par! \\r/f2_renamed',
+        '>f+++++++ par! \\r/f2_renamed2',
+        '*deleting par! \\r/f3',
+        '*deleting par! \\r/f4',
+        '>f+++++++ par! \\r/f4_renamed',
+        '*deleting par2',
+        'Paths: 8 total (4kb), 9 synced (3kb), 3 deleted (0b), 4 checksummed (3kb)'])
+    DoSync(
       root_dir,
       expected_output=[
         '.d......x .',

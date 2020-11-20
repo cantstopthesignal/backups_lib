@@ -65,13 +65,15 @@ def DoVerify(root_path, dry_run=False, checksum_all=False, expected_success=True
                   expected_output=expected_output)
 
 
-def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, expected_success=True,
-           expected_output=[]):
+def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, detect_renames=True,
+           expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
   if checksum_all:
     cmd_args.append('--checksum-all')
   if interactive:
     cmd_args.append('--interactive')
+  if not detect_renames:
+    cmd_args.append('--no-detect-renames')
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
 

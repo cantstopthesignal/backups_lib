@@ -162,13 +162,15 @@ class ChecksumsVerifier(object):
 class ChecksumsSyncer(object):
   INTERACTIVE_CHECKER = InteractiveChecker()
 
-  def __init__(self, root_path, output, checksum_all=False, interactive=False, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, checksum_all=False, interactive=False, detect_renames=True,
+               dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output = output
     self.checksum_all = checksum_all
     self.interactive = interactive
+    self.detect_renames = detect_renames
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
@@ -334,7 +336,8 @@ class ChecksumsSyncer(object):
     print >>self.output, itemized
     self.manifest.AddPathInfo(path_info)
 
-    if path_info.path_type == lib.PathInfo.TYPE_FILE and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE:
+    if (self.detect_renames and path_info.path_type == lib.PathInfo.TYPE_FILE
+        and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.sha256_to_basis_pathinfos is None:
         self.sha256_to_basis_pathinfos = self.basis_manifest.CreateSha256ToPathInfosMap(
           min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
@@ -356,7 +359,8 @@ class ChecksumsSyncer(object):
 
     self.total_synced_paths += 1
 
-    if basis_path_info.path_type == lib.PathInfo.TYPE_FILE and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE:
+    if (self.detect_renames and basis_path_info.path_type == lib.PathInfo.TYPE_FILE
+        and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.size_to_pathinfos is None:
         self.size_to_pathinfos = self.scan_manifest.CreateSizeToPathInfosMap(
           min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
@@ -469,11 +473,13 @@ def DoSync(args, output):
   parser.add_argument('root_path')
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--interactive', action='store_true')
+  parser.add_argument('--no-detect-renames', dest='detect_renames', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
     cmd_args.root_path, output=output, checksum_all=cmd_args.checksum_all,
-    interactive=cmd_args.interactive, dry_run=args.dry_run, verbose=args.verbose)
+    interactive=cmd_args.interactive, detect_renames=cmd_args.detect_renames,
+    dry_run=args.dry_run, verbose=args.verbose)
   return checksums_syncer.Sync()
 
 
