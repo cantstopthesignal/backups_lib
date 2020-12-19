@@ -62,45 +62,84 @@ def ApplyToBackupsTest():
     fileT = CreateFile(config.src_path, 'fT')
     parent1 = CreateDir(config.src_path, 'par!')
     file1 = CreateFile(parent1, 'f_\r \xc2\xa9')
+    ln1_dir = CreateSymlink(config.src_path, 'ln1_dir', 'par!')
+    ln2 = CreateSymlink(parent1, 'ln2', '../fT')
+    ln3 = CreateSymlink(config.src_path, 'ln3', 'INVALID')
 
     checkpoint_path1 = DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
       last_checkpoint_path=latest_checkpoint_path,
       expected_output=['*deleting f1',
+                       '>L+++++++ ln1_dir -> par!',
+                       '>L+++++++ ln3 -> INVALID',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Transferring 2 of 5 paths (0b of 0b)'])
+                       '>L+++++++ par!/ln2 -> ../fT',
+                       'Transferring 5 of 8 paths (0b of 0b)'])
 
     file2 = CreateFile(parent1, 'f2')
     xattr.setxattr(fileX, 'example', 'example_value')
     SetMTime(fileT, None)
     SetMTime(parent1, None)
+    file3 = CreateFile(config.src_path, 'f3_original', contents='1' * 1025)
 
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-03-120000',
-      expected_output=['.f..t.... fT',
+      expected_output=['>f+++++++ f3_original',
+                       '.f..t.... fT',
                        '.f......x fX',
                        '.d..t.... par!',
                        '>f+++++++ par!/f2',
-                       'Transferring 4 of 6 paths (0b of 0b)'])
+                       'Transferring 5 of 10 paths (1kb of 1kb)'])
+
+    ln1_dir = CreateSymlink(config.src_path, 'ln1_dir', '.')
+    ln3 = CreateSymlink(config.src_path, 'ln3', 'fX')
+    DeleteFileOrDir(file3)
+    file3 = CreateFile(config.src_path, 'f3_renamed', contents='1' * 1025)
+
+    checkpoint_path3 = DoCreateBackup(
+      config, backup_name='2020-01-04-120000',
+      expected_output=['*deleting f3_original',
+                       '>f+++++++ f3_renamed',
+                       '.Lc...... ln1_dir -> .',
+                       '.Lc...... ln3 -> fX',
+                       'Transferring 3 of 10 paths (1kb of 1kb)'])
 
     DoApplyToBackups(
       config,
       dry_run=True,
-      expected_success=False,
       expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
+                       '>L+++++++ ln1_dir -> par!',
+                       '>L+++++++ ln3 -> INVALID',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       '>L+++++++ par!/ln2 -> ../fT',
+                       'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
                        'Applying 2020-01-03-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
+                       '>f+++++++ f3_original',
                        '.f..t.... fT',
                        '.f......x fX',
+                       '>L+++++++ ln1_dir -> par!',
+                       '>L+++++++ ln3 -> INVALID',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f2',
-                       '*f.error par!/f_\\r \\xc2\\xa9',
-                       '*** Errors encountered before applying checkpoint',
-                       '*** Error: Failed to apply 2020-01-03-120000 onto 2020-01-01-120000'])
+                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       '>L+++++++ par!/ln2 -> ../fT',
+                       'Copying paths: 10 to copy, 10 total in source, 10 total in result...',
+                       'Applying 2020-01-04-120000 onto 2020-01-01-120000...',
+                       '*deleting f1',
+                       '>f+++++++ f3_renamed',
+                       '.f..t.... fT',
+                       '.f......x fX',
+                       '>L+++++++ ln1_dir -> .',
+                       '>L+++++++ ln3 -> fX',
+                       '>d+++++++ par!',
+                       '>f+++++++ par!/f2',
+                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       '>L+++++++ par!/ln2 -> ../fT',
+                       'Copying paths: 10 to copy, 10 total in source, 10 total in result...'])
 
     DoVerifyBackups(
       config,
@@ -109,19 +148,32 @@ def ApplyToBackupsTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
-                       '*deleting f1',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
-                       'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
-                       '.f..t.... fT',
-                       '.f......x fX',
-                       '.d..t.... par!',
-                       '>f+++++++ par!/f2',
-                       'Verifying 2020-01-03-120000...'])
+      expected_output=[
+        'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        '*deleting f1',
+        '>L+++++++ ln1_dir -> par!',
+        '>L+++++++ ln3 -> INVALID',
+        '>d+++++++ par!',
+        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+        '>L+++++++ par!/ln2 -> ../fT',
+        'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
+        'Verifying 2020-01-02-120000...',
+        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
+        '>f+++++++ f3_original',
+        '.f..t.... fT',
+        '.f......x fX',
+        '.d..t.... par!',
+        '>f+++++++ par!/f2',
+        'Copying paths: 10 to copy, 1 to hard link, 10 total in source, 10 total in result...',
+        'Verifying 2020-01-03-120000...',
+        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
+        '*deleting f3_original',
+        '>f+++++++ f3_renamed',
+        '  duplicate to f3_original (size=1kb)',
+        '.Lc...... ln1_dir -> .',
+        '.Lc...... ln3 -> fX',
+        'Copying paths: 10 to copy, 5 to hard link, 1 to duplicate, 10 total in source, 10 total in result...',
+        'Verifying 2020-01-04-120000...'])
 
     backups_manager = backups_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
@@ -129,21 +181,25 @@ def ApplyToBackupsTest():
       backup1 = backups_manager.GetBackup('2020-01-01-120000')
       backup2 = backups_manager.GetBackup('2020-01-02-120000')
       backup3 = backups_manager.GetBackup('2020-01-03-120000')
-      AssertEquals(os.lstat(os.path.join(backup1.GetDiskPath(), 'fX')).st_ino,
-                   os.lstat(os.path.join(backup2.GetDiskPath(), 'fX')).st_ino)
-      AssertNotEquals(os.lstat(os.path.join(backup2.GetDiskPath(), 'fX')).st_ino,
-                      os.lstat(os.path.join(backup3.GetDiskPath(), 'fX')).st_ino)
-      AssertEquals(os.lstat(os.path.join(backup1.GetDiskPath(), 'fT')).st_ino,
-                   os.lstat(os.path.join(backup2.GetDiskPath(), 'fT')).st_ino)
-      AssertNotEquals(os.lstat(os.path.join(backup2.GetDiskPath(), 'fT')).st_ino,
-                      os.lstat(os.path.join(backup3.GetDiskPath(), 'fT')).st_ino)
+      backup4 = backups_manager.GetBackup('2020-01-04-120000')
+      AssertEquals(os.lstat(os.path.join(backup1.GetContentRootPath(), 'fX')).st_ino,
+                   os.lstat(os.path.join(backup2.GetContentRootPath(), 'fX')).st_ino)
+      AssertNotEquals(os.lstat(os.path.join(backup2.GetContentRootPath(), 'fX')).st_ino,
+                      os.lstat(os.path.join(backup3.GetContentRootPath(), 'fX')).st_ino)
+      AssertEquals(os.lstat(os.path.join(backup1.GetContentRootPath(), 'fT')).st_ino,
+                   os.lstat(os.path.join(backup2.GetContentRootPath(), 'fT')).st_ino)
+      AssertNotEquals(os.lstat(os.path.join(backup2.GetContentRootPath(), 'fT')).st_ino,
+                      os.lstat(os.path.join(backup3.GetContentRootPath(), 'fT')).st_ino)
+      AssertEquals(os.lstat(os.path.join(backup3.GetContentRootPath(), 'f3_original')).st_ino,
+                   os.lstat(os.path.join(backup4.GetContentRootPath(), 'f3_renamed')).st_ino)
 
       VerifyBackupManifest(backup1, path=latest_checkpoint_path)
       VerifyBackupManifest(backup2)
       VerifyBackupManifest(backup3)
+      VerifyBackupManifest(backup4)
 
       AssertEquals(os.readlink(os.path.join(backups_manager.GetBackupsRootDir(), 'Latest')),
-                   '2020-01-03-120000')
+                   '2020-01-04-120000')
 
     finally:
       backups_manager.Close()
@@ -153,27 +209,32 @@ def ApplyToBackupsTest():
       expected_output=['Verifying 2020-01-01-120000...',
                        'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 5 total, 2 inode hits, 1 checksummed (0b)',
+                       'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
-                       'Paths: 6 total, 1 inode hits, 3 checksummed (0b)'])
+                       'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)'])
 
     DoVerifyBackups(
       config,
       min_backup='2020-01-02-120000',
       expected_output=['Skipped backup Backup<2020-01-01-120000,DONE>',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 5 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 8 total, 0 inode hits, 3 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
-                       'Paths: 6 total, 1 inode hits, 3 checksummed (0b)'])
+                       'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)'])
 
     DoVerifyBackups(
       config,
       max_backup='2020-01-02-120000',
-      expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
-                       'Verifying 2020-01-02-120000...',
-                       'Paths: 5 total, 2 inode hits, 1 checksummed (0b)',
-                       'Skipped backup Backup<2020-01-03-120000,DONE>'])
+      expected_output=[
+        'Verifying 2020-01-01-120000...',
+        'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+        'Verifying 2020-01-02-120000...',
+        'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
+        'Skipped 2 backups: Backup<2020-01-03-120000,DONE> to Backup<2020-01-04-120000,DONE>'])
 
 
 def ApplyToBackupsWithFilterMergeTest():
@@ -215,17 +276,17 @@ def ApplyToBackupsWithFilterMergeTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+      expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
                        '*deleting fT',
                        '*deleting fX',
                        '>d+++++++ paryes',
                        '>f+++++++ paryes/f1',
+                       'Copying paths: 3 to copy, 3 total in source, 3 total in result...',
                        'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ paryes/f3',
+                       'Copying paths: 4 to copy, 1 to hard link, 4 total in source, 4 total in result...',
                        'Verifying 2020-01-03-120000...'])
 
     DoVerifyBackups(
@@ -286,14 +347,14 @@ def VerifyBackupsTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+      deduplicate_min_file_size=2048,
+      expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
                        '>f+++++++ f3_original',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       'Copying paths: 6 to copy, 2 to hard link, 6 total in source, 6 total in result...',
                        'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '*deleting f3_original',
                        '>f+++++++ f3_renamed',
@@ -301,6 +362,7 @@ def VerifyBackupsTest():
                        '.f......x fX',
                        '.d..t.... par!',
                        '>f+++++++ par!/f2',
+                       'Copying paths: 7 to copy, 1 to hard link, 7 total in source, 7 total in result...',
                        'Verifying 2020-01-03-120000...'])
 
     DoVerifyBackups(
@@ -352,11 +414,11 @@ def VerifyBackupsTest():
       config, readonly=False, browseable=False)
     try:
       backup1 = backups_manager.GetBackup('2020-01-01-120000')
-      backup1_file4 = CreateFile(backup1.GetDiskPath(), 'f4')
+      backup1_file4 = CreateFile(backup1.GetContentRootPath(), 'f4')
 
       backup2 = backups_manager.GetBackup('2020-01-02-120000')
-      SetMTime(os.path.join(backup2.GetDiskPath(), 'par!'), None)
-      xattr.setxattr(os.path.join(backup2.GetDiskPath(), 'fX'), 'example', 'example_value2')
+      SetMTime(os.path.join(backup2.GetContentRootPath(), 'par!'), None)
+      xattr.setxattr(os.path.join(backup2.GetContentRootPath(), 'fX'), 'example', 'example_value2')
     finally:
       backups_manager.Close()
 
@@ -439,19 +501,19 @@ def AddMissingManifestsToBackupsTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+      expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '>fcs..... f1',
                        '>f+++++++ f2',
                        '*deleting fX',
+                       'Copying paths: 4 to copy, 1 to hard link, 4 total in source, 4 total in result...',
                        'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ f3',
+                       'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
                        'Verifying 2020-01-03-120000...',
-                       'Cloning 2020-01-03-120000 to 2020-01-04-120000...',
                        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
                        '>fc...... f3',
+                       'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
                        'Verifying 2020-01-04-120000...'])
 
     DoAddMissingManifestsToBackups(
@@ -553,26 +615,27 @@ def DeDuplicateBackupsTest():
 
     DoApplyToBackups(
       config,
+      deduplicate_min_file_size=2048,
       expected_output=[
-        'Cloning 2020-01-01-120000 to 2020-01-02-120000...',
         'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
         '>fcs..... f1',
         '>f+++++++ f2',
         '>fcs..... fT',
         '*deleting fX',
+        'Copying paths: 4 to copy, 4 total in source, 4 total in result...',
         'Verifying 2020-01-02-120000...',
-        'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
         'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
         '>f+++++++ f3',
+        'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
         'Verifying 2020-01-03-120000...',
-        'Cloning 2020-01-03-120000 to 2020-01-04-120000...',
         'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
         '.f..t.... f3',
         '>f+++++++ f3a',
+        'Copying paths: 6 to copy, 3 to hard link, 6 total in source, 6 total in result...',
         'Verifying 2020-01-04-120000...',
-        'Cloning 2020-01-04-120000 to 2020-01-05-120000...',
         'Applying 2020-01-05-120000 onto 2020-01-04-120000...',
         '>f+++++++ f3b',
+        'Copying paths: 7 to copy, 5 to hard link, 7 total in source, 7 total in result...',
         'Verifying 2020-01-05-120000...'])
 
     DoVerifyBackups(
@@ -805,11 +868,11 @@ def CloneBackupTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+      expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       'Copying paths: 5 to copy, 2 to hard link, 5 total in source, 5 total in result...',
                        'Verifying 2020-01-02-120000...'])
 
     DoCloneBackup(
@@ -838,8 +901,8 @@ def CloneBackupTest():
     try:
       backup = backups_manager.GetBackup('2020-01-02-120000')
       backup_clone = backups_manager.StartClone(backup)
-      AssertEquals(os.lstat(os.path.join(backup.GetDiskPath(), 'fX')).st_ino,
-                   os.lstat(os.path.join(backup_clone.GetDiskPath(), 'fX')).st_ino)
+      AssertEquals(os.lstat(os.path.join(backup.GetContentRootPath(), 'fX')).st_ino,
+                   os.lstat(os.path.join(backup_clone.GetContentRootPath(), 'fX')).st_ino)
       AssertNotEquals(os.lstat(backup.GetManifestPath()).st_ino,
                       os.lstat(backup_clone.GetManifestPath()).st_ino)
 
@@ -871,14 +934,14 @@ def DeleteBackupTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+      expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                        '*deleting f1',
                        '*deleting fT',
+                       'Copying paths: 2 to copy, 1 to hard link, 2 total in source, 2 total in result...',
                        'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ f3',
+                       'Copying paths: 3 to copy, 1 to hard link, 3 total in source, 3 total in result...',
                        'Verifying 2020-01-03-120000...'])
 
     DoListBackups(config, expected_backups=['2020-01-01-120000',
@@ -985,29 +1048,30 @@ def DumpUniqueFilesInBackupsTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                       'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
-                       '*deleting f1',
-                       '>L+++++++ ln1 -> INVALID',
-                       '>L+++++++ ln2 -> fX',
-                       '>d+++++++ par!',
-                       '>f+++++++ par!/fY',
-                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
-                       'Verifying 2020-01-02-120000...',
-                       'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
-                       'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
-                       '>f+++++++ f3',
-                       '>f+++++++ f6',
-                       '>f+++++++ f7',
-                       '.f..t.... fT',
-                       '*deleting fX',
-                       '.Lc...... ln2 -> fT',
-                       '>f+++++++ par!/f4',
-                       '*deleting par!/fY',
-                       '>d+++++++ par2',
-                       '>f+++++++ par2/f5',
-                       '>f+++++++ par2/f8',
-                       'Verifying 2020-01-03-120000...'])
+      expected_output=[
+        'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        '*deleting f1',
+        '>L+++++++ ln1 -> INVALID',
+        '>L+++++++ ln2 -> fX',
+        '>d+++++++ par!',
+        '>f+++++++ par!/fY',
+        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+        'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
+        'Verifying 2020-01-02-120000...',
+        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
+        '>f+++++++ f3',
+        '>f+++++++ f6',
+        '>f+++++++ f7',
+        '.f..t.... fT',
+        '*deleting fX',
+        '.Lc...... ln2 -> fT',
+        '>f+++++++ par!/f4',
+        '*deleting par!/fY',
+        '>d+++++++ par2',
+        '>f+++++++ par2/f5',
+        '>f+++++++ par2/f8',
+        'Copying paths: 13 to copy, 1 to hard link, 13 total in source, 13 total in result...',
+        'Verifying 2020-01-03-120000...'])
 
     DoDumpUniqueFilesInBackups(
       config, backup_name='NAME', min_backup='MIN', max_backup='MAX',
@@ -1189,17 +1253,19 @@ def DumpUniqueFilesInBackupsTest():
 
     DoApplyToBackups(
       config,
-      expected_output=['Cloning 2020-01-03-120000 to 2020-01-04-120000...',
-                       'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
-                       '*deleting f6',
-                       '>f+++++++ f6_new_dup',
-                       '*deleting f7',
-                       '>f+++++++ f7_renamed',
-                       '.Lc...... ln1 -> f3',
-                       '>f+++++++ par!/f8',
-                       '.d..t.... par2',
-                       '*deleting par2/f8',
-                       'Verifying 2020-01-04-120000...'])
+      expected_output=[
+        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
+        '*deleting f6',
+        '>f+++++++ f6_new_dup',
+        '*deleting f7',
+        '>f+++++++ f7_renamed',
+        '.Lc...... ln1 -> f3',
+        '>f+++++++ par!/f8',
+        '  duplicate to par2/f8 (size=1kb)',
+        '.d..t.... par2',
+        '*deleting par2/f8',
+        'Copying paths: 13 to copy, 6 to hard link, 1 to duplicate, 13 total in source, 13 total in result...',
+        'Verifying 2020-01-04-120000...'])
 
     DoDumpUniqueFilesInBackups(
       config, backup_name='2020-01-03-120000',
@@ -1567,12 +1633,12 @@ def ExtractFromBackupsTest():
 
         backup4 = extracted_manager.GetBackup('2020-01-04-120000')
         backup5 = extracted_manager.GetBackup('2020-01-05-120000')
-        AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'par2/f5')).st_ino,
-                     os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f5')).st_ino)
-        AssertNotEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
-                        os.lstat(os.path.join(backup5.GetDiskPath(), 'f7')).st_ino)
-        AssertEquals(os.lstat(os.path.join(backup4.GetDiskPath(), 'f7')).st_ino,
-                     os.lstat(os.path.join(backup5.GetDiskPath(), 'par2/f9')).st_ino)
+        AssertEquals(os.lstat(os.path.join(backup4.GetContentRootPath(), 'par2/f5')).st_ino,
+                     os.lstat(os.path.join(backup5.GetContentRootPath(), 'par2/f5')).st_ino)
+        AssertNotEquals(os.lstat(os.path.join(backup4.GetContentRootPath(), 'f7')).st_ino,
+                        os.lstat(os.path.join(backup5.GetContentRootPath(), 'f7')).st_ino)
+        AssertEquals(os.lstat(os.path.join(backup4.GetContentRootPath(), 'f7')).st_ino,
+                     os.lstat(os.path.join(backup5.GetContentRootPath(), 'par2/f9')).st_ino)
       finally:
         extracted_manager.Close()
 
@@ -1800,9 +1866,9 @@ def MergeIntoBackupsTest():
         manifest.Read()
 
         file5_path = 'par/f5_both'
-        file5_full_path = os.path.join(backup5.GetDiskPath(), file5_path)
+        file5_full_path = os.path.join(backup5.GetContentRootPath(), file5_path)
         file7_path = 'par/f7_from'
-        file7_full_path = os.path.join(backup5.GetDiskPath(), file7_path)
+        file7_full_path = os.path.join(backup5.GetContentRootPath(), file7_path)
         xattr.setxattr(file5_full_path, 'example', 'v1')
         xattr.setxattr(file7_full_path, 'example', 'v1')
 

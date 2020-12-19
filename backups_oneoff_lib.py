@@ -94,7 +94,7 @@ class OneoffIgnoredXattrsUpdater(object):
       path_info = manifest.GetPathInfo(path)
       if path_info.xattr_hash is not None:
         num_xattr += 1
-        full_path = os.path.join(backup.GetDiskPath(), path)
+        full_path = os.path.join(backup.GetContentRootPath(), path)
         old_path_info = lib.PathInfo.FromPath(
           path, full_path, ignored_xattr_keys=self.old_ignored_xattrs)
         new_path_info = lib.PathInfo.FromPath(
@@ -193,7 +193,7 @@ class OneoffSomeFilesUpdater(object):
 
       if self.verify:
         print >>self.output, 'Verifying %s...' % backup.GetName()
-        verifier = lib.ManifestVerifier(manifest, backup.GetDiskPath(), self.output, checksum_all=False,
+        verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
                                         verbose=self.verbose)
         if not verifier.Verify():
           raise Exception('*** Error: Failed to verify %s' % backup.GetName())
@@ -213,7 +213,7 @@ class OneoffSomeFilesUpdater(object):
   def _MaybeUpdateMtimeIfMatching(
       self, backup, path_info, incorrect_mtime, corrected_mtime):
     if path_info.mtime == incorrect_mtime:
-      full_path = os.path.join(backup.GetDiskPath(), path_info.path)
+      full_path = os.path.join(backup.GetContentRootPath(), path_info.path)
       print >>self.output, 'Updating mtime from %s to %s for path %s' % (
         lib.UnixTimeToSecondsString(incorrect_mtime),
         lib.UnixTimeToSecondsString(corrected_mtime),
@@ -227,7 +227,7 @@ class OneoffSomeFilesUpdater(object):
   def _MaybeUpdatePermissionModeIfMatching(
       self, backup, path_info, incorrect_mode, corrected_mode):
     if stat.S_IMODE(path_info.mode) == incorrect_mode:
-      full_path = os.path.join(backup.GetDiskPath(), path_info.path)
+      full_path = os.path.join(backup.GetContentRootPath(), path_info.path)
       print >>self.output, 'Updating mode from %s to %s for path %s' % (
         oct(incorrect_mode), oct(corrected_mode), lib.EscapePath(path_info.path))
       lib.ClearPathHardlinks(full_path, dry_run=self.dry_run)

@@ -1615,6 +1615,9 @@ class Checkpoint(object):
     else:
       raise Exception('Unexpected state')
 
+  def GetName(self):
+    return self.name
+
   def GetImagePath(self):
     return os.path.join(self.base_path, self.name + '.sparseimage')
 
@@ -1627,6 +1630,9 @@ class Checkpoint(object):
 
   def GetMetadataPath(self):
     return os.path.join(self.GetMountPoint(), METADATA_DIR_NAME)
+
+  def GetManifestPath(self):
+    return os.path.join(self.GetMetadataPath(), MANIFEST_FILENAME)
 
   def Close(self):
     assert self.state in [Checkpoint.STATE_DONE, Checkpoint.STATE_IN_PROGRESS]
@@ -1683,7 +1689,7 @@ def ReadManifestFromCheckpointOrPath(path, encryption_manager=None, dry_run=Fals
   if path.endswith('.sparseimage'):
     checkpoint = Checkpoint.Open(path, encryption_manager=encryption_manager, dry_run=dry_run)
     try:
-      return Manifest.Load(os.path.join(checkpoint.GetMetadataPath(), MANIFEST_FILENAME))
+      return Manifest.Load(checkpoint.GetManifestPath())
     finally:
       checkpoint.Close()
   elif path.endswith('.pbdata') or path.endswith('.pbdata.bak') or path.endswith('.pbdata.new'):
@@ -1745,7 +1751,7 @@ class CheckpointCreator(object):
 
   def _CreateInternal(self):
     if not self.dry_run:
-      self.manifest = Manifest(os.path.join(self.checkpoint.GetMetadataPath(), MANIFEST_FILENAME))
+      self.manifest = Manifest(self.checkpoint.GetManifestPath())
     else:
       self.manifest = Manifest()
 
@@ -1938,8 +1944,7 @@ class CheckpointApplier(object):
         self.src_checkpoint = None
 
   def _ApplyInternal(self):
-    self.src_manifest = Manifest.Load(
-      os.path.join(self.src_checkpoint.GetMetadataPath(), MANIFEST_FILENAME))
+    self.src_manifest = Manifest.Load(self.src_checkpoint.GetManifestPath())
 
     new_paths = self.src_manifest.GetPaths()
 

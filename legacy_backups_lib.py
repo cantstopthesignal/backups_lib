@@ -123,9 +123,9 @@ class LegacyChecksumsVerifier(object):
     num_errors = 0
     num_ignored = 0
 
-    file_enumerator = lib.FileEnumerator(backup.GetDiskPath(), self.output, verbose=self.verbose)
+    file_enumerator = lib.FileEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
     for path in file_enumerator.Scan():
-      full_path = os.path.join(backup.GetDiskPath(), path)
+      full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
       if path_info.path_type == lib.PathInfo.TYPE_FILE:
         assert path_info.dev_inode is not None

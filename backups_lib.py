@@ -138,16 +138,17 @@ class PathsIntoBackupCopier(object):
       self.total_to_paths = 0
       self.success = True
 
-  def __init__(self, from_backup, from_manifest, to_backup_manager, to_backup, last_to_backup,
-               last_to_manifest, path_matcher, output, verify_with_checksums=False, deduplicate=True,
-               deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False, verbose=False):
+  def __init__(self, from_backup_or_checkpoint, from_manifest, to_backup_manager, to_backup,
+               last_to_backup, last_to_manifest, path_matcher, output, verify_with_checksums=False,
+               deduplicate=True, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False,
+               verbose=False):
     """
     Args:
-        to_backup: None to create a new backup matching from_backup's name for the contents,
+        to_backup: None to create a new backup matching from_backup_or_checkpoint's name for the contents,
             Non-None to use an existing backup to copy to.
     """
 
-    self.from_backup = from_backup
+    self.from_backup_or_checkpoint = from_backup_or_checkpoint
     self.from_manifest = from_manifest
     self.to_backup_manager = to_backup_manager
     self.to_backup = to_backup
@@ -167,7 +168,7 @@ class PathsIntoBackupCopier(object):
     to_backup_is_new = self.to_backup is None
 
     if self.from_manifest is None:
-      self.from_manifest = lib.Manifest(self.from_backup.GetManifestPath())
+      self.from_manifest = lib.Manifest(self.from_backup_or_checkpoint.GetManifestPath())
       self.from_manifest.Read()
     result.total_from_paths = self.from_manifest.GetPathCount()
 
@@ -189,53 +190,57 @@ class PathsIntoBackupCopier(object):
       sha256_to_last_pathinfos = None
 
     paths_to_copy_set = set()
+    paths_to_copy_from_last_set = set()
     paths_to_link_map = {}
     mismatched_itemized = []
     all_from_files_matched = True
 
+    expanded_from_paths = set()
     for path in self.from_manifest.GetPaths():
       if self.path_matcher.Matches(path):
-        path_info = self.from_manifest.GetPathInfo(path)
-
-        existing_path_info = result.to_manifest.GetPathInfo(path)
-        if existing_path_info is not None:
-          onto_existing_itemized = lib.PathInfo.GetItemizedDiff(path_info, existing_path_info)
-          if onto_existing_itemized.HasDiffs():
-            mismatched_itemized.append(onto_existing_itemized)
-          continue
-
-        result.to_manifest.AddPathInfo(path_info.Clone())
-        result.total_to_paths += 1
+        expanded_from_paths.add(path)
 
         parent_dir = os.path.dirname(path)
         while parent_dir:
           if not result.to_manifest.HasPath(parent_dir):
-            parent_path_info = self.from_manifest.GetPathInfo(parent_dir)
-            result.to_manifest.AddPathInfo(parent_path_info.Clone())
-            paths_to_copy_set.add(parent_path_info.path)
-            result.total_to_paths += 1
+            expanded_from_paths.add(parent_dir)
           parent_dir = os.path.dirname(parent_dir)
         if not result.to_manifest.HasPath('.'):
-          parent_path_info = self.from_manifest.GetPathInfo('.')
-          result.to_manifest.AddPathInfo(parent_path_info.Clone())
-          paths_to_copy_set.add(parent_path_info.path)
-          result.total_to_paths += 1
+          expanded_from_paths.add('.')
+      else:
+        all_from_files_matched = False
 
-        if path_info.path_type == lib.PathInfo.TYPE_FILE and self.last_to_manifest is not None:
-          if not lib.PathInfo.GetItemizedDiff(
-              path_info, self.last_to_manifest.GetPathInfo(path)).HasDiffs():
+    for path in sorted(expanded_from_paths):
+      path_info = self.from_manifest.GetPathInfo(path)
+
+      existing_path_info = result.to_manifest.GetPathInfo(path)
+      if existing_path_info is not None:
+        onto_existing_itemized = lib.PathInfo.GetItemizedDiff(path_info, existing_path_info)
+        if onto_existing_itemized.HasDiffs():
+          mismatched_itemized.append(onto_existing_itemized)
+        continue
+
+      result.to_manifest.AddPathInfo(path_info.Clone())
+      result.total_to_paths += 1
+
+      if self.last_to_manifest is not None:
+        last_to_path_info = self.last_to_manifest.GetPathInfo(path)
+        matches_last_to = not lib.PathInfo.GetItemizedDiff(path_info, last_to_path_info).HasDiffs()
+        if matches_last_to:
+          if path_info.path_type == lib.PathInfo.TYPE_FILE:
             paths_to_link_map[path] = path
-            continue
+          else:
+            paths_to_copy_from_last_set.add(path)
+          continue
 
+        if path_info.path_type == lib.PathInfo.TYPE_FILE:
           if self.deduplicate and sha256_to_last_pathinfos is not None:
             dup_path_info = self._FindBestDup(path_info, sha256_to_last_pathinfos)
             if dup_path_info is not None:
               paths_to_link_map[path] = dup_path_info.path
               continue
 
-        paths_to_copy_set.add(path)
-      else:
-        all_from_files_matched = False
+      paths_to_copy_set.add(path)
 
     if mismatched_itemized:
       print >>self.output, '*** Error: Failed to copy paths: found mismatched existing paths:'
@@ -245,6 +250,7 @@ class PathsIntoBackupCopier(object):
       return result
 
     paths_to_sync_set = set(paths_to_copy_set)
+    paths_to_sync_set.update(paths_to_copy_from_last_set)
     paths_to_sync_set.update(paths_to_link_map.keys())
 
     if not paths_to_sync_set:
@@ -289,34 +295,46 @@ class PathsIntoBackupCopier(object):
     if not self.dry_run:
       if to_backup_is_new:
         assert result.to_backup is None
-        result.to_backup = self.to_backup_manager.StartNew(name=self.from_backup.GetName())
+        result.to_backup = self.to_backup_manager.StartNew(name=self.from_backup_or_checkpoint.GetName())
         result.to_backup.SetInProgressState(dry_run=self.dry_run)
       try:
-        lib.RsyncPaths(sorted(paths_to_copy_set), self.from_backup.GetDiskPath(), result.to_backup.GetDiskPath(),
-                       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+        if paths_to_copy_from_last_set:
+          lib.RsyncPaths(sorted(paths_to_copy_from_last_set),
+                         self.last_to_backup.GetContentRootPath(),
+                         result.to_backup.GetContentRootPath(),
+                         output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+        if paths_to_copy_set:
+          lib.RsyncPaths(sorted(paths_to_copy_set),
+                         self.from_backup_or_checkpoint.GetContentRootPath(),
+                         result.to_backup.GetContentRootPath(),
+                         output=self.output, dry_run=self.dry_run, verbose=self.verbose)
 
         PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ResetLastLogTime()
         hard_links_total = len(paths_to_link_map)
         hard_links_remaining = hard_links_total
-        with lib.MtimePreserver() as preserver:
-          for path, path_to in paths_to_link_map.items():
-            last_full_path = os.path.join(self.last_to_backup.GetDiskPath(), path_to)
-            full_path = os.path.join(result.to_backup.GetDiskPath(), path)
-            preserver.PreserveParentMtime(full_path)
-            os.link(last_full_path, full_path)
-            hard_links_remaining -= 1
-            if PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ShouldLog() and hard_links_remaining:
-              print >>self.output, '%d/%d hard links remaining (%d%%)...' % (
-                hard_links_remaining, hard_links_total,
-                (hard_links_total - hard_links_remaining) * 100.0 / hard_links_total)
+        for path, path_to in paths_to_link_map.items():
+          last_full_path = os.path.join(self.last_to_backup.GetContentRootPath(), path_to)
+          full_path = os.path.join(result.to_backup.GetContentRootPath(), path)
+          os.link(last_full_path, full_path)
+          hard_links_remaining -= 1
+          if PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ShouldLog() and hard_links_remaining:
+            print >>self.output, '%d/%d hard links remaining (%d%%)...' % (
+              hard_links_remaining, hard_links_total,
+              (hard_links_total - hard_links_remaining) * 100.0 / hard_links_total)
+
+        for path in result.to_manifest.GetPaths():
+          path_info = result.to_manifest.GetPathInfo(path)
+          if path_info.path_type == lib.PathInfo.TYPE_DIR:
+            full_path = os.path.join(result.to_backup.GetContentRootPath(), path)
+            os.utime(full_path, (path_info.mtime, path_info.mtime))
 
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
         result.to_manifest.Write()
 
         print >>self.output, 'Verifying %s...' % result.to_backup.GetName()
         verifier = lib.ManifestVerifier(
-          result.to_manifest, result.to_backup.GetDiskPath(), self.output, checksum_all=self.verify_with_checksums,
-          verbose=self.verbose)
+          result.to_manifest, result.to_backup.GetContentRootPath(), self.output,
+          checksum_all=self.verify_with_checksums, verbose=self.verbose)
         if not verifier.Verify():
           raise Exception('Failed to verify %s' % result.to_backup.GetName())
         if to_backup_is_new:
@@ -381,7 +399,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     if not dup_path_infos:
       continue
 
-    full_path = os.path.join(backup.GetDiskPath(), path)
+    full_path = os.path.join(backup.GetContentRootPath(), path)
     path_info = lib.PathInfo.FromPath(path, full_path)
     assert path_info.dev_inode is not None
 
@@ -390,7 +408,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     matching_dup_path_infos = []
     similar_path_infos = []
     for dup_path_info in dup_path_infos:
-      dup_full_path = os.path.join(last_backup.GetDiskPath(), dup_path_info.path)
+      dup_full_path = os.path.join(last_backup.GetContentRootPath(), dup_path_info.path)
       dup_path_info = lib.PathInfo.FromPath(dup_path_info.path, dup_full_path)
       if path_info.dev_inode == dup_path_info.dev_inode:
         already_dupped = True
@@ -424,7 +442,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
       print >>output, '  %s' % lib.EscapePath(dup_path_info.path)
 
     matching_dup_path_info = matching_dup_path_infos[0]
-    matching_dup_full_path = os.path.join(last_backup.GetDiskPath(), matching_dup_path_info.path)
+    matching_dup_full_path = os.path.join(last_backup.GetContentRootPath(), matching_dup_path_info.path)
 
     assert full_path != matching_dup_full_path
 
@@ -644,11 +662,11 @@ class Backup(object):
     return os.path.join(
         self.manager.GetBackupsRootDir(), self.GetDirname())
 
-  def GetDiskPath(self):
-    return os.path.join(self.GetPath(), 'Root')
+  def GetContentRootPath(self):
+    return os.path.join(self.GetPath(), lib.CONTENT_DIR_NAME)
 
   def GetMetadataPath(self):
-    return os.path.join(self.GetPath(), '.metadata')
+    return os.path.join(self.GetPath(), lib.METADATA_DIR_NAME)
 
   def GetManifestPath(self):
     return os.path.join(self.GetMetadataPath(), lib.MANIFEST_FILENAME)
@@ -661,15 +679,15 @@ class Backup(object):
     assert not os.path.exists(self.GetPath())
     self.state = Backup.STATE_IN_PROGRESS
     assert not os.path.exists(self.GetPath())
-    assert self.GetDiskPath().startswith(self.GetPath())
+    assert self.GetContentRootPath().startswith(self.GetPath())
     if not dry_run:
       os.makedirs(self.GetPath())
     if not os.path.exists(self.GetMetadataPath()):
       if not dry_run:
         os.mkdir(self.GetMetadataPath())
-    if not os.path.exists(self.GetDiskPath()):
+    if not os.path.exists(self.GetContentRootPath()):
       if not dry_run:
-        os.mkdir(self.GetDiskPath())
+        os.mkdir(self.GetContentRootPath())
 
   def SetDoneState(self, dry_run=False):
     assert self.state == Backup.STATE_IN_PROGRESS
@@ -864,11 +882,12 @@ class BackupCreator:
 
 class CheckpointsToBackupsApplier:
   def __init__(self, config, output, encryption_manager=None, checksum_all=True,
-               dry_run=False, verbose=False):
+               deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.encryption_manager = encryption_manager
     self.checksum_all = checksum_all
+    self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
     self.verbose = verbose
     self.manager = None
@@ -898,7 +917,13 @@ class CheckpointsToBackupsApplier:
         test_open_checkpoint.Close()
         checkpoints_to_apply.append(checkpoint)
       for checkpoint in checkpoints_to_apply:
-        (success, last_backup) = self._CreateBackupFromCheckpoint(checkpoint, last_backup)
+        open_checkpoint = lib.Checkpoint.Open(
+          checkpoint.GetPath(), encryption_manager=self.encryption_manager, readonly=True,
+          dry_run=self.dry_run)
+        try:
+          (success, last_backup) = self._CreateBackupFromCheckpoint(open_checkpoint, last_backup)
+        finally:
+          open_checkpoint.Close()
         if not success:
           return False
       if not checkpoints_to_apply:
@@ -909,59 +934,25 @@ class CheckpointsToBackupsApplier:
       self.manager.Close()
 
   def _CreateBackupFromCheckpoint(self, checkpoint, last_backup):
-    new_backup = self.manager.StartNew(name=checkpoint.GetName())
-    new_backup.SetInProgressState(dry_run=self.dry_run)
-    try:
-      if not self.dry_run:
-        print >>self.output, 'Cloning %s to %s...' % (last_backup.GetName(), new_backup.GetName())
-        lib.Rsync(last_backup.GetDiskPath(),
-                  new_backup.GetDiskPath(),
-                  output=self.output,
-                  dry_run=self.dry_run,
-                  verbose=self.verbose,
-                  link_dest=last_backup.GetDiskPath())
+    print >>self.output, 'Applying %s onto %s...' % (checkpoint.GetName(), last_backup.GetName())
+    copier = PathsIntoBackupCopier(
+      from_backup_or_checkpoint=checkpoint, from_manifest=None, to_backup_manager=self.manager,
+      to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
+      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      output=self.output, verify_with_checksums=self.checksum_all, dry_run=self.dry_run, verbose=self.verbose)
+    result = copier.Copy()
+    if not result.success:
+      print >>self.output, ('*** Error: Failed to apply %s onto %s'
+                            % (checkpoint.GetName(), last_backup.GetName()))
+      return (False, None)
 
-      print >>self.output, 'Applying %s onto %s...' % (checkpoint.GetName(), last_backup.GetName())
-      dest_root = new_backup.GetDiskPath()
-      if self.dry_run:
-        dest_root = last_backup.GetDiskPath()
-      checkpoint_applier = lib.CheckpointApplier(
-        checkpoint.GetPath(), dest_root, self.output, dry_run=self.dry_run, verbose=self.verbose,
-        checksum_all=self.checksum_all, strict_replace=True, encryption_manager=self.encryption_manager)
-      if not checkpoint_applier.Apply():
-        print >>self.output, ('*** Error: Failed to apply %s onto %s'
-                              % (checkpoint.GetName(), last_backup.GetName()))
-        new_backup.Delete(dry_run=self.dry_run)
-        return (False, None)
+    if not self.dry_run:
+      self.manager.UpdateLatestSymlink(result.to_backup)
 
-      manifest = lib.ReadManifestFromCheckpointOrPath(
-        checkpoint.GetPath(), encryption_manager=self.encryption_manager, dry_run=self.dry_run)
-      metadata_path = new_backup.GetMetadataPath()
-      manifest.SetPath(new_backup.GetManifestPath())
-      if not self.dry_run:
-        if not os.path.exists(metadata_path):
-          os.makedirs(metadata_path)
-        manifest.Write()
-
-      if not self.dry_run:
-        print >>self.output, 'Verifying %s...' % new_backup.GetName()
-        verifier = lib.ManifestVerifier(manifest, dest_root, self.output, checksum_all=self.checksum_all,
-                                        verbose=self.verbose)
-        if not verifier.Verify():
-          print >>self.output, '*** Error: Failed to verify %s' % new_backup.GetName()
-          new_backup.Delete(dry_run=self.dry_run)
-          return (False, None)
-
-      new_backup.SetDoneState(dry_run=self.dry_run)
-      self.manager.UpdateLatestSymlink(new_backup)
-
-      if self.dry_run:
-        return (True, last_backup)
-      else:
-        return (True, new_backup)
-    except:
-      new_backup.Delete(dry_run=self.dry_run)
-      raise
+    if self.dry_run:
+      return (True, last_backup)
+    else:
+      return (True, result.to_backup)
 
 
 class BackupsImageCreator(object):
@@ -1093,10 +1084,10 @@ class BackupsVerifier(object):
     total_checksummed_size = 0
 
     new_manifest = lib.Manifest()
-    file_enumerator = lib.FileEnumerator(backup.GetDiskPath(), self.output, verbose=self.verbose)
+    file_enumerator = lib.FileEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
     for path in file_enumerator.Scan():
       num_paths += 1
-      full_path = os.path.join(backup.GetDiskPath(), path)
+      full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
       if path_info.path_type == lib.PathInfo.TYPE_FILE:
         assert path_info.dev_inode is not None
@@ -1160,7 +1151,7 @@ class BackupsVerifier(object):
 
       num_unique += 1
 
-      full_path = os.path.join(backup.GetDiskPath(), path)
+      full_path = os.path.join(backup.GetContentRootPath(), path)
       new_path_info = lib.PathInfo.FromPath(path, full_path)
       if path_info.path_type == lib.PathInfo.TYPE_FILE:
         if last_manifest is not None:
@@ -1365,10 +1356,10 @@ class MissingManifestsToBackupsAdder(object):
     num_inode_hits = 0
     total_checksummed_size = 0
 
-    file_enumerator = lib.FileEnumerator(backup.GetDiskPath(), self.output, verbose=self.verbose)
+    file_enumerator = lib.FileEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
     for path in file_enumerator.Scan():
       num_paths += 1
-      full_path = os.path.join(backup.GetDiskPath(), path)
+      full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
       if path_info.path_type == lib.PathInfo.TYPE_FILE:
         assert path_info.dev_inode is not None
@@ -1421,12 +1412,12 @@ class BackupCloner(object):
               output=self.output,
               dry_run=self.dry_run,
               verbose=self.verbose)
-    lib.Rsync(backup.GetDiskPath(),
-              backup_clone.GetDiskPath(),
+    lib.Rsync(backup.GetContentRootPath(),
+              backup_clone.GetContentRootPath(),
               output=self.output,
               dry_run=self.dry_run,
               verbose=self.verbose,
-              link_dest=backup.GetDiskPath())
+              link_dest=backup.GetContentRootPath())
     return True
 
 
@@ -1706,7 +1697,7 @@ class PathsFromBackupsExtractor(object):
     path_matcher = PathsAndPrefixMatcher(self.paths)
 
     copier = PathsIntoBackupCopier(
-      from_backup=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
+      from_backup_or_checkpoint=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
       to_backup=None, last_to_backup=last_extracted_backup, last_to_manifest=last_extracted_manifest,
       path_matcher=path_matcher, deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
@@ -1827,7 +1818,7 @@ class IntoBackupsMerger(object):
     print >>self.output, 'Backup %s: merging...' % backup.GetName()
 
     copier = PathsIntoBackupCopier(
-      from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
+      from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
@@ -1857,7 +1848,7 @@ class IntoBackupsMerger(object):
     print >>self.output, 'Backup %s: importing new...' % from_backup.GetName()
 
     copier = PathsIntoBackupCopier(
-      from_backup=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
+      from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
@@ -1943,7 +1934,7 @@ class PathsInBackupsDeleter(object):
       assert os.path.exists(manifest_bak_path)
 
       for path in reversed(paths_to_delete):
-        full_path = os.path.join(backup.GetDiskPath(), path)
+        full_path = os.path.join(backup.GetContentRootPath(), path)
         parent_dir = os.path.dirname(full_path)
         parent_stat = os.lstat(parent_dir)
         path_stat = os.lstat(full_path)
@@ -1956,7 +1947,7 @@ class PathsInBackupsDeleter(object):
       manifest.Write()
 
       print >>self.output, 'Verifying %s...' % backup.GetName()
-      verifier = lib.ManifestVerifier(manifest, backup.GetDiskPath(), self.output, checksum_all=False,
+      verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
                                       verbose=self.verbose)
       if not verifier.Verify():
         raise Exception('*** Error: Failed to verify %s' % backup.GetName())
@@ -1987,13 +1978,15 @@ def DoApplyToBackups(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
   parser.add_argument('--no-checksum-all', dest='checksum_all', action='store_false')
+  parser.add_argument('--deduplicate-min-file-size', default=DEDUP_MIN_FILE_SIZE, type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = BackupsConfig.Load(cmd_args.backups_config)
 
   applier = CheckpointsToBackupsApplier(
     config, output=output, encryption_manager=lib.EncryptionManager(),
-    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
+    checksum_all=cmd_args.checksum_all, deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
+    dry_run=args.dry_run, verbose=args.verbose)
   return applier.Apply()
 
 

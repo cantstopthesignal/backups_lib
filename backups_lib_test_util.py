@@ -52,7 +52,7 @@ def CreateLatestManifestCheckpoint(config):
     config, readonly=False, browseable=False)
   try:
     last_backup = backups_manager.GetLastDone()
-    src_root = last_backup.GetDiskPath()
+    src_root = last_backup.GetContentRootPath()
     output_lines = DoBackupsMain(['create',
                                   '--src-root', src_root,
                                   '--checksum-all',
@@ -87,7 +87,7 @@ def VerifyBackupManifest(backup, path=None):
     manifest = lib.ReadManifestFromCheckpointOrPath(path)
 
   output = StringIO.StringIO()
-  verifier = lib.ManifestVerifier(manifest, backup.GetDiskPath(), output, checksum_all=True)
+  verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), output, checksum_all=True)
   success = verifier.Verify()
   output_lines = [ line for line in output.getvalue().strip().split('\n') if line ]
   output.close()
@@ -152,9 +152,11 @@ def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[]):
   return checkpoint_path
 
 
-def DoApplyToBackups(config, dry_run=False, expected_success=True, expected_output=[]):
+def DoApplyToBackups(config, dry_run=False, deduplicate_min_file_size=1024,
+                     expected_success=True, expected_output=[]):
   cmd_args = ['apply-to-backups',
-              '--backups-config', config.path]
+              '--backups-config', config.path,
+              '--deduplicate-min-file-size', str(deduplicate_min_file_size)]
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                 expected_output=expected_output)
 

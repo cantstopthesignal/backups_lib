@@ -143,21 +143,21 @@ def OneoffUpdateIgnoredXattrsTest():
 
       DoApplyToBackups(
         config,
-        expected_output=['Cloning 2020-01-01-120000 to 2020-01-02-120000...',
-                         'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
                          '*deleting f1',
                          '.f......x fT',
                          '.f......x fX',
                          '>d+++++++ par!',
                          '>f+++++++ par!/f3',
                          '>f+++++++ par!/f4',
+                         'Copying paths: 6 to copy, 6 total in source, 6 total in result...',
                          'Verifying 2020-01-02-120000...',
-                         'Cloning 2020-01-02-120000 to 2020-01-03-120000...',
                          'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                          '.f......x fT',
                          '.f......x fX',
                          '.f......x par!/f3',
                          '.f......x par!/f4',
+                         'Copying paths: 6 to copy, 6 total in source, 6 total in result...',
                          'Verifying 2020-01-03-120000...'])
 
       DoVerifyBackups(
@@ -203,12 +203,12 @@ def OneoffUpdateIgnoredXattrsTest():
 
         backup2 = backups_manager.GetBackup('2020-01-02-120000')
         DoVerifyManifest(
-          backup2.GetDiskPath(),
+          backup2.GetContentRootPath(),
           lib.GetManifestBackupPath(backup2.GetManifestPath()))
 
         backup3 = backups_manager.GetBackup('2020-01-03-120000')
         DoVerifyManifest(
-          backup3.GetDiskPath(),
+          backup3.GetContentRootPath(),
           lib.GetManifestBackupPath(backup3.GetManifestPath()))
       finally:
         backups_manager.Close()
