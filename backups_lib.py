@@ -192,7 +192,6 @@ class PathsIntoBackupCopier(object):
     paths_to_copy_set = set()
     paths_to_copy_from_last_set = set()
     paths_to_link_map = {}
-    mismatched_itemized = []
     all_from_files_matched = True
 
     expanded_from_paths = set()
@@ -210,6 +209,10 @@ class PathsIntoBackupCopier(object):
       else:
         all_from_files_matched = False
 
+    from_root_path = self.from_backup_or_checkpoint.GetContentRootPath()
+    mismatched_itemizeds = []
+    missing_from_itemizeds = []
+
     for path in sorted(expanded_from_paths):
       path_info = self.from_manifest.GetPathInfo(path)
 
@@ -217,7 +220,7 @@ class PathsIntoBackupCopier(object):
       if existing_path_info is not None:
         onto_existing_itemized = lib.PathInfo.GetItemizedDiff(path_info, existing_path_info)
         if onto_existing_itemized.HasDiffs():
-          mismatched_itemized.append(onto_existing_itemized)
+          mismatched_itemizeds.append(onto_existing_itemized)
         continue
 
       result.to_manifest.AddPathInfo(path_info.Clone())
@@ -240,11 +243,22 @@ class PathsIntoBackupCopier(object):
               paths_to_link_map[path] = dup_path_info.path
               continue
 
+      if not os.path.lexists(os.path.join(from_root_path, path)):
+        missing_from_itemized = path_info.GetItemized()
+        missing_from_itemized.error_path = True
+        missing_from_itemizeds.append(missing_from_itemized)
+
       paths_to_copy_set.add(path)
 
-    if mismatched_itemized:
+    if mismatched_itemizeds:
       print >>self.output, '*** Error: Failed to copy paths: found mismatched existing paths:'
-      for itemized in mismatched_itemized:
+      for itemized in mismatched_itemizeds:
+        print >>self.output, itemized
+      result.success = False
+      return result
+    if missing_from_itemizeds:
+      print >>self.output, '*** Error: Failed to copy paths: found missing from paths:'
+      for itemized in missing_from_itemizeds:
         print >>self.output, itemized
       result.success = False
       return result
