@@ -1394,6 +1394,16 @@ class PathInfo(object):
       out += ', dev-inode=%r' % (self.dev_inode,)
     return out
 
+  def FindBestDup(self, sha256_to_pathinfos):
+    if self.sha256 is None:
+      return
+    dup_path_infos = PathInfo.SortedByPathSimilarity(
+      self.path, sha256_to_pathinfos.get(self.sha256, []))
+    for dup_path_info in dup_path_infos:
+      itemized = PathInfo.GetItemizedDiff(dup_path_info, self, ignore_paths=True)
+      if not itemized.HasDiffs():
+        return dup_path_info
+
   def ToProto(self, pb=None):
     try:
       if pb is None:
@@ -1535,13 +1545,6 @@ class Manifest(object):
       if has_diffs or include_matching:
         itemized_results.append(itemized)
     return itemized_results
-
-  def DumpDiff(self, other_manifest, output, verbose=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
-               ignore_gid_diffs=IGNORE_GID_DIFFS):
-    for itemized in self.GetDiffItemized(
-        other_manifest, include_matching=verbose, ignore_uid_diffs=ignore_uid_diffs,
-        ignore_gid_diffs=ignore_gid_diffs):
-      print >>output, itemized
 
   def CreateSha256ToPathInfosMap(self, min_file_size=1):
     sha256_to_pathinfos = {}
@@ -2127,6 +2130,48 @@ class ImageCompactor(object):
     return True
 
 
+class ManifestDiffDumper(object):
+  def __init__(self, first_manifest, second_manifest, output, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS,
+               verbose=False):
+    self.first_manifest = first_manifest
+    self.second_manifest = second_manifest
+    self.output = output
+    self.ignore_uid_diffs = ignore_uid_diffs
+    self.ignore_gid_diffs = ignore_gid_diffs
+    self.verbose = verbose
+
+  def DumpDiff(self):
+    sha256_to_first_pathinfos = self.first_manifest.CreateSha256ToPathInfosMap()
+    sha256_to_second_pathinfos = self.second_manifest.CreateSha256ToPathInfosMap()
+
+    all_paths = set(self.second_manifest.GetPathMap().keys())
+    all_paths.update(self.first_manifest.GetPathMap().keys())
+    for path in sorted(all_paths):
+      first_path_info = self.first_manifest.GetPathInfo(path)
+      second_path_info = self.second_manifest.GetPathInfo(path)
+
+      itemized = PathInfo.GetItemizedDiff(second_path_info, first_path_info)
+      has_diffs = itemized.HasDiffs(ignore_uid_diffs=self.ignore_uid_diffs, ignore_gid_diffs=self.ignore_gid_diffs)
+      if has_diffs or self.verbose:
+        print >>self.output, itemized
+      if has_diffs:
+        dup_analyze_result = None
+        if second_path_info is None:
+          if first_path_info.path_type == PathInfo.TYPE_FILE:
+            dup_analyze_result = AnalyzePathInfoDups(
+              first_path_info, sha256_to_second_pathinfos.get(first_path_info.sha256, []),
+              replacing_previous=False, verbose=self.verbose)
+        elif second_path_info.path_type == PathInfo.TYPE_FILE:
+          dup_analyze_result = AnalyzePathInfoDups(
+            second_path_info, sha256_to_first_pathinfos.get(second_path_info.sha256, []),
+            replacing_previous=True, verbose=self.verbose)
+        if dup_analyze_result is not None:
+          for line in dup_analyze_result.dup_output_lines:
+            print >>self.output, line
+
+    return True
+
+
 class ManifestVerifierStats(object):
   def __init__(self):
     self.total_paths = 0
@@ -2364,9 +2409,11 @@ def DoDiffManifests(args, output):
     cmd_args.first_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   second_manifest = ReadManifestFromCheckpointOrPath(
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
-  second_manifest.DumpDiff(first_manifest, output, verbose=args.verbose, ignore_uid_diffs=cmd_args.ignore_uid_diffs,
-                           ignore_gid_diffs=cmd_args.ignore_gid_diffs)
-  return True
+
+  manifest_diff_dumper = ManifestDiffDumper(
+    first_manifest=first_manifest, second_manifest=second_manifest, output=output, verbose=args.verbose,
+    ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs)
+  return manifest_diff_dumper.DumpDiff()
 
 
 def DoVerifyManifest(args, output):

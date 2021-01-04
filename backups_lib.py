@@ -238,7 +238,7 @@ class PathsIntoBackupCopier(object):
 
         if path_info.path_type == lib.PathInfo.TYPE_FILE:
           if self.deduplicate and sha256_to_last_pathinfos is not None:
-            dup_path_info = self._FindBestDup(path_info, sha256_to_last_pathinfos)
+            dup_path_info = path_info.FindBestDup(sha256_to_last_pathinfos)
             if dup_path_info is not None:
               paths_to_link_map[path] = dup_path_info.path
               continue
@@ -359,14 +359,6 @@ class PathsIntoBackupCopier(object):
         raise
 
     return result
-
-  def _FindBestDup(self, path_info, sha256_to_last_pathinfos):
-    dup_path_infos = lib.PathInfo.SortedByPathSimilarity(
-      path_info.path, sha256_to_last_pathinfos.get(path_info.sha256, []))
-    for dup_path_info in dup_path_infos:
-      itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
-      if not itemized.HasDiffs():
-        return dup_path_info
 
 
 class DeDuplicateBackupsResult(object):

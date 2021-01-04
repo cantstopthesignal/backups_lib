@@ -208,6 +208,13 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
   AssertLinesEqual(output_lines, expected_output)
 
 
+def DoDiffManifests(manifest1_path, manifest2_path, expected_success=True, expected_output=[]):
+  cmd_args = ['diff-manifests',
+              manifest1_path,
+              manifest2_path]
+  DoBackupsMain(cmd_args, expected_success=expected_success, expected_output=expected_output)
+
+
 def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[]):
   args = []
   args.extend(['verify-manifest',
@@ -1067,6 +1074,49 @@ def CompactTest():
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '23.6mb', '23.7mb')
 
 
+def DiffManifestsTest():
+  with TempDir() as test_dir:
+    manifest1 = lib.Manifest(os.path.join(test_dir, 'manifest1.pbdata'))
+    manifest1.Write()
+    manifest2 = lib.Manifest(os.path.join(test_dir, 'manifest2.pbdata'))
+    manifest2.Write()
+    DoDiffManifests(manifest1.path, manifest2.path)
+
+    file1 = CreateFile(test_dir, 'file1', contents='1' * 1025)
+    dir1 = CreateDir(test_dir, 'dir1')
+    ln1 = CreateSymlink(test_dir, 'ln1', 'INVALID')
+    file1_path_info = lib.PathInfo.FromPath(os.path.basename(file1), file1)
+    file1_path_info.sha256 = lib.Sha256(file1)
+    dir1_path_info = lib.PathInfo.FromPath(os.path.basename(dir1), dir1)
+    ln1_path_info = lib.PathInfo.FromPath(os.path.basename(ln1), ln1)
+
+    manifest1.AddPathInfo(file1_path_info)
+    manifest1.AddPathInfo(dir1_path_info)
+    manifest1.Write()
+    manifest2.AddPathInfo(dir1_path_info)
+    manifest2.AddPathInfo(ln1_path_info)
+    manifest2.Write()
+    DoDiffManifests(manifest1.path, manifest2.path,
+                    expected_output=['*deleting file1',
+                                     '>L+++++++ ln1 -> INVALID'])
+    DoDiffManifests(manifest2.path, manifest1.path,
+                    expected_output=['>f+++++++ file1',
+                                     '*deleting ln1'])
+
+    file2 = CreateFile(test_dir, 'file2', contents='1' * 1025)
+    file2_path_info = lib.PathInfo.FromPath(os.path.basename(file2), file2)
+    file2_path_info.sha256 = lib.Sha256(file2)
+
+    manifest2.AddPathInfo(file2_path_info)
+    manifest2.Write()
+    DoDiffManifests(manifest1.path, manifest2.path,
+                    expected_output=['*deleting file1',
+                                     '  replaced by duplicate: .f....... file2',
+                                     '>f+++++++ file2',
+                                     '  replacing duplicate: .f....... file1',
+                                     '>L+++++++ ln1 -> INVALID'])
+
+
 def FileSizeToStringTest():
   AssertEquals(lib.FileSizeToString(10), '10b')
   AssertEquals(lib.FileSizeToString(1024 * 50), '50kb')
@@ -1141,6 +1191,8 @@ def Test(tests=[]):
     StripTest()
   if not tests or 'CompactTest' in tests:
     CompactTest()
+  if not tests or 'DiffManifestsTest' in tests:
+    DiffManifestsTest()
   if not tests or 'FileSizeToStringTest' in tests:
     FileSizeToStringTest()
   if not tests or 'EscapeKeyDetectorTest' in tests:
