@@ -51,6 +51,24 @@ def CreateTest():
       expected_success=False,
       expected_output=['*** Error: Did not expect %s/.metadata to exist' % root_dir])
 
+    alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
+
+    DoCreate(
+      root_dir, dry_run=True,
+      manifest_path=alt_manifest_path,
+      expected_output=['Created checksums metadata for %s' % root_dir])
+
+    DoCreate(
+      root_dir,
+      manifest_path=alt_manifest_path,
+      expected_output=['Created checksums metadata for %s' % root_dir])
+
+    DoCreate(
+      root_dir,
+      manifest_path=alt_manifest_path,
+      expected_success=False,
+      expected_output=['*** Error: Did not expect %s to exist' % alt_manifest_path])
+
 
 def VerifyTest():
   with TempDir() as test_dir:
@@ -77,17 +95,48 @@ def VerifyTest():
                        '>f+++++++ par! \\r/f2',
                        'Paths: 5 total (1kb), 5 mismatched (1kb)'])
 
+    alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
+
+    DoVerify(
+      root_dir,
+      manifest_path=alt_manifest_path,
+      expected_success=False,
+      expected_output=['*** Error: Manifest file %s should exist' % alt_manifest_path])
+
+    DoCreate(root_dir,
+             manifest_path=alt_manifest_path,
+             expected_output=None)
+
+    DoVerify(
+      root_dir,
+      manifest_path=alt_manifest_path,
+      expected_success=False,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       'Paths: 5 total (1kb), 5 mismatched (1kb)'])
+
+
 
 def SyncTest():
   with TempDir() as test_dir:
     root_dir = CreateDir(test_dir, 'root')
+    alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
 
     DoSync(
       root_dir,
       expected_success=False,
       expected_output=['*** Error: Manifest file %s/.metadata/manifest.pbdata should exist' % root_dir])
+    DoSync(
+      root_dir,
+      manifest_path=alt_manifest_path,
+      expected_success=False,
+      expected_output=['*** Error: Manifest file %s should exist' % alt_manifest_path])
 
     DoCreate(root_dir, expected_output=None)
+    DoCreate(root_dir, manifest_path=alt_manifest_path, expected_output=None)
 
     DoSync(
       root_dir, dry_run=True,
@@ -103,6 +152,10 @@ def SyncTest():
       root_dir,
       expected_output=['>d+++++++ .',
                        'Paths: 1 total (0b), 1 synced (0b)'])
+    DoSync(
+      root_dir, manifest_path=alt_manifest_path,
+      expected_output=['>d+++++++ .',
+                       'Paths: 1 total (0b), 1 synced (0b)'])
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(False)
@@ -111,6 +164,7 @@ def SyncTest():
         expected_output=['Paths: 1 total (0b)'])
 
     DoVerify(root_dir, checksum_all=True, expected_output=None)
+    DoVerify(root_dir, manifest_path=alt_manifest_path, checksum_all=True, expected_output=None)
 
     file1 = CreateFile(root_dir, 'f1', contents='ABC')
     parent1 = CreateDir(root_dir, 'par! \r')

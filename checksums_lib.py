@@ -60,24 +60,32 @@ class ChecksumsError(Exception):
 
 class Checksums(object):
   @staticmethod
-  def Create(root_path, dry_run=False):
+  def Create(root_path, manifest_path=None, dry_run=False):
     root_path = os.path.normpath(root_path)
     if not os.path.isdir(root_path):
       raise ChecksumsError('Expected %s to be a directory' % root_path)
-    metadata_path = os.path.join(root_path, lib.METADATA_DIR_NAME)
-    if os.path.lexists(metadata_path):
-      raise ChecksumsError('Did not expect %s to exist' % metadata_path)
-    manifest = lib.Manifest(os.path.join(metadata_path, lib.MANIFEST_FILENAME))
+    if manifest_path is None:
+      metadata_path = os.path.join(root_path, lib.METADATA_DIR_NAME)
+      if os.path.lexists(metadata_path):
+        raise ChecksumsError('Did not expect %s to exist' % metadata_path)
+      if not dry_run:
+        os.mkdir(metadata_path)
+      manifest_path = os.path.join(metadata_path, lib.MANIFEST_FILENAME)
+    else:
+      if os.path.lexists(manifest_path):
+        raise ChecksumsError('Did not expect %s to exist' % manifest_path)
+    manifest = lib.Manifest(manifest_path)
     if not dry_run:
-      os.mkdir(metadata_path)
       manifest.Write()
     return Checksums(root_path, manifest, dry_run=dry_run)
 
   @staticmethod
-  def Open(root_path, dry_run=False):
+  def Open(root_path, manifest_path=None, dry_run=False):
     root_path = os.path.normpath(root_path)
-    metadata_path = os.path.join(root_path, lib.METADATA_DIR_NAME)
-    manifest = lib.Manifest(os.path.join(metadata_path, lib.MANIFEST_FILENAME))
+    if manifest_path is None:
+      metadata_path = os.path.join(root_path, lib.METADATA_DIR_NAME)
+      manifest_path = os.path.join(metadata_path, lib.MANIFEST_FILENAME)
+    manifest = lib.Manifest(manifest_path)
     manifest.Read()
     return Checksums(root_path, manifest, dry_run=dry_run)
 
@@ -97,18 +105,20 @@ class Checksums(object):
 
 
 class ChecksumsCreator(object):
-  def __init__(self, root_path, output, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, manifest_path=None, dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output = output
+    self.manifest_path = manifest_path
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
 
   def Create(self):
     try:
-      self.checksums = Checksums.Create(self.root_path, dry_run=self.dry_run)
+      self.checksums = Checksums.Create(
+        self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
     except ChecksumsError, e:
       print >>self.output, '*** Error: %s' % e.message
       return False
@@ -118,10 +128,11 @@ class ChecksumsCreator(object):
 
 
 class ChecksumsVerifier(object):
-  def __init__(self, root_path, output, checksum_all=False, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, manifest_path=None, checksum_all=False, dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
+    self.manifest_path = manifest_path
     self.output = output
     self.checksum_all = checksum_all
     self.dry_run = dry_run
@@ -131,7 +142,7 @@ class ChecksumsVerifier(object):
 
   def Verify(self):
     try:
-      self.checksums = Checksums.Open(self.root_path, dry_run=self.dry_run)
+      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
     except (ChecksumsError, lib.ManifestError), e:
       print >>self.output, '*** Error: %s' % e.message
       return False
@@ -162,12 +173,13 @@ class ChecksumsVerifier(object):
 class ChecksumsSyncer(object):
   INTERACTIVE_CHECKER = InteractiveChecker()
 
-  def __init__(self, root_path, output, checksum_all=False, interactive=False, detect_renames=True,
-               dry_run=False, verbose=False):
+  def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
+               detect_renames=True, dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output = output
+    self.manifest_path = manifest_path
     self.checksum_all = checksum_all
     self.interactive = interactive
     self.detect_renames = detect_renames
@@ -194,7 +206,7 @@ class ChecksumsSyncer(object):
 
   def Sync(self):
     try:
-      self.checksums = Checksums.Open(self.root_path, dry_run=self.dry_run)
+      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
     except (ChecksumsError, lib.ManifestError), e:
       print >>self.output, '*** Error: %s' % e.message
       return False
@@ -402,11 +414,13 @@ class ChecksumsSyncer(object):
 
 
 class ChecksumsPathRenamer(object):
-  def __init__(self, root_path, output, path_regex_from, path_regex_to, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, path_regex_from, path_regex_to, manifest_path=None,
+               dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output = output
+    self.manifest_path = manifest_path
     self.path_regex_from = re.compile(path_regex_from)
     self.path_regex_to = path_regex_to
     self.dry_run = dry_run
@@ -415,7 +429,7 @@ class ChecksumsPathRenamer(object):
 
   def RenamePaths(self):
     try:
-      self.checksums = Checksums.Open(self.root_path, dry_run=self.dry_run)
+      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
     except (ChecksumsError, lib.ManifestError), e:
       print >>self.output, '*** Error: %s' % e.message
       return False
@@ -453,50 +467,56 @@ class ChecksumsPathRenamer(object):
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_creator = ChecksumsCreator(
-    cmd_args.root_path, output=output, dry_run=args.dry_run, verbose=args.verbose)
+    cmd_args.root_path, manifest_path=cmd_args.manifest_path, output=output, dry_run=args.dry_run,
+    verbose=args.verbose)
   return checksums_creator.Create()
 
 
 def DoVerify(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_verifier = ChecksumsVerifier(
-    cmd_args.root_path, output=output, checksum_all=cmd_args.checksum_all,
-    dry_run=args.dry_run, verbose=args.verbose)
+    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
   return checksums_verifier.Verify()
 
 
 def DoSync(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--interactive', action='store_true')
   parser.add_argument('--no-detect-renames', dest='detect_renames', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
-    cmd_args.root_path, output=output, checksum_all=cmd_args.checksum_all,
-    interactive=cmd_args.interactive, detect_renames=cmd_args.detect_renames,
-    dry_run=args.dry_run, verbose=args.verbose)
+    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    checksum_all=cmd_args.checksum_all, interactive=cmd_args.interactive,
+    detect_renames=cmd_args.detect_renames, dry_run=args.dry_run, verbose=args.verbose)
   return checksums_syncer.Sync()
 
 
 def DoRenamePaths(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
   parser.add_argument('--path-regex-from', required=True)
   parser.add_argument('--path-regex-to', required=True)
   cmd_args = parser.parse_args(args.cmd_args)
 
   checksums_path_renamer = ChecksumsPathRenamer(
-    cmd_args.root_path, output=output, path_regex_from=cmd_args.path_regex_from,
-    path_regex_to=cmd_args.path_regex_to, dry_run=args.dry_run, verbose=args.verbose)
+    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    path_regex_from=cmd_args.path_regex_from, path_regex_to=cmd_args.path_regex_to,
+    dry_run=args.dry_run, verbose=args.verbose)
   return checksums_path_renamer.RenamePaths()
 
 

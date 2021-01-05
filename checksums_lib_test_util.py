@@ -51,23 +51,30 @@ def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=Tru
   return output_lines
 
 
-def DoCreate(root_path, dry_run=False, expected_success=True, expected_output=[]):
+def DoCreate(root_path, manifest_path=None, dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['create', root_path]
+  if manifest_path is not None:
+    cmd_args.extend(['--manifest-path', manifest_path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
 
 
-def DoVerify(root_path, dry_run=False, checksum_all=False, expected_success=True, expected_output=[]):
+def DoVerify(root_path, manifest_path=None, dry_run=False, checksum_all=False,
+             expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]
+  if manifest_path is not None:
+    cmd_args.extend(['--manifest-path', manifest_path])
   if checksum_all:
     cmd_args.append('--checksum-all')
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
 
 
-def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, detect_renames=True,
-           expected_success=True, expected_output=[]):
+def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, interactive=False,
+           detect_renames=True, expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
+  if manifest_path is not None:
+    cmd_args.extend(['--manifest-path', manifest_path])
   if checksum_all:
     cmd_args.append('--checksum-all')
   if interactive:
@@ -78,9 +85,11 @@ def DoSync(root_path, dry_run=False, checksum_all=False, interactive=False, dete
                   expected_output=expected_output)
 
 
-def DoRenamePaths(root_path, path_regex_from=None, path_regex_to=None, dry_run=False, expected_success=True,
-                  expected_output=[]):
+def DoRenamePaths(root_path, manifest_path=None, path_regex_from=None, path_regex_to=None, dry_run=False,
+                  expected_success=True, expected_output=[]):
   cmd_args = ['rename-paths', root_path]
+  if manifest_path is not None:
+    cmd_args.extend(['--manifest-path', manifest_path])
   if path_regex_from is not None:
     cmd_args.extend(['--path-regex-from', path_regex_from])
   if path_regex_to is not None:
