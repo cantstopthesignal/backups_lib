@@ -259,6 +259,8 @@ class EscapeKeyDetector(threading.Thread):
     self.start()
 
   def run(self):
+    if not self.input_stream.isatty():
+      return
     stdin_fd = self.input_stream.fileno()
     old_terminal_settings = termios.tcgetattr(stdin_fd)
     try:
