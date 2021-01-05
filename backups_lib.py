@@ -1230,7 +1230,7 @@ class BackupsDeDuplicator(object):
             continue
 
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print >>self.output, '*** Cancelled before backup %s' % backup
             return False
 
           PrintSkippedBackups(skipped_backups, self.output)
@@ -1448,7 +1448,7 @@ class BackupsDeleter(object):
       try:
         for backup_name in self.backup_names:
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup_name
+            print >>self.output, '*** Cancelled before backup %s' % backup_name
             return False
           backup = self.manager.GetBackup(backup_name)
           if not backup:
@@ -1503,10 +1503,6 @@ class UniqueFilesInBackupsDumper(object):
         for i in range(0, len(backups)):
           backup = backups[i]
 
-          if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
-            return False
-
           if ((self.min_backup is not None and backup.GetName() < self.min_backup)
               or (self.max_backup is not None and backup.GetName() > self.max_backup)):
             continue
@@ -1516,6 +1512,10 @@ class UniqueFilesInBackupsDumper(object):
             next_backup = i + 1 < len(backups) and backups[i + 1] or None
           else:
             next_backup = None
+
+          if escape_key_detector.WasEscapePressed():
+            print >>self.output, '*** Cancelled before backup %s' % backup
+            return False
 
           if not self._DumpUniqueFilesInternal(backup, previous_backup, next_backup):
             return False
@@ -1905,26 +1905,26 @@ class PathsInBackupsDeleter(object):
       self.config, readonly=False, browseable=False, encryption_manager=self.encryption_manager,
       dry_run=self.dry_run)
     try:
-      skipped_backups = []
-      for backup in backups_manager.GetBackupList():
-        if ((self.min_backup is not None and backup.GetName() < self.min_backup)
-            or (self.max_backup is not None and backup.GetName() > self.max_backup)):
-          skipped_backups.append(backup)
-          continue
-
-        PrintSkippedBackups(skipped_backups, self.output)
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
         skipped_backups = []
+        for backup in backups_manager.GetBackupList():
+          if ((self.min_backup is not None and backup.GetName() < self.min_backup)
+              or (self.max_backup is not None and backup.GetName() > self.max_backup)):
+            skipped_backups.append(backup)
+            continue
 
-        escape_key_detector = lib.EscapeKeyDetector()
-        try:
+          PrintSkippedBackups(skipped_backups, self.output)
+          skipped_backups = []
+
           self._DeletePathsInBackup(backup, escape_key_detector)
           if escape_key_detector.WasEscapePressed():
             print >>self.output, '*** Cancelled at backup %s' % backup
             return False
-        finally:
-          escape_key_detector.Shutdown()
 
-      PrintSkippedBackups(skipped_backups, self.output)
+        PrintSkippedBackups(skipped_backups, self.output)
+      finally:
+        escape_key_detector.Shutdown()
     finally:
       backups_manager.Close()
 
