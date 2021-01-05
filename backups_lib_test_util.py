@@ -222,10 +222,11 @@ def DoCloneBackup(config, backup_name, dry_run=False, expected_success=True, exp
                 expected_output=expected_output)
 
 
-def DoDeleteBackup(config, backup_name, dry_run=False, expected_success=True, expected_output=[]):
-  cmd_args = ['delete-backup',
-              '--backups-config', config.path,
-              '--backup-name', backup_name]
+def DoDeleteBackups(config, backup_names, dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['delete-backups',
+              '--backups-config', config.path]
+  for backup_name in backup_names:
+    cmd_args.extend(['--backup-name', backup_name])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                 expected_output=expected_output)
 

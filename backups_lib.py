@@ -20,7 +20,7 @@ COMMAND_DEDUPLICATE_BACKUPS = 'deduplicate-backups'
 COMMAND_PRUNE_BACKUPS = 'prune-backups'
 COMMAND_ADD_MISSING_MANIFESTS_TO_BACKUPS = 'add-missing-manifests-to-backups'
 COMMAND_CLONE_BACKUP = 'clone-backup'
-COMMAND_DELETE_BACKUP = 'delete-backup'
+COMMAND_DELETE_BACKUPS = 'delete-backups'
 COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS = 'dump-unique-files-in-backups'
 COMMAND_EXTRACT_FROM_BACKUPS = 'extract-from-backups'
 COMMAND_MERGE_INTO_BACKUPS = 'merge-into-backups'
@@ -36,7 +36,7 @@ COMMANDS = [
   COMMAND_PRUNE_BACKUPS,
   COMMAND_ADD_MISSING_MANIFESTS_TO_BACKUPS,
   COMMAND_CLONE_BACKUP,
-  COMMAND_DELETE_BACKUP,
+  COMMAND_DELETE_BACKUPS,
   COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS,
   COMMAND_EXTRACT_FROM_BACKUPS,
   COMMAND_MERGE_INTO_BACKUPS,
@@ -1427,31 +1427,41 @@ class BackupCloner(object):
     return True
 
 
-class BackupDeleter(object):
-  def __init__(self, config, output, backup_name=None, encryption_manager=None, dry_run=False,
+class BackupsDeleter(object):
+  def __init__(self, config, output, backup_names=[], encryption_manager=None, dry_run=False,
                verbose=False):
     self.config = config
     self.output = output
-    self.backup_name = backup_name
+    self.backup_names = backup_names
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
     self.manager = None
 
-  def DeleteBackup(self):
+  def DeleteBackups(self):
     self.manager = BackupsManager.Open(
       self.config, encryption_manager=self.encryption_manager, readonly=False,
       dry_run=self.dry_run)
     try:
-      backup = self.manager.GetBackup(self.backup_name)
-      if not backup:
-        print >>self.output, '*** Error: No backup %s found for %s' % (self.backup_name, self.manager)
-        return False
-      return self._DeleteBackupInternal(backup)
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
+        for backup_name in self.backup_names:
+          if escape_key_detector.WasEscapePressed():
+            print >>self.output, '*** Cancelled at backup %s' % backup_name
+            return False
+          backup = self.manager.GetBackup(backup_name)
+          if not backup:
+            print >>self.output, '*** Error: No backup %s found for %s' % (backup_name, self.manager)
+            return False
+          if not self._DeleteBackupsInternal(backup):
+            return False
+        return True
+      finally:
+        escape_key_detector.Shutdown()
     finally:
       self.manager.Close()
 
-  def _DeleteBackupInternal(self, backup):
+  def _DeleteBackupsInternal(self, backup):
     backups = self.manager.GetBackupList()
     backup_index = backups.index(backup)
     superseding_backup = None
@@ -2105,18 +2115,22 @@ def DoCloneBackup(args, output):
   return cloner.CloneBackup()
 
 
-def DoDeleteBackup(args, output):
+def DoDeleteBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
-  parser.add_argument('--backup-name', required=True)
+  parser.add_argument('--backup-name', dest='backup_names', action='append', default=[])
   cmd_args = parser.parse_args(args.cmd_args)
+
+  if not cmd_args.backup_names:
+    print >>output, ('*** Error: One or more --backup-name args required')
+    return False
 
   config = GetBackupsConfigFromArgs(cmd_args)
 
-  deleter = BackupDeleter(
-    config, output=output, backup_name=cmd_args.backup_name,
+  deleter = BackupsDeleter(
+    config, output=output, backup_names=cmd_args.backup_names,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
-  return deleter.DeleteBackup()
+  return deleter.DeleteBackups()
 
 
 def DoDumpUniqueFilesInBackups(args, output):
@@ -2227,8 +2241,8 @@ def DoCommand(args, output):
     return DoAddMissingManifestsToBackups(args, output=output)
   elif args.command == COMMAND_CLONE_BACKUP:
     return DoCloneBackup(args, output=output)
-  elif args.command == COMMAND_DELETE_BACKUP:
-    return DoDeleteBackup(args, output=output)
+  elif args.command == COMMAND_DELETE_BACKUPS:
+    return DoDeleteBackups(args, output=output)
   elif args.command == COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS:
     return DoDumpUniqueFilesInBackups(args, output=output)
   elif args.command == COMMAND_EXTRACT_FROM_BACKUPS:

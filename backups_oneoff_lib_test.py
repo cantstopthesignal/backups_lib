@@ -37,7 +37,6 @@ from backups_lib_test_util import DoApplyToBackups
 from backups_lib_test_util import DoCreateBackup
 from backups_lib_test_util import DoCreateCheckpoint
 from backups_lib_test_util import DoDeduplicateBackups
-from backups_lib_test_util import DoDeleteBackup
 from backups_lib_test_util import DoVerifyBackups
 
 

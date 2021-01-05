@@ -40,7 +40,7 @@ from backups_lib_test_util import DoCloneBackup
 from backups_lib_test_util import DoCreateBackup
 from backups_lib_test_util import DoCreateCheckpoint
 from backups_lib_test_util import DoDeduplicateBackups
-from backups_lib_test_util import DoDeleteBackup
+from backups_lib_test_util import DoDeleteBackups
 from backups_lib_test_util import DoDeleteInBackups
 from backups_lib_test_util import DoDumpUniqueFilesInBackups
 from backups_lib_test_util import DoExtractFromBackups
@@ -896,7 +896,7 @@ def CloneBackupTest():
       backups_manager.Close()
 
 
-def DeleteBackupTest():
+def DeleteBackupsTest():
   with TempDir() as test_dir:
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
@@ -916,6 +916,13 @@ def DeleteBackupTest():
       expected_output=['>f+++++++ f3',
                        'Transferring 1 of 3 paths (0b of 0b)'])
 
+    file4 = CreateFile(config.src_path, 'f4')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-04-120000',
+      expected_output=['>f+++++++ f4',
+                       'Transferring 1 of 4 paths (0b of 0b)'])
+
     DoApplyToBackups(
       config,
       expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
@@ -926,55 +933,100 @@ def DeleteBackupTest():
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ f3',
                        'Copying paths: 3 to copy, 1 to hard link, 3 total in source, 3 total in result...',
-                       'Verifying 2020-01-03-120000...'])
+                       'Verifying 2020-01-03-120000...',
+                       'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
+                       '>f+++++++ f4',
+                       'Copying paths: 4 to copy, 2 to hard link, 4 total in source, 4 total in result...',
+                       'Verifying 2020-01-04-120000...'])
 
     DoListBackups(config, expected_backups=['2020-01-01-120000',
                                             '2020-01-02-120000',
-                                            '2020-01-03-120000'])
+                                            '2020-01-03-120000',
+                                            '2020-01-04-120000'])
 
-    DoDeleteBackup(
-      config, backup_name='DOES_NOT_EXIST',
+    DoDeleteBackups(
+      config, backup_names=[],
+      expected_success=False,
+      expected_output=[
+        '*** Error: One or more --backup-name args required'])
+
+    DoDeleteBackups(
+      config, backup_names=['DOES_NOT_EXIST'],
       expected_success=False,
       expected_output=[
         re.compile('^[*]+ Error: No backup DOES_NOT_EXIST found for BackupsManager<.*>$')])
 
-    DoDeleteBackup(
-      config, backup_name='2020-01-01-120000',
+    DoDeleteBackups(
+      config, backup_names=['2020-01-01-120000'],
       expected_output=[
         'Deleting Backup<2020-01-01-120000,DONE>: Backup<2020-01-02-120000,DONE> supersedes it...'])
 
     DoListBackups(config, expected_backups=['2020-01-02-120000',
-                                            '2020-01-03-120000'])
-
-    DoDeleteBackup(
-      config, backup_name='2020-01-02-120000',
-      expected_output=[
-        'Deleting Backup<2020-01-02-120000,DONE>: Backup<2020-01-03-120000,DONE> supersedes it...'])
-
-    DoListBackups(config, expected_backups=['2020-01-03-120000'])
+                                            '2020-01-03-120000',
+                                            '2020-01-04-120000'])
 
     backups_manager = backups_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
                        ['.d....... .',
+                        '.d....... 2020-01-02-120000',
+                        '.d....... 2020-01-02-120000/.metadata',
+                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/.metadata/superseded-2020-01-01-120000',
+                        '.f....... 2020-01-02-120000/.metadata/superseded-2020-01-01-120000/manifest.pbdata',
+                        '.d....... 2020-01-02-120000/Root',
+                        '.f....... 2020-01-02-120000/Root/fX',
                         '.d....... 2020-01-03-120000',
                         '.d....... 2020-01-03-120000/.metadata',
                         '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000',
-                        '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-01-120000/manifest.pbdata',
-                        '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000',
-                        '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
                         '.d....... 2020-01-03-120000/Root',
                         '.f....... 2020-01-03-120000/Root/f3',
                         '.f....... 2020-01-03-120000/Root/fX',
-                        '.L....... Latest -> 2020-01-03-120000'])
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f3',
+                        '.f....... 2020-01-04-120000/Root/f4',
+                        '.f....... 2020-01-04-120000/Root/fX',
+                        '.L....... Latest -> 2020-01-04-120000'])
     finally:
       backups_manager.Close()
 
-    DoDeleteBackup(
-      config, backup_name='2020-01-03-120000',
-      expected_output=['Deleting Backup<2020-01-03-120000,DONE>...'])
+    DoDeleteBackups(
+      config, backup_names=['2020-01-02-120000', '2020-01-03-120000'],
+      expected_output=[
+        'Deleting Backup<2020-01-02-120000,DONE>: Backup<2020-01-03-120000,DONE> supersedes it...',
+        'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...'])
+
+    DoListBackups(config, expected_backups=['2020-01-04-120000'])
+
+    backups_manager = backups_lib.BackupsManager.Open(
+      config, readonly=True, browseable=False)
+    try:
+      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+                       ['.d....... .',
+                        '.d....... 2020-01-04-120000',
+                        '.d....... 2020-01-04-120000/.metadata',
+                        '.f....... 2020-01-04-120000/.metadata/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/.metadata/superseded-2020-01-01-120000',
+                        '.f....... 2020-01-04-120000/.metadata/superseded-2020-01-01-120000/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/.metadata/superseded-2020-01-02-120000',
+                        '.f....... 2020-01-04-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/.metadata/superseded-2020-01-03-120000',
+                        '.f....... 2020-01-04-120000/.metadata/superseded-2020-01-03-120000/manifest.pbdata',
+                        '.d....... 2020-01-04-120000/Root',
+                        '.f....... 2020-01-04-120000/Root/f3',
+                        '.f....... 2020-01-04-120000/Root/f4',
+                        '.f....... 2020-01-04-120000/Root/fX',
+                        '.L....... Latest -> 2020-01-04-120000'])
+    finally:
+      backups_manager.Close()
+
+    DoDeleteBackups(
+      config, backup_names=['2020-01-04-120000'],
+      expected_output=['Deleting Backup<2020-01-04-120000,DONE>...'])
 
     DoListBackups(config, expected_backups=[])
 
@@ -2192,8 +2244,8 @@ def Test(tests=[]):
     PruneBackupsTest()
   if not tests or 'CloneBackupTest' in tests:
     CloneBackupTest()
-  if not tests or 'DeleteBackupTest' in tests:
-    DeleteBackupTest()
+  if not tests or 'DeleteBackupsTest' in tests:
+    DeleteBackupsTest()
   if not tests or 'DumpUniqueFilesInBackupsTest' in tests:
     DumpUniqueFilesInBackupsTest()
   if not tests or 'ExtractFromBackupsTest' in tests:
