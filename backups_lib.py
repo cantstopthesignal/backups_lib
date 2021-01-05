@@ -1219,37 +1219,38 @@ class BackupsDeDuplicator(object):
       last_backup = None
       last_manifest = None
 
-      for backup in self.manager.GetBackupList():
-        if ((self.min_backup is not None and backup.GetName() < self.min_backup)
-            or (self.max_backup is not None and backup.GetName() > self.max_backup)):
-          skipped_backups.append(backup)
-          last_backup = None
-          last_manifest = None
-          continue
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
+        for backup in self.manager.GetBackupList():
+          if ((self.min_backup is not None and backup.GetName() < self.min_backup)
+              or (self.max_backup is not None and backup.GetName() > self.max_backup)):
+            skipped_backups.append(backup)
+            last_backup = None
+            last_manifest = None
+            continue
 
-        PrintSkippedBackups(skipped_backups, self.output)
-        skipped_backups = []
-
-        manifest = lib.ReadManifestFromCheckpointOrPath(
-          backup.GetManifestPath(), encryption_manager=self.encryption_manager, dry_run=self.dry_run)
-
-        if last_manifest is not None:
-          escape_key_detector = lib.EscapeKeyDetector()
-          try:
-            DeDuplicateBackups(
-              backup, manifest, last_backup, last_manifest, self.output, min_file_size=self.min_file_size,
-              escape_key_detector=escape_key_detector, dry_run=self.dry_run, verbose=self.verbose)
-          finally:
-            escape_key_detector.Shutdown()
           if escape_key_detector.WasEscapePressed():
             print >>self.output, '*** Cancelled at backup %s' % backup
             return False
 
-        last_manifest = manifest
-        last_backup = backup
+          PrintSkippedBackups(skipped_backups, self.output)
+          skipped_backups = []
 
-      PrintSkippedBackups(skipped_backups, self.output)
-      return True
+          manifest = lib.ReadManifestFromCheckpointOrPath(
+            backup.GetManifestPath(), encryption_manager=self.encryption_manager, dry_run=self.dry_run)
+
+          if last_manifest is not None:
+            DeDuplicateBackups(
+              backup, manifest, last_backup, last_manifest, self.output, min_file_size=self.min_file_size,
+              escape_key_detector=escape_key_detector, dry_run=self.dry_run, verbose=self.verbose)
+
+          last_manifest = manifest
+          last_backup = backup
+
+        PrintSkippedBackups(skipped_backups, self.output)
+        return True
+      finally:
+        escape_key_detector.Shutdown()
     finally:
       self.manager.Close()
 
@@ -1496,22 +1497,30 @@ class UniqueFilesInBackupsDumper(object):
       self.config, encryption_manager=self.encryption_manager, readonly=True,
       dry_run=self.dry_run)
     try:
-      backups = self.manager.GetBackupList()
-      for i in range(0, len(backups)):
-        backup = backups[i]
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
+        backups = self.manager.GetBackupList()
+        for i in range(0, len(backups)):
+          backup = backups[i]
 
-        if ((self.min_backup is not None and backup.GetName() < self.min_backup)
-            or (self.max_backup is not None and backup.GetName() > self.max_backup)):
-          continue
+          if escape_key_detector.WasEscapePressed():
+            print >>self.output, '*** Cancelled at backup %s' % backup
+            return False
 
-        previous_backup = i > 0 and backups[i - 1] or None
-        if not self.match_previous_only:
-          next_backup = i + 1 < len(backups) and backups[i + 1] or None
-        else:
-          next_backup = None
+          if ((self.min_backup is not None and backup.GetName() < self.min_backup)
+              or (self.max_backup is not None and backup.GetName() > self.max_backup)):
+            continue
 
-        if not self._DumpUniqueFilesInternal(backup, previous_backup, next_backup):
-          return False
+          previous_backup = i > 0 and backups[i - 1] or None
+          if not self.match_previous_only:
+            next_backup = i + 1 < len(backups) and backups[i + 1] or None
+          else:
+            next_backup = None
+
+          if not self._DumpUniqueFilesInternal(backup, previous_backup, next_backup):
+            return False
+      finally:
+        escape_key_detector.Shutdown()
     finally:
       self.manager.Close()
 
