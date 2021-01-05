@@ -2131,11 +2131,12 @@ class ImageCompactor(object):
 
 
 class ManifestDiffDumper(object):
-  def __init__(self, first_manifest, second_manifest, output, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS,
-               verbose=False):
+  def __init__(self, first_manifest, second_manifest, output, ignore_matching_renames=False,
+               ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False):
     self.first_manifest = first_manifest
     self.second_manifest = second_manifest
     self.output = output
+    self.ignore_matching_renames = ignore_matching_renames
     self.ignore_uid_diffs = ignore_uid_diffs
     self.ignore_gid_diffs = ignore_gid_diffs
     self.verbose = verbose
@@ -2152,9 +2153,8 @@ class ManifestDiffDumper(object):
 
       itemized = PathInfo.GetItemizedDiff(second_path_info, first_path_info)
       has_diffs = itemized.HasDiffs(ignore_uid_diffs=self.ignore_uid_diffs, ignore_gid_diffs=self.ignore_gid_diffs)
+
       if has_diffs or self.verbose:
-        print >>self.output, itemized
-      if has_diffs:
         dup_analyze_result = None
         if second_path_info is None:
           if first_path_info.path_type == PathInfo.TYPE_FILE:
@@ -2165,9 +2165,13 @@ class ManifestDiffDumper(object):
           dup_analyze_result = AnalyzePathInfoDups(
             second_path_info, sha256_to_first_pathinfos.get(second_path_info.sha256, []),
             replacing_previous=True, verbose=self.verbose)
-        if dup_analyze_result is not None:
-          for line in dup_analyze_result.dup_output_lines:
-            print >>self.output, line
+        found_matching_rename = dup_analyze_result and dup_analyze_result.found_matching_rename
+
+        if not self.ignore_matching_renames or not found_matching_rename or self.verbose:
+          print >>self.output, itemized
+          if dup_analyze_result is not None:
+            for line in dup_analyze_result.dup_output_lines:
+              print >>self.output, line
 
     return True
 
@@ -2393,6 +2397,7 @@ def DoDiffManifests(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('first_path', metavar='first_manifest_or_checkpoint_path')
   parser.add_argument('second_path', metavar='second_manifest_or_checkpoint_path')
+  parser.add_argument('--ignore-matching-renames', action='store_true')
   if IGNORE_UID_DIFFS:
     parser.add_argument('--no-ignore-uid-diffs', dest='ignore_uid_diffs', action='store_false')
   else:
@@ -2412,6 +2417,7 @@ def DoDiffManifests(args, output):
 
   manifest_diff_dumper = ManifestDiffDumper(
     first_manifest=first_manifest, second_manifest=second_manifest, output=output, verbose=args.verbose,
+    ignore_matching_renames=cmd_args.ignore_matching_renames,
     ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs)
   return manifest_diff_dumper.DumpDiff()
 

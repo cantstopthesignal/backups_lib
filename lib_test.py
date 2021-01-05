@@ -208,10 +208,13 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
   AssertLinesEqual(output_lines, expected_output)
 
 
-def DoDiffManifests(manifest1_path, manifest2_path, expected_success=True, expected_output=[]):
+def DoDiffManifests(manifest1_path, manifest2_path, ignore_matching_renames=False,
+                    expected_success=True, expected_output=[]):
   cmd_args = ['diff-manifests',
               manifest1_path,
               manifest2_path]
+  if ignore_matching_renames:
+    cmd_args.append('--ignore-matching-renames')
   DoBackupsMain(cmd_args, expected_success=expected_success, expected_output=expected_output)
 
 
@@ -1099,7 +1102,15 @@ def DiffManifestsTest():
     DoDiffManifests(manifest1.path, manifest2.path,
                     expected_output=['*deleting file1',
                                      '>L+++++++ ln1 -> INVALID'])
+    DoDiffManifests(manifest1.path, manifest2.path,
+                    ignore_matching_renames=True,
+                    expected_output=['*deleting file1',
+                                     '>L+++++++ ln1 -> INVALID'])
     DoDiffManifests(manifest2.path, manifest1.path,
+                    expected_output=['>f+++++++ file1',
+                                     '*deleting ln1'])
+    DoDiffManifests(manifest2.path, manifest1.path,
+                    ignore_matching_renames=True,
                     expected_output=['>f+++++++ file1',
                                      '*deleting ln1'])
 
@@ -1115,6 +1126,9 @@ def DiffManifestsTest():
                                      '>f+++++++ file2',
                                      '  replacing duplicate: .f....... file1',
                                      '>L+++++++ ln1 -> INVALID'])
+    DoDiffManifests(manifest1.path, manifest2.path,
+                    ignore_matching_renames=True,
+                    expected_output=['>L+++++++ ln1 -> INVALID'])
 
 
 def FileSizeToStringTest():
