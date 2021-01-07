@@ -544,6 +544,41 @@ def GetPathsFromArgs(args, required=True):
   return sorted(paths)
 
 
+class BackupsMatcher(object):
+  def __init__(self, min_backup=None, max_backup=None, backup_names=[]):
+    self.min_backup = min_backup
+    self.max_backup = max_backup
+    self.backup_names = list(backup_names)
+
+  def Matches(self, backup_name):
+    if self.min_backup is not None and backup_name < self.min_backup:
+      return False
+    if self.max_backup is not None and backup_name > self.max_backup:
+      return False
+    if self.backup_names and backup_name not in self.backup_names:
+      return False
+    return True
+
+
+class BackupsMatcherArgsError(Exception):
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+
+def AddBackupsMatcherArgs(parser):
+  parser.add_argument('--backup-name', dest='backup_names', action='append', default=[])
+  parser.add_argument('--min-backup')
+  parser.add_argument('--max-backup')
+
+
+def GetBackupsMatcherFromArgs(args):
+  if args.backup_names and (args.min_backup is not None or args.max_backup is not None):
+    raise BackupsMatcherArgsError('--backup-name args cannot be used at the same time as '
+                                  '--min-backup or --max-backup args')
+  return BackupsMatcher(min_backup=args.min_backup, max_backup=args.max_backup,
+                        backup_names=args.backup_names)
+
+
 class BackupsConfig(object):
   IMAGE_PATH = 'IMAGE_PATH'
   MOUNT_PATH = 'MOUNT_PATH'
@@ -1479,12 +1514,11 @@ class BackupsDeleter(object):
 
 
 class UniqueFilesInBackupsDumper(object):
-  def __init__(self, config, output, min_backup=None, max_backup=None, ignore_matching_renames=False,
+  def __init__(self, config, output, backups_matcher=BackupsMatcher(), ignore_matching_renames=False,
                match_previous_only=False, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
-    self.min_backup = min_backup
-    self.max_backup = max_backup
+    self.backups_matcher = backups_matcher
     self.ignore_matching_renames = ignore_matching_renames
     self.match_previous_only = match_previous_only
     self.encryption_manager = encryption_manager
@@ -1503,8 +1537,7 @@ class UniqueFilesInBackupsDumper(object):
         for i in range(0, len(backups)):
           backup = backups[i]
 
-          if ((self.min_backup is not None and backup.GetName() < self.min_backup)
-              or (self.max_backup is not None and backup.GetName() > self.max_backup)):
+          if not self.backups_matcher.Matches(backup.GetName()):
             continue
 
           previous_backup = i > 0 and backups[i - 1] or None
@@ -2145,25 +2178,20 @@ def DoDeleteBackups(args, output):
 def DoDumpUniqueFilesInBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
-  parser.add_argument('--min-backup')
-  parser.add_argument('--max-backup')
-  parser.add_argument('--backup-name')
+  AddBackupsMatcherArgs(parser)
   parser.add_argument('--ignore-matching-renames', action='store_true')
   parser.add_argument('--match-previous-only', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
-
-  if cmd_args.backup_name is not None:
-    if cmd_args.min_backup is not None or cmd_args.max_backup is not None:
-      print >>output, ('*** Error: --backup-name arg cannot be used at the same time as '
-                       '--min-backup or --max-backup args')
-      return False
-    cmd_args.min_backup = cmd_args.backup_name
-    cmd_args.max_backup = cmd_args.backup_name
+  try:
+    backups_matcher = GetBackupsMatcherFromArgs(cmd_args)
+  except BackupsMatcherArgsError, e:
+    print >>output, '*** Error:', e.message
+    return False
 
   dumper = UniqueFilesInBackupsDumper(
-    config, output=output, min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
+    config, output=output, backups_matcher=backups_matcher,
     ignore_matching_renames=cmd_args.ignore_matching_renames,
     match_previous_only=cmd_args.match_previous_only,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)

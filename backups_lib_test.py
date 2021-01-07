@@ -1110,10 +1110,10 @@ def DumpUniqueFilesInBackupsTest():
         'Verifying 2020-01-03-120000...'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='NAME', min_backup='MIN', max_backup='MAX',
+      config, backup_names=['NAME'], min_backup='MIN', max_backup='MAX',
       expected_success=False,
       expected_output=[
-        '*** Error: --backup-name arg cannot be used at the same time as --min-backup or --max-backup args'])
+        '*** Error: --backup-name args cannot be used at the same time as --min-backup or --max-backup args'])
 
     DoDumpUniqueFilesInBackups(
       config,
@@ -1238,11 +1238,30 @@ def DumpUniqueFilesInBackupsTest():
                        'Paths: 9 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-01-120000',
+      config, backup_names=['2020-01-01-120000'],
       expected_output=['Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
                        'Compare to next Backup<2020-01-02-120000,DONE>...',
                        '>f+++++++ f1',
                        'Paths: 1 unique (0b), 4 total'])
+
+    DoDumpUniqueFilesInBackups(
+      config, backup_names=['2020-01-01-120000', '2020-01-03-120000'],
+      expected_output=['Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+                       'Compare to next Backup<2020-01-02-120000,DONE>...',
+                       '>f+++++++ f1',
+                       'Paths: 1 unique (0b), 4 total',
+                       'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+                       'Compare to previous Backup<2020-01-02-120000,DONE>...',
+                       '>f+++++++ f3',
+                       '>f+++++++ f6',
+                       '>f+++++++ f7',
+                       '.f..t.... fT',
+                       '.Lc...... ln2 -> fT',
+                       '>f+++++++ par!/f4',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f5',
+                       '>f+++++++ par2/f8',
+                       'Paths: 9 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
       config, min_backup='2020-01-02-120000',
@@ -1304,7 +1323,7 @@ def DumpUniqueFilesInBackupsTest():
         'Verifying 2020-01-04-120000...'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-03-120000',
+      config, backup_names=['2020-01-03-120000'],
       expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                        'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
                        '>f+++++++ f6',
@@ -1317,7 +1336,7 @@ def DumpUniqueFilesInBackupsTest():
                        'Paths: 4 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-03-120000',
+      config, backup_names=['2020-01-03-120000'],
       match_previous_only=True,
       expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                        'Compare to previous Backup<2020-01-02-120000,DONE>...',
@@ -1333,7 +1352,7 @@ def DumpUniqueFilesInBackupsTest():
                        'Paths: 9 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-03-120000',
+      config, backup_names=['2020-01-03-120000'],
       ignore_matching_renames=True,
       expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                        'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
@@ -1346,7 +1365,7 @@ def DumpUniqueFilesInBackupsTest():
 
     with SetMaxDupCounts(new_max_dup_printout_count=1):
       DoDumpUniqueFilesInBackups(
-        config, backup_name='2020-01-03-120000',
+        config, backup_names=['2020-01-03-120000'],
         ignore_matching_renames=True,
         expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                          'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
@@ -1359,7 +1378,7 @@ def DumpUniqueFilesInBackupsTest():
 
     with SetMaxDupCounts(new_max_dup_find_count=1):
       DoDumpUniqueFilesInBackups(
-        config, backup_name='2020-01-03-120000',
+        config, backup_names=['2020-01-03-120000'],
         ignore_matching_renames=True,
         expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                          'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
@@ -1370,7 +1389,7 @@ def DumpUniqueFilesInBackupsTest():
                          'Paths: 3 unique (2kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-03-120000',
+      config, backup_names=['2020-01-03-120000'],
       ignore_matching_renames=True, match_previous_only=True,
       expected_output=['Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
                        'Compare to previous Backup<2020-01-02-120000,DONE>...',
@@ -1386,7 +1405,7 @@ def DumpUniqueFilesInBackupsTest():
                        'Paths: 9 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-04-120000',
+      config, backup_names=['2020-01-04-120000'],
       expected_output=['Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
                        'Compare to previous Backup<2020-01-03-120000,DONE>...',
                        '>f+++++++ f6_new_dup',
@@ -1401,7 +1420,7 @@ def DumpUniqueFilesInBackupsTest():
 
     with SetOmitUidAndGidInPathInfoToString():
       DoDumpUniqueFilesInBackups(
-        config, backup_name='2020-01-04-120000', verbose=True,
+        config, backup_names=['2020-01-04-120000'], verbose=True,
         expected_output=[
           'Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
           'Compare to previous Backup<2020-01-03-120000,DONE>...',
@@ -1432,7 +1451,7 @@ def DumpUniqueFilesInBackupsTest():
           'Paths: 5 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
-      config, backup_name='2020-01-04-120000',
+      config, backup_names=['2020-01-04-120000'],
       ignore_matching_renames=True,
       expected_output=['Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
                        'Compare to previous Backup<2020-01-03-120000,DONE>...',

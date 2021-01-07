@@ -231,13 +231,13 @@ def DoDeleteBackups(config, backup_names, dry_run=False, expected_success=True, 
                 expected_output=expected_output)
 
 
-def DoDumpUniqueFilesInBackups(config, backup_name=None, min_backup=None, max_backup=None,
+def DoDumpUniqueFilesInBackups(config, backup_names=[], min_backup=None, max_backup=None,
                                ignore_matching_renames=False,
                                match_previous_only=False, dry_run=False, verbose=False,
                                expected_success=True, expected_output=[]):
   cmd_args = ['dump-unique-files-in-backups',
               '--backups-config', config.path]
-  if backup_name is not None:
+  for backup_name in backup_names:
     cmd_args.extend(['--backup-name', backup_name])
   if min_backup is not None:
     cmd_args.extend(['--min-backup', min_backup])
