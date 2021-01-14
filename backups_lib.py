@@ -639,6 +639,14 @@ class BackupsConfig(object):
       if self.filter_merge_path is not None:
         f.write('%s %s\n' % (BackupsConfig.FILTER_MERGE_PATH, self.filter_merge_path))
 
+  def GetFilters(self):
+    filters = list(lib.RSYNC_FILTERS)
+    if self.filter_merge_path is not None:
+      if not os.path.exists(self.filter_merge_path):
+        raise Exception('Expected filter merge path %r to exist' % self.filter_merge_path)
+      filters.append(lib.RsyncFilterMerge(self.filter_merge_path))
+    return filters
+
 
 class Backup(object):
   BACKUP_NAME_PATTERN = re.compile('[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}')
@@ -907,11 +915,7 @@ class BackupCreator:
     basis_manifest = lib.ReadManifestFromCheckpointOrPath(
       basis_path, encryption_manager=self.encryption_manager, dry_run=self.dry_run)
 
-    filters = list(lib.RSYNC_FILTERS)
-    if self.config.filter_merge_path is not None:
-      if not os.path.exists(self.config.filter_merge_path):
-        raise Exception('Expected filter merge path %r to exist' % self.config.filter_merge_path)
-      filters.append(lib.RsyncFilterMerge(self.config.filter_merge_path))
+    filters = self.config.GetFilters()
 
     creator = lib.CheckpointCreator(
       self.config.src_path, self.config.checkpoints_dir, name=self.name, output=self.output,
