@@ -66,6 +66,8 @@ MAX_DUP_PRINTOUT_COUNT = 5
 MIN_SIZE_FOR_SHA256_PROGRESS = 1024 * 1024 * 10
 PRINT_PROGRESS_MIN_INTERVAL = .05
 
+DEFAULT_DEFRAGMENT_ITERATIONS = 5
+
 
 def GetManifestBackupPath(manifest_path):
   path = '%s.bak' % manifest_path
@@ -702,8 +704,9 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
   return (current_blocks, min_blocks)
 
 
-def CompactAndDefragmentImage(image_path, output, defragment=False, defragment_iterations=1,
-                              encryption_manager=None, dry_run=False):
+def CompactAndDefragmentImage(
+    image_path, output, defragment=False, defragment_iterations=DEFAULT_DEFRAGMENT_ITERATIONS,
+    encryption_manager=None, dry_run=False):
   (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
 
   if not defragment:
@@ -2068,7 +2071,8 @@ class CheckpointApplier(object):
 
 
 class CheckpointStripper(object):
-  def __init__(self, checkpoint_path, output, defragment=False, defragment_iterations=1,
+  def __init__(self, checkpoint_path, output, defragment=False,
+               defragment_iterations=DEFAULT_DEFRAGMENT_ITERATIONS,
                dry_run=False, verbose=False, encryption_manager=None):
     self.checkpoint_path = checkpoint_path
     self.defragment = defragment
@@ -2109,7 +2113,7 @@ class CheckpointStripper(object):
 
 
 class ImageCompactor(object):
-  def __init__(self, image_path, output, defragment=False, defragment_iterations=1,
+  def __init__(self, image_path, output, defragment=False, defragment_iterations=DEFAULT_DEFRAGMENT_ITERATIONS,
                dry_run=False, verbose=False, encryption_manager=None):
     self.image_path = image_path
     self.defragment = defragment
@@ -2360,7 +2364,7 @@ def DoStripCheckpoint(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--checkpoint-path', required=True)
   parser.add_argument('--no-defragment', dest='defragment', action='store_false')
-  parser.add_argument('--defragment-iterations', default='1', type=int)
+  parser.add_argument('--defragment-iterations', default=str(DEFAULT_DEFRAGMENT_ITERATIONS), type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   checkpoint_stripper = CheckpointStripper(
@@ -2374,7 +2378,7 @@ def DoCompactImage(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--image-path', required=True)
   parser.add_argument('--no-defragment', dest='defragment', action='store_false')
-  parser.add_argument('--defragment-iterations', default='1', type=int)
+  parser.add_argument('--defragment-iterations', default=str(DEFAULT_DEFRAGMENT_ITERATIONS), type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
   image_compactor = ImageCompactor(

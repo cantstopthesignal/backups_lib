@@ -1007,6 +1007,7 @@ def CompactTest():
                   'Restoring image size to 2147073968 blocks...',
                   'Image size 30mb -> 30mb'])
       DoCompact(checkpoint1.GetImagePath(),
+                defragment_iterations=1,
                 expected_output=[
                   'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
                   % checkpoint1.GetImagePath(),
