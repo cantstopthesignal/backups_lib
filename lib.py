@@ -1082,7 +1082,8 @@ class ImageAttacher(object):
         break
       if output.endswith('- No such file or directory'):
         break
-      elif not output.endswith('- Resource busy'):
+      elif (not output.endswith('- Resource busy')
+            and not output.endswith('\nhdiutil: detach: drive not detached')):
         raise Exception('Unexpected output from %r: %r' % (cmd, output))
       time.sleep(10)
     else:
