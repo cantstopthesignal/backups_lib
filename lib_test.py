@@ -952,8 +952,8 @@ def StripTest():
                 '<... snip APFS operation ...>',
                 'Iteration 2, new apfs min size 1.2gb...',
                 '<... snip APFS operation ...>',
-                'Resizing image to minimum size: 2600960 -> 69632 blocks...',
-                'Restoring image size to 2600960 blocks...',
+                re.compile('^Resizing image to minimum size: (2600960|2596864) -> 69632 blocks[.][.][.]$'),
+                re.compile('^Restoring image size to (2600960|2596864) blocks[.][.][.]$'),
                 'Starting to compact\xe2\x80\xa6',
                 'Reclaiming free space\xe2\x80\xa6',
                 'Finishing compaction\xe2\x80\xa6',
@@ -1012,7 +1012,7 @@ def CompactTest():
                   'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
                   % checkpoint1.GetImagePath(),
                   '<... snip APFS operation ...>',
-                  'Resizing image to minimum size: 3538944 -> 503808 blocks...',
+                  re.compile('^Resizing image to minimum size: 3538944 -> (503808|499712) blocks[.][.][.]$'),
                   'Restoring image size to 3538944 blocks...',
                   'Starting to compact\xe2\x80\xa6',
                   'Reclaiming free space\xe2\x80\xa6',
@@ -1060,10 +1060,10 @@ def CompactTest():
                   'Iteration 3, new apfs min size 1gb...',
                   '<... snip APFS operation ...>',
                   'Iteration 4, new apfs min size 1gb has low savings',
-                  'Resizing image to minimum size: 2170880 -> 65536 blocks...',
-                  ("Deleting 27 bands between (29,130943) for empty partition "
-                   + "Partition<start=475176, length=2144903095, hint='Apple_Free'>..."),
-                  'Restoring image size to 2170880 blocks...',
+                  re.compile('^Resizing image to minimum size: (2170880|2166784) -> 65536 blocks[.][.][.]$'),
+                  re.compile("^Deleting 27 bands between [(]29,130943[)] for empty partition "
+                             + "Partition<start=475176, length=(2144903095|2144907191), hint='Apple_Free'>[.][.][.]$"),
+                  re.compile('^Restoring image size to (2170880|2166784) blocks[.][.][.]$'),
                   'Starting to compact\xe2\x80\xa6',
                   'Reclaiming free space\xe2\x80\xa6',
                   'Finishing compaction\xe2\x80\xa6',
@@ -1073,9 +1073,9 @@ def CompactTest():
                   'Starting to compact\xe2\x80\xa6',
                   'Reclaiming free space\xe2\x80\xa6',
                   'Finishing compaction\xe2\x80\xa6',
-                  'Reclaimed 4 MB out of 1023.6 GB possible.',
+                  re.compile('^Reclaimed (4|6) MB out of 1023[.]6 GB possible[.]$'),
                   'Image size 225.5mb -> 23.6mb'])
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '23.6mb', '23.7mb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '23.5mb', '23.7mb')
 
 
 def DiffManifestsTest():

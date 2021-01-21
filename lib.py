@@ -625,12 +625,16 @@ def CompactImageWithResize(image_path, output, encryption_manager=None, encrypte
                image_uuid=image_uuid, dry_run=dry_run)
 
 
+def StripUtf8BidiCommandChars(s):
+  return s.replace('\xe2\x81\xa8', '').replace('\xe2\x81\xa9', '')
+
+
 def GetApfsDeviceFromAttachedImageDevice(image_device, output):
   assert image_device.startswith('/dev/')
   diskutil_output = subprocess.check_output(['diskutil', 'list', image_device])
   apfs_identifier = None
   for line in diskutil_output.split('\n'):
-    pieces = line.strip().split()
+    pieces = [ StripUtf8BidiCommandChars(p) for p in line.strip().split() ]
     if pieces[1:3] == ['Apple_APFS', 'Container']:
       if apfs_identifier is not None:
         raise Exception('Multiple apfs containers found in diskutil output: %s' % diskutil_output)
