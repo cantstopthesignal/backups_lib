@@ -477,36 +477,6 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
   return result
 
 
-class PathMatcher(object):
-  def Matches(self, path):
-    raise Exception('Must be implemented by subclass')
-
-
-class MatchAllPathMatcher(PathMatcher):
-  def Matches(self, path):
-    return True
-
-
-class PathsAndPrefixMatcher(PathMatcher):
-  def __init__(self, paths):
-    self.match_paths = set()
-    for path in paths:
-      path = os.path.normpath(path)
-      if path.startswith('/') or not path:
-        raise Exception('Invalid path for matcher: %s' % path)
-      self.match_paths.add(path)
-
-  def Matches(self, path):
-    path = os.path.normpath(path)
-    if path.startswith('/'):
-      return False
-    while path:
-      if path in self.match_paths:
-        return True
-      path = os.path.dirname(path)
-    return False
-
-
 def AddBackupsConfigArgs(parser):
   parser.add_argument('--backups-config')
   parser.add_argument('--backups-image-path')
@@ -524,24 +494,6 @@ def GetBackupsConfigFromArgs(args):
     return BackupsConfig.Load(args.backups_config)
   else:
     raise Exception('At most one of --backups-config or --backups-image-path arg expected')
-
-
-def AddPathsArgs(parser):
-  parser.add_argument('--path', dest='paths', action='append', default=[])
-  parser.add_argument('--paths-from')
-
-
-def GetPathsFromArgs(args, required=True):
-  paths = args.paths or []
-  if args.paths_from:
-    with open(args.paths_from, 'r') as f:
-      for path_line in f.read().split('\n'):
-        if not path_line:
-          continue
-        paths.append(lib.DeEscapePath(path_line))
-  if required and not paths:
-    raise Exception('--path args or --paths-from arg required')
-  return sorted(paths)
 
 
 class BackupsMatcher(object):
@@ -983,7 +935,7 @@ class CheckpointsToBackupsApplier:
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=checkpoint, from_manifest=None, to_backup_manager=self.manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, verify_with_checksums=self.checksum_all, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
     if not result.success:
@@ -1756,7 +1708,7 @@ class PathsFromBackupsExtractor(object):
   def _ExtractPathsFromBackup(self, backup, last_extracted_backup, last_extracted_manifest):
     print >>self.output, 'Extracting from %s...' % backup.GetName()
 
-    path_matcher = PathsAndPrefixMatcher(self.paths)
+    path_matcher = lib.PathsAndPrefixMatcher(self.paths)
 
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
@@ -1882,7 +1834,7 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
@@ -1912,7 +1864,7 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
@@ -1976,7 +1928,7 @@ class PathsInBackupsDeleter(object):
 
     paths_to_delete = []
 
-    path_matcher = PathsAndPrefixMatcher(self.paths)
+    path_matcher = lib.PathsAndPrefixMatcher(self.paths)
     for path in manifest.GetPaths():
       if path_matcher.Matches(path):
         path_info = manifest.RemovePathInfo(path)
@@ -2205,7 +2157,7 @@ def DoDumpUniqueFilesInBackups(args, output):
 def DoExtractFromBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
-  AddPathsArgs(parser)
+  lib.AddPathsArgs(parser)
   parser.add_argument('--output-image-path')
   parser.add_argument('--output-volume-name')
   parser.add_argument('--min-backup')
@@ -2215,7 +2167,7 @@ def DoExtractFromBackups(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
-  paths = GetPathsFromArgs(cmd_args)
+  paths = lib.GetPathsFromArgs(cmd_args)
 
   extractor = PathsFromBackupsExtractor(
     config, output=output, output_image_path=cmd_args.output_image_path,
@@ -2248,13 +2200,13 @@ def DoMergeIntoBackups(args, output):
 def DoDeleteInBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
-  AddPathsArgs(parser)
+  lib.AddPathsArgs(parser)
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
-  paths = GetPathsFromArgs(cmd_args)
+  paths = lib.GetPathsFromArgs(cmd_args)
 
   deleter = PathsInBackupsDeleter(
     config, output=output, paths=paths, min_backup=cmd_args.min_backup,

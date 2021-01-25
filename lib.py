@@ -69,6 +69,63 @@ PRINT_PROGRESS_MIN_INTERVAL = .05
 DEFAULT_DEFRAGMENT_ITERATIONS = 5
 
 
+class PathMatcher(object):
+  def Matches(self, path):
+    raise Exception('Must be implemented by subclass')
+
+
+class MatchAllPathMatcher(PathMatcher):
+  def Matches(self, path):
+    return True
+
+
+class PathsAndPrefixMatcher(PathMatcher):
+  def __init__(self, paths):
+    self.match_paths = set()
+    for path in paths:
+      path = os.path.normpath(path)
+      if path.startswith('/') or not path:
+        raise Exception('Invalid path for matcher: %s' % path)
+      self.match_paths.add(path)
+
+  def Matches(self, path):
+    path = os.path.normpath(path)
+    if path.startswith('/'):
+      return False
+    while path:
+      if path in self.match_paths:
+        return True
+      path = os.path.dirname(path)
+    return False
+
+
+def AddPathsArgs(parser):
+  parser.add_argument('--path', dest='paths', action='append', default=[])
+  parser.add_argument('--paths-from')
+
+
+def GetPathsFromArgs(args, required=True):
+  paths = args.paths or []
+  if args.paths_from:
+    with open(args.paths_from, 'r') as f:
+      for path_line in f.read().split('\n'):
+        if not path_line:
+          continue
+        paths.append(DeEscapePath(path_line))
+  if required and not paths:
+    raise Exception('--path args or --paths-from arg required')
+  return sorted(paths)
+
+
+def GetPathMatcherFromArgs(args, match_all_by_default=True):
+  paths = GetPathsFromArgs(args, required=not match_all_by_default)
+  if paths:
+    return PathsAndPrefixMatcher(paths)
+  else:
+    assert match_all_by_default
+    return MatchAllPathMatcher()
+
+
 def GetManifestBackupPath(manifest_path):
   path = '%s.bak' % manifest_path
   assert path.endswith('.pbdata.bak')
@@ -2195,16 +2252,18 @@ class ManifestVerifierStats(object):
     self.total_mismatched_size = 0
     self.total_checksummed_paths = 0
     self.total_checksummed_size = 0
+    self.total_skipped_paths = 0
 
 
 class ManifestVerifier(object):
   def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True, checksum_all=False,
-               escape_key_detector=None, verbose=False):
+               escape_key_detector=None, path_matcher=MatchAllPathMatcher(), verbose=False):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
     self.checksum_all = checksum_all
     self.escape_key_detector = escape_key_detector
+    self.path_matcher = path_matcher
     self.verbose = verbose
     self.manifest_on_top = manifest_on_top
     self.file_enumerator = FileEnumerator(src_root, output, filters=filters, verbose=verbose)
@@ -2212,9 +2271,16 @@ class ManifestVerifier(object):
     self.stats = ManifestVerifierStats()
 
   def Verify(self):
-    missing_paths = self.manifest.GetPaths()
+    missing_paths = []
+    for path in self.manifest.GetPaths():
+      if self.path_matcher.Matches(path):
+        missing_paths.append(path)
 
     for path in self.file_enumerator.Scan():
+      if not self.path_matcher.Matches(path):
+        self.stats.total_skipped_paths += 1
+        continue
+
       if self.escape_key_detector is not None and self.escape_key_detector.WasEscapePressed():
         print >>self.output, '*** Cancelled at path %s' % EscapePath(path)
         return False

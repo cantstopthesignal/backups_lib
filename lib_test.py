@@ -1187,6 +1187,68 @@ def MtimePreserverTest():
     AssertEquals(1500000000.0, os.lstat(file2).st_mtime)
 
 
+def PathsAndPrefixMatcherTest():
+  matcher = lib.PathsAndPrefixMatcher([])
+  AssertEquals(False, matcher.Matches('a'))
+  AssertEquals(False, matcher.Matches('a/b'))
+  AssertEquals(False, matcher.Matches(''))
+
+  matcher = lib.PathsAndPrefixMatcher(['a'])
+  AssertEquals(True, matcher.Matches('a'))
+  AssertEquals(True, matcher.Matches('a/b'))
+  AssertEquals(False, matcher.Matches('/a'))
+  AssertEquals(False, matcher.Matches(''))
+  AssertEquals(False, matcher.Matches('ab'))
+  AssertEquals(False, matcher.Matches('b'))
+  AssertEquals(False, matcher.Matches('b/a'))
+
+  matcher = lib.PathsAndPrefixMatcher(['a/b'])
+  AssertEquals(False, matcher.Matches('a'))
+  AssertEquals(True, matcher.Matches('a/b'))
+  AssertEquals(True, matcher.Matches('a/b/c'))
+  AssertEquals(False, matcher.Matches('a/bc'))
+  AssertEquals(False, matcher.Matches('a/bc/d'))
+
+  matcher = lib.PathsAndPrefixMatcher(['a/b', 'a'])
+  AssertEquals(True, matcher.Matches('a'))
+  AssertEquals(False, matcher.Matches('ab'))
+  AssertEquals(True, matcher.Matches('a/b'))
+  AssertEquals(True, matcher.Matches('a/b/c'))
+  AssertEquals(True, matcher.Matches('a/bc'))
+  AssertEquals(True, matcher.Matches('a/bc/d'))
+  AssertEquals(False, matcher.Matches('b'))
+
+
+def PathsFromArgsTest():
+  def DoPathsFromArgsTest(expected_paths, args, required=True, expected_success=True):
+    parser = argparse.ArgumentParser()
+    lib.AddPathsArgs(parser)
+    try:
+      paths = lib.GetPathsFromArgs(parser.parse_args(args), required=required)
+      success = True
+    except:
+      paths = []
+      success = False
+      if expected_success:
+        raise
+    AssertEquals(expected_success, success)
+    AssertEquals(expected_paths, paths)
+
+  with TempDir() as test_dir:
+    DoPathsFromArgsTest([], [], expected_success=False)
+    DoPathsFromArgsTest([], [], required=False)
+    DoPathsFromArgsTest(['a'], ['--path', 'a'])
+    DoPathsFromArgsTest(['a', 'b\' '], ['--path', 'a', '--path', 'b\' '])
+
+    paths_file = CreateFile(test_dir, 'paths_file', contents='b\na')
+    DoPathsFromArgsTest(['a', 'b'], ['--paths-from', paths_file])
+    DoPathsFromArgsTest(['a', 'b', 'c'], ['--path', 'c', '--paths-from', paths_file])
+
+    paths_file = CreateFile(test_dir, 'paths_file', contents='\n'.join(
+      [lib.EscapePath(s) for s in ['a', 'b\' ', 'f_\r \xc2\xa9', '']]))
+    DoPathsFromArgsTest(['a', 'b\' ', 'f_\r \xc2\xa9'], ['--paths-from', paths_file])
+
+
 def Test(tests=[]):
   if not tests or 'PathInfoTest' in tests:
     PathInfoTest()
@@ -1214,6 +1276,10 @@ def Test(tests=[]):
     EscapeKeyDetectorTest()
   if not tests or 'MtimePreserverTest' in tests:
     MtimePreserverTest()
+  if not tests or 'PathsAndPrefixMatcherTest' in tests:
+    PathsAndPrefixMatcherTest()
+  if not tests or 'PathsFromArgsTest' in tests:
+    PathsFromArgsTest()
 
 
 if __name__ == '__main__':

@@ -59,19 +59,21 @@ def DoCreate(root_path, manifest_path=None, dry_run=False, expected_success=True
                   expected_output=expected_output)
 
 
-def DoVerify(root_path, manifest_path=None, dry_run=False, checksum_all=False,
+def DoVerify(root_path, manifest_path=None, dry_run=False, checksum_all=False, paths=[],
              expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
   if checksum_all:
     cmd_args.append('--checksum-all')
+  for path in paths:
+    cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
 
 
 def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, interactive=False,
-           detect_renames=True, expected_success=True, expected_output=[]):
+           detect_renames=True, paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -81,6 +83,8 @@ def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, int
     cmd_args.append('--interactive')
   if not detect_renames:
     cmd_args.append('--no-detect-renames')
+  for path in paths:
+    cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
 

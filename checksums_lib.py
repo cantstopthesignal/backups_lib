@@ -128,13 +128,15 @@ class ChecksumsCreator(object):
 
 
 class ChecksumsVerifier(object):
-  def __init__(self, root_path, output, manifest_path=None, checksum_all=False, dry_run=False, verbose=False):
+  def __init__(self, root_path, output, manifest_path=None, checksum_all=False,
+               path_matcher=lib.MatchAllPathMatcher(), dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.manifest_path = manifest_path
     self.output = output
     self.checksum_all = checksum_all
+    self.path_matcher = path_matcher
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
@@ -152,7 +154,7 @@ class ChecksumsVerifier(object):
       verifier = lib.ManifestVerifier(
         self.checksums.GetManifest(), self.root_path, output=self.output,
         filters=self.filters, manifest_on_top=False, checksum_all=self.checksum_all,
-        escape_key_detector=escape_key_detector, verbose=self.verbose)
+        escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
 
@@ -163,6 +165,8 @@ class ChecksumsVerifier(object):
       if stats.total_checksummed_paths:
         out_pieces.append('%d checksummed (%s)' % (
           stats.total_checksummed_paths, lib.FileSizeToString(stats.total_checksummed_size)))
+      if stats.total_skipped_paths:
+        out_pieces.append('%d skipped' % stats.total_skipped_paths)
       print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
       return verify_result
@@ -174,7 +178,7 @@ class ChecksumsSyncer(object):
   INTERACTIVE_CHECKER = InteractiveChecker()
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
-               detect_renames=True, dry_run=False, verbose=False):
+               detect_renames=True, path_matcher=lib.MatchAllPathMatcher(), dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -183,6 +187,7 @@ class ChecksumsSyncer(object):
     self.checksum_all = checksum_all
     self.interactive = interactive
     self.detect_renames = detect_renames
+    self.path_matcher = path_matcher
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
@@ -203,6 +208,7 @@ class ChecksumsSyncer(object):
     self.total_renamed_size = 0
     self.total_deleted_paths = 0
     self.total_deleted_size = 0
+    self.total_skipped_paths = 0
 
   def Sync(self):
     try:
@@ -247,6 +253,10 @@ class ChecksumsSyncer(object):
     existing_paths = self.basis_manifest.GetPaths()
 
     for path in self.file_enumerator.Scan():
+      if not self.path_matcher.Matches(path):
+        self.total_skipped_paths += 1
+        continue
+
       full_path = os.path.join(self.root_path, path)
       path_info = lib.PathInfo.FromPath(path, full_path)
       self.scan_manifest.AddPathInfo(path_info)
@@ -279,6 +289,8 @@ class ChecksumsSyncer(object):
       if self.total_checksummed_paths:
         out_pieces.append('%d checksummed (%s)' % (
           self.total_checksummed_paths, lib.FileSizeToString(self.total_checksummed_size)))
+      if self.total_skipped_paths:
+        out_pieces.append('%d skipped' % self.total_skipped_paths)
       print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
 
   def _HandleExistingPaths(self, existing_paths, next_new_path=None):
@@ -291,7 +303,7 @@ class ChecksumsSyncer(object):
 
       if next_new_path is not None and next_existing_path > next_new_path:
         break
-      if next_new_path != next_existing_path:
+      if next_new_path != next_existing_path and self.path_matcher.Matches(next_existing_path):
         self._SyncRemovedPath(next_existing_path)
       del existing_paths[0]
 
@@ -481,11 +493,15 @@ def DoVerify(args, output):
   parser.add_argument('root_path')
   parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
+  lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
+
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
 
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
-    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
+    checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
+    verbose=args.verbose)
   return checksums_verifier.Verify()
 
 
@@ -496,12 +512,16 @@ def DoSync(args, output):
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--interactive', action='store_true')
   parser.add_argument('--no-detect-renames', dest='detect_renames', action='store_false')
+  lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
+
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
     cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, interactive=cmd_args.interactive,
-    detect_renames=cmd_args.detect_renames, dry_run=args.dry_run, verbose=args.verbose)
+    detect_renames=cmd_args.detect_renames, path_matcher=path_matcher,
+    dry_run=args.dry_run, verbose=args.verbose)
   return checksums_syncer.Sync()
 
 

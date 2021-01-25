@@ -2184,68 +2184,6 @@ def DeleteInBackupsTest():
       backups_manager.Close()
 
 
-def PathsFromArgsTest():
-  def DoPathsFromArgsTest(expected_paths, args, required=True, expected_success=True):
-    parser = argparse.ArgumentParser()
-    backups_lib.AddPathsArgs(parser)
-    try:
-      paths = backups_lib.GetPathsFromArgs(parser.parse_args(args), required=required)
-      success = True
-    except:
-      paths = []
-      success = False
-      if expected_success:
-        raise
-    AssertEquals(expected_success, success)
-    AssertEquals(expected_paths, paths)
-
-  with TempDir() as test_dir:
-    DoPathsFromArgsTest([], [], expected_success=False)
-    DoPathsFromArgsTest([], [], required=False)
-    DoPathsFromArgsTest(['a'], ['--path', 'a'])
-    DoPathsFromArgsTest(['a', 'b\' '], ['--path', 'a', '--path', 'b\' '])
-
-    paths_file = CreateFile(test_dir, 'paths_file', contents='b\na')
-    DoPathsFromArgsTest(['a', 'b'], ['--paths-from', paths_file])
-    DoPathsFromArgsTest(['a', 'b', 'c'], ['--path', 'c', '--paths-from', paths_file])
-
-    paths_file = CreateFile(test_dir, 'paths_file', contents='\n'.join(
-      [lib.EscapePath(s) for s in ['a', 'b\' ', 'f_\r \xc2\xa9', '']]))
-    DoPathsFromArgsTest(['a', 'b\' ', 'f_\r \xc2\xa9'], ['--paths-from', paths_file])
-
-
-def PathsAndPrefixMatcherTest():
-  matcher = backups_lib.PathsAndPrefixMatcher([])
-  AssertEquals(False, matcher.Matches('a'))
-  AssertEquals(False, matcher.Matches('a/b'))
-  AssertEquals(False, matcher.Matches(''))
-
-  matcher = backups_lib.PathsAndPrefixMatcher(['a'])
-  AssertEquals(True, matcher.Matches('a'))
-  AssertEquals(True, matcher.Matches('a/b'))
-  AssertEquals(False, matcher.Matches('/a'))
-  AssertEquals(False, matcher.Matches(''))
-  AssertEquals(False, matcher.Matches('ab'))
-  AssertEquals(False, matcher.Matches('b'))
-  AssertEquals(False, matcher.Matches('b/a'))
-
-  matcher = backups_lib.PathsAndPrefixMatcher(['a/b'])
-  AssertEquals(False, matcher.Matches('a'))
-  AssertEquals(True, matcher.Matches('a/b'))
-  AssertEquals(True, matcher.Matches('a/b/c'))
-  AssertEquals(False, matcher.Matches('a/bc'))
-  AssertEquals(False, matcher.Matches('a/bc/d'))
-
-  matcher = backups_lib.PathsAndPrefixMatcher(['a/b', 'a'])
-  AssertEquals(True, matcher.Matches('a'))
-  AssertEquals(False, matcher.Matches('ab'))
-  AssertEquals(True, matcher.Matches('a/b'))
-  AssertEquals(True, matcher.Matches('a/b/c'))
-  AssertEquals(True, matcher.Matches('a/bc'))
-  AssertEquals(True, matcher.Matches('a/bc/d'))
-  AssertEquals(False, matcher.Matches('b'))
-
-
 def Test(tests=[]):
   if not tests or 'ApplyToBackupsTest' in tests:
     ApplyToBackupsTest()
@@ -2273,10 +2211,6 @@ def Test(tests=[]):
     MergeIntoBackupsTest()
   if not tests or 'DeleteInBackupsTest' in tests:
     DeleteInBackupsTest()
-  if not tests or 'PathsFromArgsTest' in tests:
-    PathsFromArgsTest()
-  if not tests or 'PathsAndPrefixMatcherTest' in tests:
-    PathsAndPrefixMatcherTest()
 
 
 if __name__ == '__main__':

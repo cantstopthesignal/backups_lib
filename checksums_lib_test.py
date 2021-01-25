@@ -94,6 +94,17 @@ def VerifyTest():
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f2',
                        'Paths: 5 total (1kb), 5 mismatched (1kb)'])
+    DoVerify(
+      root_dir,
+      paths=['par! \r'],
+      expected_success=False,
+      expected_output=['>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       'Paths: 2 total (0b), 2 mismatched (0b), 3 skipped'])
+    DoVerify(
+      root_dir,
+      paths=['DOES_NOT_EXIST'],
+      expected_output=['Paths: 0 total (0b), 5 skipped'])
 
     alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
 
@@ -417,6 +428,58 @@ def SyncTest():
                        'Paths: 7 total (3kb), 3 synced (1kb), 2 deleted (2kb), 1 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 7 total (3kb), 4 checksummed (3kb)'])
+
+    DeleteFileOrDir(file1)
+    parent3 = CreateDir(root_dir, 'par3')
+    file6 = CreateFile(root_dir, 'f6')
+    file7 = CreateFile(parent3, 'f7', contents='ABC')
+    file8 = CreateFile(parent3, 'f8')
+
+    DoSync(
+      root_dir, dry_run=True,
+      expected_output=['*deleting f1',
+                       '>f+++++++ f6',
+                       '>d+++++++ par3',
+                       '>f+++++++ par3/f7',
+                       '>f+++++++ par3/f8',
+                       'Paths: 10 total (3kb), 5 synced (3b), 1 deleted (3b), 3 checksummed (3b)'])
+    DoSync(
+      root_dir, dry_run=True, paths=['par3'],
+      expected_output=['>d+++++++ par3',
+                       '>f+++++++ par3/f7',
+                       '>f+++++++ par3/f8',
+                       'Paths: 3 total (3b), 3 synced (3b), 2 checksummed (3b), 7 skipped'])
+    DoSync(
+      root_dir, paths=['par3'],
+      expected_output=['>d+++++++ par3',
+                       '>f+++++++ par3/f7',
+                       '>f+++++++ par3/f8',
+                       'Paths: 3 total (3b), 3 synced (3b), 2 checksummed (3b), 7 skipped'])
+
+    file7 = CreateFile(parent3, 'f7', contents='DEF')
+    DeleteFileOrDir(file8)
+
+    DoSync(
+      root_dir, paths=['par3'],
+      expected_output=['*deleting par3/f8',
+                       'Paths: 2 total (3b), 1 synced (0b), 1 deleted (0b), 7 skipped'])
+    DoSync(
+      root_dir, checksum_all=True, paths=['par3'],
+      expected_output=['>fc...... par3/f7',
+                       'Paths: 2 total (3b), 1 synced (3b), 1 checksummed (3b), 7 skipped'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_success=False,
+             expected_output=['*deleting f1',
+                              '>f+++++++ f6',
+                              'Paths: 9 total (3kb), 2 mismatched (3b), 4 checksummed (3kb)'])
+
+    DoSync(
+      root_dir,
+      expected_output=['*deleting f1',
+                       '>f+++++++ f6',
+                       'Paths: 9 total (3kb), 2 synced (0b), 1 deleted (3b), 2 checksummed (3b)'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 9 total (3kb), 5 checksummed (3kb)'])
 
 
 def RenamePathsTest():
