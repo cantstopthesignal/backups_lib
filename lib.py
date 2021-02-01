@@ -25,7 +25,7 @@ import traceback
 import tty
 import xattr
 
-import staged_backup_pb2
+from . import staged_backup_pb2
 
 
 COMMAND_CREATE = 'create'
@@ -181,7 +181,7 @@ def MakeRsyncDirname(dirname, absolute=False):
 
 
 def EscapeString(s):
-  return s.encode('string-escape')
+  return s.encode('unicode_escape').decode('ascii')
 
 
 def EscapePath(path):
@@ -189,7 +189,7 @@ def EscapePath(path):
 
 
 def DeEscapeString(s):
-  return s.decode('string-escape')
+  return s.encode('ascii').decode('unicode_escape')
 
 
 def DeEscapePath(path):
@@ -257,7 +257,7 @@ class MtimePreserver(object):
     return self
 
   def __exit__(self, exc_type, exc, exc_traceback):
-    for path, mtime in self.preserved_path_mtimes.items():
+    for path, mtime in list(self.preserved_path_mtimes.items()):
       os.utime(path, (mtime, mtime))
 
   def PreserveMtime(self, path):
@@ -410,17 +410,22 @@ def GetXattrHash(path, ignored_keys=[]):
   xattr_data = xattr.xattr(path)
   xattr_list = []
   for key in sorted(xattr_data.keys()):
-    if type(key) == unicode:
-      key = key.encode('utf8')
     if key in ignored_keys:
       continue
     value = xattr_data[key]
-    if type(value) == unicode:
-      value = value.encode('utf8')
     xattr_list.append((key, value))
   if xattr_list:
     hasher = hashlib.sha256()
-    hasher.update(repr(xattr_list))
+    byte_str_list = []
+    for key, value in xattr_list:
+      assert type(key) == str
+      assert type(value) == bytes
+      key_encoded = repr(key).encode('ascii')
+      value_encoded = repr(value).encode('ascii')
+      assert value_encoded[:1] == b'b'
+      byte_str_list.append(b'(%b, %b)' % (key_encoded, value_encoded[1:]))
+    byte_str = b'[%b]' % b', '.join(byte_str_list)
+    hasher.update(byte_str)
     return hasher.digest()
 
 
@@ -444,7 +449,7 @@ def GetPathTreeSize(path, files_only=False, excludes=[]):
 
 
 def GetDriveAvailableSpace(path):
-  output = subprocess.check_output(['df', '-k', path])
+  output = subprocess.check_output(['df', '-k', path], text=True)
   (header_row, data_row) = output.strip().split('\n')
   assert header_row.split()[:4] == [
     'Filesystem', '1024-blocks', 'Used', 'Available']
@@ -470,7 +475,7 @@ def CreateDiskImage(image_path, volume_name=None, size='1T', filesystem='APFS',
     cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
   cmd.append(image_path)
   if not dry_run:
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
     if password is not None:
       p.stdin.write(password)
     p.stdin.close()
@@ -499,7 +504,7 @@ def CompactImage(image_path, output, encryption_manager=None, encrypted=None, im
       password = encryption_manager.GetPassword(
         image_path, image_uuid, try_last_password=False)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
+                         stderr=subprocess.STDOUT, text=True)
     if encrypted:
       p.stdin.write(password)
     p.stdin.close()
@@ -522,7 +527,7 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
       password = encryption_manager.GetPassword(
         image_path, image_uuid, try_last_password=False)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
+                         stderr=subprocess.STDOUT, text=True)
     if encrypted:
       p.stdin.write(password)
     p.stdin.close()
@@ -561,7 +566,8 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
   if not os.path.normpath(image_path).endswith('.sparsebundle'):
     raise Exception('Expected %s to be a sparsebundle image' % image_path)
 
-  plist_data = plistlib.readPlist(os.path.join(image_path, 'Info.plist'))
+  with open(os.path.join(image_path, 'Info.plist'), 'rb') as plist_file:
+    plist_data = plistlib.load(plist_file)
   assert plist_data['CFBundleInfoDictionaryVersion'] == '6.0'
   assert plist_data['bundle-backingstore-version'] == 1
   assert plist_data['diskimage-bundle-type'] == 'com.apple.diskimage.sparsebundle'
@@ -573,7 +579,7 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
     password = encryption_manager.GetPassword(
       image_path, image_uuid, try_last_password=False)
   p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT)
+                       stderr=subprocess.STDOUT, text=True)
   if encrypted:
     p.stdin.write(password)
   p.stdin.close()
@@ -639,15 +645,15 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
 
   for partition in partitions:
     if partition.name == '' and partition.hint == 'Apple_Free':
-      start_band = (partition.start * block_size) / band_size
-      end_band = ((partition.start + partition.length) * block_size) / band_size
+      start_band = int((partition.start * block_size) / band_size)
+      end_band = int(((partition.start + partition.length) * block_size) / band_size)
       bands_to_delete = set()
       for band_id in range(start_band + 1, end_band):
         if band_id in bands_with_files:
           bands_to_delete.add(band_id)
       if bands_to_delete:
-        print >>output, 'Deleting %d bands between (%d,%d) for empty partition %s...' % (
-          len(bands_to_delete), start_band, end_band, partition)
+        print('Deleting %d bands between (%d,%d) for empty partition %s...' % (
+          len(bands_to_delete), start_band, end_band, partition), file=output)
         for band_id in bands_to_delete:
           band_path = os.path.join(image_path, 'bands', hex(band_id)[2:])
           if not dry_run:
@@ -662,8 +668,8 @@ def CompactImageWithResize(image_path, output, encryption_manager=None, encrypte
   (current_block_count, min_block_count) = GetDiskImageLimits(
     image_path, encryption_manager=encryption_manager, encrypted=encrypted, image_uuid=image_uuid)
 
-  print >>output, 'Resizing image to minimum size: %d -> %d blocks...' % (
-    current_block_count, min_block_count)
+  print('Resizing image to minimum size: %d -> %d blocks...' % (
+    current_block_count, min_block_count), file=output)
   ResizeImage(image_path, block_count=min_block_count, output=output,
               encryption_manager=encryption_manager, encrypted=encrypted,
               image_uuid=image_uuid, dry_run=dry_run)
@@ -673,7 +679,7 @@ def CompactImageWithResize(image_path, output, encryption_manager=None, encrypte
       image_path, output=output, encryption_manager=encryption_manager, encrypted=encrypted,
       image_uuid=image_uuid, dry_run=dry_run)
 
-  print >>output, 'Restoring image size to %d blocks...' % current_block_count
+  print('Restoring image size to %d blocks...' % current_block_count, file=output)
   ResizeImage(image_path, block_count=current_block_count, output=output,
               encryption_manager=encryption_manager, encrypted=encrypted,
               image_uuid=image_uuid, dry_run=dry_run)
@@ -688,7 +694,7 @@ def StripUtf8BidiCommandChars(s):
 
 def GetApfsDeviceFromAttachedImageDevice(image_device, output):
   assert image_device.startswith('/dev/')
-  diskutil_output = subprocess.check_output(['diskutil', 'list', image_device])
+  diskutil_output = subprocess.check_output(['diskutil', 'list', image_device], text=True)
   apfs_identifier = None
   for line in diskutil_output.split('\n'):
     pieces = [ StripUtf8BidiCommandChars(p) for p in line.strip().split() ]
@@ -697,9 +703,9 @@ def GetApfsDeviceFromAttachedImageDevice(image_device, output):
         raise Exception('Multiple apfs containers found in diskutil output: %s' % diskutil_output)
       apfs_identifier = pieces[-1]
   if apfs_identifier is None:
-    print >>output, '*** Warning: no apfs container found to defragment:'
+    print('*** Warning: no apfs container found to defragment:', file=output)
     for line in diskutil_output.split('\n'):
-      print >>output, line
+      print(line, file=output)
     return
 
   apfs_device = os.path.join('/dev', apfs_identifier)
@@ -711,7 +717,8 @@ def GetApfsDeviceFromAttachedImageDevice(image_device, output):
 def GetApfsDeviceLimits(apfs_device):
   current_bytes = None
   min_bytes = None
-  diskutil_output = subprocess.check_output(['diskutil', 'apfs', 'resizeContainer', apfs_device , 'limits'])
+  diskutil_output = subprocess.check_output(['diskutil', 'apfs', 'resizeContainer', apfs_device,
+                                             'limits'], text=True)
   for line in diskutil_output.split('\n'):
     line = line.strip()
     m = re.match('^Current Physical Store partition size on map:.*[(]([0-9]+) Bytes[)]$', line)
@@ -728,9 +735,10 @@ def GetApfsDeviceLimits(apfs_device):
 
 def ResizeApfsContainer(apfs_device, new_size, output):
   cmd = ['diskutil', 'apfs', 'resizeContainer', apfs_device, str(new_size)]
-  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True)
   for line in p.stdout:
-    print >>output, line.rstrip()
+    print(line.rstrip(), file=output)
   if p.wait():
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -747,7 +755,7 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
     password = encryption_manager.GetPassword(
       image_path, image_uuid, try_last_password=False)
   p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT)
+                       stderr=subprocess.STDOUT, text=True)
   if encrypted:
     p.stdin.write(password)
   p.stdin.close()
@@ -783,18 +791,18 @@ def CompactAndDefragmentImage(
       raise Exception('No apfs device found for disk image')
     old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
 
-    print >>output, 'Defragmenting %s; apfs min size %s, current size %s...' % (
-      image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size))
+    print('Defragmenting %s; apfs min size %s, current size %s...' % (
+      image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size)), file=output)
     if not dry_run:
       for i in range(defragment_iterations):
         if i:
           _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
           if new_min_bytes >= min_bytes * 0.95:
-            print >>output, 'Iteration %d, new apfs min size %s has low savings' % (
-              i+1, FileSizeToString(new_min_bytes))
+            print('Iteration %d, new apfs min size %s has low savings' % (
+              i+1, FileSizeToString(new_min_bytes)), file=output)
             break
-          print >>output, 'Iteration %d, new apfs min size %s...' % (
-            i+1, FileSizeToString(new_min_bytes))
+          print('Iteration %d, new apfs min size %s...' % (
+            i+1, FileSizeToString(new_min_bytes)), file=output)
           min_bytes = new_min_bytes
         ResizeApfsContainer(apfs_device, min_bytes, output=output)
 
@@ -802,8 +810,8 @@ def CompactAndDefragmentImage(
                          encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
 
   if not dry_run:
-    print >>output, 'Restoring apfs container size to %s...' % (
-      FileSizeToString(old_apfs_container_size))
+    print('Restoring apfs container size to %s...' % (
+      FileSizeToString(old_apfs_container_size)), file=output)
     with ImageAttacher(image_path, readonly=dry_run, mount=False,
                        encryption_manager=encryption_manager) as attacher:
       apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
@@ -819,7 +827,8 @@ def CompactAndDefragmentImage(
 def GetImageEncryptionDetails(image_path):
   cmd = ['hdiutil', 'isencrypted', image_path]
   for i in range(5):
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True)
     output = p.stdout.read().strip()
     if not p.wait():
       break
@@ -869,9 +878,10 @@ def RsyncDirectoryOnly(src_dir, dest_dir, output, dry_run=False, verbose=False):
   cmd.append(MakeRsyncDirname(src_dir))
   cmd.append(MakeRsyncDirname(dest_dir))
 
-  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True)
   for line in p.stdout:
-    print >>output, line.strip()
+    print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -901,14 +911,15 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
   cmd.append(MakeRsyncDirname(dest_root_path))
 
   if verbose:
-    print >>output, ' '.join([ pipes.quote(c) for c in cmd ])
-    print >>output, '(%d paths)' % len(paths)
-  p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
+    print('(%d paths)' % len(paths), file=output)
+  p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True)
   for path in paths:
     p.stdin.write('%s\0' % path)
   p.stdin.close()
   for line in p.stdout:
-    print >>output, line.strip()
+    print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -930,8 +941,9 @@ def RsyncList(src_path, output, rsync_filters=None, verbose=False):
   cmd.append(MakeRsyncDirname(src_path))
 
   if verbose:
-    print >>output, ' '.join([ pipes.quote(c) for c in cmd ])
-  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       text=True)
   out, err = p.communicate()
   for line in out.split('\n'):
     line = line.strip()
@@ -951,7 +963,7 @@ def RsyncList(src_path, output, rsync_filters=None, verbose=False):
       raise Exception('Unexpected path type for rsync line %r' % line)
     yield DecodeRsyncEncodedString(path)
   if p.wait():
-    print >>output, err.rstrip()
+    print(err.rstrip(), file=output)
     raise Exception('Rsync failed')
 
 
@@ -974,11 +986,12 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
   cmd.append(MakeRsyncDirname(dest_root_path))
 
   if verbose:
-    print >>output, ' '.join([ pipes.quote(c) for c in cmd ])
-    print >>output, '(%d paths)' % len(paths)
-  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
+    print('(%d paths)' % len(paths), file=output)
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True)
   for line in p.stdout:
-    print >>output, line.strip()
+    print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -1077,7 +1090,8 @@ class EncryptionManager(object):
 
   def _LoadPasswordFromKeychain(self, image_uuid):
     cmd = ['security', 'find-generic-password', '-ga', image_uuid]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True)
     output = p.stdout.read().strip().split('\n')
     for line in output:
       if line.endswith('The specified item could not be found in the keychain.'):
@@ -1133,7 +1147,8 @@ class ImageAttacher(object):
     assert self.device is not None
     cmd = ['hdiutil', 'detach', self.device]
     for i in range(20):
-      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
       output = p.stdout.read().strip()
       if not p.wait():
         break
@@ -1204,7 +1219,7 @@ class ImageAttacher(object):
       password = self.encryption_manager.GetPassword(
         self.GetImagePath(), self.image_uuid, try_last_password=try_last_password)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
+                         stderr=subprocess.STDOUT, text=True)
     if self.encrypted:
       p.stdin.write(password)
     p.stdin.close()
@@ -1251,6 +1266,7 @@ class ItemizedPathChange:
     self.gid_diff = gid_diff
     self.xattr_diff = xattr_diff
     self.link_dest = link_dest
+
 
   def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS):
     if not ignore_uid_diffs and self.uid_diff:
@@ -1313,7 +1329,7 @@ class PathInfo(object):
 
   @staticmethod
   def FromProto(pb):
-    path = pb.path.encode('utf8')
+    path = pb.path
     assert pb.path_type in PathInfo.TYPES
     size = None
     if pb.path_type == PathInfo.TYPE_FILE:
@@ -1323,7 +1339,7 @@ class PathInfo(object):
     mtime = int(pb.mtime)
     link_dest = None
     if pb.link_dest:
-      link_dest = pb.link_dest.encode('utf8')
+      link_dest = pb.link_dest
     sha256 = None
     if pb.sha256:
       sha256 = pb.sha256
@@ -1449,14 +1465,14 @@ class PathInfo(object):
       out += ', link-dest=%r' % self.link_dest
     if self.sha256 is not None:
       if shorten_sha256:
-        out += ', sha256=%r' % binascii.b2a_hex(self.sha256)[:6]
+        out += ', sha256=%r' % binascii.b2a_hex(self.sha256)[:6].decode('ascii')
       else:
-        out += ', sha256=%r' % binascii.b2a_hex(self.sha256)
+        out += ', sha256=%r' % binascii.b2a_hex(self.sha256).decode('ascii')
     if self.xattr_hash is not None:
       if shorten_xattr_hash:
-        out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash)[:6]
+        out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash)[:6].decode('ascii')
       else:
-        out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash)
+        out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash).decode('ascii')
     if self.dev_inode is not None:
       out += ', dev-inode=%r' % (self.dev_inode,)
     return out
@@ -1490,7 +1506,7 @@ class PathInfo(object):
       if self.xattr_hash is not None:
         pb.xattr_hash = self.xattr_hash
     except ValueError:
-      print '*** Error in ToProto for path %r' % self.path
+      print('*** Error in ToProto for path %r' % self.path)
       raise
     return pb
 
@@ -1582,13 +1598,13 @@ class Manifest(object):
 
   def Clone(self):
     clone = Manifest(self.path)
-    for path, path_info in self.path_map.items():
+    for path, path_info in list(self.path_map.items()):
       clone.path_map[path] = path_info.Clone()
     return clone
 
   def Dump(self, output):
     for path in sorted(self.path_map.keys()):
-      print >>output, self.path_map[path]
+      print(self.path_map[path], file=output)
 
   def GetItemized(self):
     itemizeds = []
@@ -1602,7 +1618,7 @@ class Manifest(object):
                       ignore_gid_diffs=IGNORE_GID_DIFFS):
     itemized_results = []
     all_paths = set(self.path_map.keys())
-    all_paths.update(other_manifest.path_map.keys())
+    all_paths.update(list(other_manifest.path_map.keys()))
     for path in sorted(all_paths):
       other_path_info = other_manifest.path_map.get(path)
       path_info = self.path_map.get(path)
@@ -1809,12 +1825,12 @@ class CheckpointCreator(object):
 
       self._PrintResults()
       return True
-    except Exception, e:
+    except Exception as e:
       if self.checkpoint is not None:
         try:
           self.checkpoint.Delete()
-        except Exception, e2:
-          print 'Suppressed exception: %s' % e2
+        except Exception as e2:
+          print('Suppressed exception: %s' % e2)
           traceback.print_exc()
         self.checkpoint = None
       raise
@@ -1845,14 +1861,14 @@ class CheckpointCreator(object):
   def _PrintResults(self):
     if self.basis_manifest is None:
       if self.total_paths > 0:
-        print >>self.output, 'Transferring %d paths (%s)' % (
-          self.total_paths, FileSizeToString(self.total_size))
+        print('Transferring %d paths (%s)' % (
+          self.total_paths, FileSizeToString(self.total_size)), file=self.output)
     elif self.total_checkpoint_paths > 0:
-      print >>self.output, 'Transferring %d of %d paths (%s of %s)' % (
+      print('Transferring %d of %d paths (%s of %s)' % (
         self.total_checkpoint_paths, self.total_paths,
-        FileSizeToString(self.total_checkpoint_size), FileSizeToString(self.total_size))
+        FileSizeToString(self.total_checkpoint_size), FileSizeToString(self.total_size)), file=self.output)
     if not self.dry_run:
-      print >>self.output, 'Created checkpoint at %s' % self.checkpoint.GetImagePath()
+      print('Created checkpoint at %s' % self.checkpoint.GetImagePath(), file=self.output)
 
   def _HandleExistingPaths(self, existing_paths, next_new_path=None):
     while existing_paths:
@@ -1862,7 +1878,7 @@ class CheckpointCreator(object):
       if next_new_path != next_existing_path:
         itemized = self.basis_manifest.GetPathInfo(next_existing_path).GetItemized()
         itemized.delete_path = True
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       del existing_paths[0]
 
   def _AddPathIfChanged(self, path, allow_replace=False):
@@ -1887,7 +1903,7 @@ class CheckpointCreator(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
     if path_info.path_type == PathInfo.TYPE_FILE:
       path_info.sha256 = Sha256WithProgress(full_path, path_info, output=self.output)
@@ -1897,10 +1913,10 @@ class CheckpointCreator(object):
       matches = False
     if matches:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
 
-    print >>self.output, itemized
+    print(itemized, file=self.output)
 
     self._AddPathContents(path_info)
 
@@ -1910,7 +1926,7 @@ class CheckpointCreator(object):
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
-    print >>self.output, itemized
+    print(itemized, file=self.output)
 
     self.manifest.AddPathInfo(path_info, allow_replace=allow_replace)
     self._AddPathContents(path_info)
@@ -1969,7 +1985,7 @@ class CheckpointCreator(object):
       else:
         return False
     if first_requeued:
-      print >>self.output, "*** Warning: Paths changed since syncing, checking..."
+      print("*** Warning: Paths changed since syncing, checking...", file=self.output)
     self._AddPathIfChanged(path, allow_replace=True)
     return True
 
@@ -2032,7 +2048,7 @@ class CheckpointApplier(object):
     self._HandleNewPaths(new_paths, next_existing_path=None)
 
     if self.errors_encountered:
-      print >>self.output, '*** Errors encountered before applying checkpoint'
+      print('*** Errors encountered before applying checkpoint', file=self.output)
       return False
 
     self._SyncContents()
@@ -2047,13 +2063,13 @@ class CheckpointApplier(object):
         if self._AddPathContents(next_new_path, existing_path_info=None):
           itemized = self.src_manifest.GetPathInfo(next_new_path).GetItemized()
           itemized.new_path = True
-          print >>self.output, itemized
+          print(itemized, file=self.output)
       del new_paths[0]
 
   def _AddDeleted(self, path, dest_path_info):
     itemized = dest_path_info.GetItemized()
     itemized.delete_path = True
-    print >>self.output, itemized
+    print(itemized, file=self.output)
     self.paths_to_delete.append(path)
 
   def _AddIfChanged(self, path, src_path_info, dest_path_info):
@@ -2063,7 +2079,7 @@ class CheckpointApplier(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
     if dest_path_info.path_type == PathInfo.TYPE_FILE:
       dest_path_info.sha256 = Sha256WithProgress(full_path, dest_path_info, output=self.output)
@@ -2073,24 +2089,24 @@ class CheckpointApplier(object):
       matches = False
     if matches:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
 
     if self._AddPathContents(path, existing_path_info=dest_path_info):
-      print >>self.output, itemized
+      print(itemized, file=self.output)
     if self.verbose:
       if src_path_info is not None:
-        print >>self.output, '<', src_path_info.ToString(
-          shorten_sha256=True, shorten_xattr_hash=True)
+        print('<', src_path_info.ToString(
+          shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
       if dest_path_info is not None:
-        print >>self.output, '>', dest_path_info.ToString(
-          shorten_sha256=True, shorten_xattr_hash=True)
+        print('>', dest_path_info.ToString(
+          shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
   def _AddPathContents(self, path, existing_path_info):
     if not os.path.lexists(os.path.join(self.src_checkpoint.GetContentRootPath(), path)):
       itemized = self.src_manifest.GetPathInfo(path).GetItemized()
       itemized.error_path = True
-      print >>self.output, itemized
+      print(itemized, file=self.output)
       self.errors_encountered = True
       return False
 
@@ -2164,13 +2180,13 @@ class CheckpointStripper(object):
 
   def _StripInternal(self):
     if not os.path.exists(self.checkpoint.GetContentRootPath()):
-      print >>self.output, "Checkpoint already stripped"
+      print("Checkpoint already stripped", file=self.output)
       return True
 
     if not self.dry_run:
       shutil.rmtree(self.checkpoint.GetContentRootPath())
 
-    print >>self.output, "Checkpoint stripped"
+    print("Checkpoint stripped", file=self.output)
     return True
 
 
@@ -2193,8 +2209,8 @@ class ImageCompactor(object):
       defragment_iterations=self.defragment_iterations, dry_run=self.dry_run,
       encryption_manager=self.encryption_manager)
     ending_size = GetPathTreeSize(self.image_path)
-    print >>self.output, "Image size %s -> %s" % (
-      FileSizeToString(starting_size), FileSizeToString(ending_size))
+    print("Image size %s -> %s" % (
+      FileSizeToString(starting_size), FileSizeToString(ending_size)), file=self.output)
     return True
 
 
@@ -2214,7 +2230,7 @@ class ManifestDiffDumper(object):
     sha256_to_second_pathinfos = self.second_manifest.CreateSha256ToPathInfosMap()
 
     all_paths = set(self.second_manifest.GetPathMap().keys())
-    all_paths.update(self.first_manifest.GetPathMap().keys())
+    all_paths.update(list(self.first_manifest.GetPathMap().keys()))
     for path in sorted(all_paths):
       first_path_info = self.first_manifest.GetPathInfo(path)
       second_path_info = self.second_manifest.GetPathInfo(path)
@@ -2236,10 +2252,10 @@ class ManifestDiffDumper(object):
         found_matching_rename = dup_analyze_result and dup_analyze_result.found_matching_rename
 
         if not self.ignore_matching_renames or not found_matching_rename or self.verbose:
-          print >>self.output, itemized
+          print(itemized, file=self.output)
           if dup_analyze_result is not None:
             for line in dup_analyze_result.dup_output_lines:
-              print >>self.output, line
+              print(line, file=self.output)
 
     return True
 
@@ -2282,7 +2298,7 @@ class ManifestVerifier(object):
         continue
 
       if self.escape_key_detector is not None and self.escape_key_detector.WasEscapePressed():
-        print >>self.output, '*** Cancelled at path %s' % EscapePath(path)
+        print('*** Cancelled at path %s' % EscapePath(path), file=self.output)
         return False
 
       self._HandleMissingPaths(missing_paths, next_present_path=path)
@@ -2314,7 +2330,7 @@ class ManifestVerifier(object):
       itemized.delete_path = True
     else:
       itemized.new_path = True
-    print >>self.output, itemized
+    print(itemized, file=self.output)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
@@ -2326,7 +2342,7 @@ class ManifestVerifier(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
     if src_path_info.path_type == PathInfo.TYPE_FILE:
       src_path_info.sha256 = Sha256WithProgress(full_path, src_path_info, output=self.output)
@@ -2338,20 +2354,20 @@ class ManifestVerifier(object):
       matches = False
     if matches:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
 
-    print >>self.output, itemized
+    print(itemized, file=self.output)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
     if self.verbose:
       if src_path_info is not None:
-        print >>self.output, '<', src_path_info.ToString(
-          shorten_sha256=True, shorten_xattr_hash=True)
+        print('<', src_path_info.ToString(
+          shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
       if manifest_path_info is not None:
-        print >>self.output, '>', manifest_path_info.ToString(
-          shorten_sha256=True, shorten_xattr_hash=True)
+        print('>', manifest_path_info.ToString(
+          shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
     self.has_diffs = True
 
   def _HandleMissingPaths(self, missing_paths, next_present_path=None):
@@ -2367,7 +2383,7 @@ class ManifestVerifier(object):
           itemized.new_path = True
         else:
           itemized.delete_path = True
-        print >>self.output, itemized
+        print(itemized, file=self.output)
         self.stats.total_mismatched_paths += 1
         if path_info.size:
           self.stats.total_mismatched_size += path_info.size
@@ -2530,5 +2546,5 @@ def DoCommand(args, output):
   elif args.command == COMMAND_VERIFY_MANIFEST:
     return DoVerifyManifest(args, output=output)
 
-  print >>output, '*** Error: Unknown command %s' % args.command
+  print('*** Error: Unknown command %s' % args.command, file=output)
   return False

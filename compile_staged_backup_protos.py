@@ -1,4 +1,4 @@
-#!/usr/bin/python -B
+#!/usr/bin/env python3 -u -B
 
 import argparse, subprocess, sys, os
 

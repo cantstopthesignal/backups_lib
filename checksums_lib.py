@@ -2,7 +2,7 @@ import argparse
 import os
 import re
 
-import lib
+from . import lib
 
 
 COMMAND_CREATE = 'create'
@@ -46,11 +46,11 @@ class InteractiveChecker:
     if self.ready_results:
       result = self.ready_results[0]
       del self.ready_results[0]
-      print >>output, '%s (y/N): %s' % (message, result and 'y' or 'n')
+      print('%s (y/N): %s' % (message, result and 'y' or 'n'), file=output)
       return result
 
-    print >>output, '%s (y/N):' % message,
-    return raw_input() == 'y'
+    print('%s (y/N):' % message, end=' ', file=output)
+    return input() == 'y'
 
 
 class ChecksumsError(Exception):
@@ -119,11 +119,11 @@ class ChecksumsCreator(object):
     try:
       self.checksums = Checksums.Create(
         self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
-    except ChecksumsError, e:
-      print >>self.output, '*** Error: %s' % e.message
+    except ChecksumsError as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
       return False
 
-    print >>self.output, 'Created checksums metadata for %s' % self.root_path
+    print('Created checksums metadata for %s' % self.root_path, file=self.output)
     return True
 
 
@@ -145,8 +145,8 @@ class ChecksumsVerifier(object):
   def Verify(self):
     try:
       self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
-    except (ChecksumsError, lib.ManifestError), e:
-      print >>self.output, '*** Error: %s' % e.message
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
       return False
 
     escape_key_detector = lib.EscapeKeyDetector()
@@ -167,7 +167,7 @@ class ChecksumsVerifier(object):
           stats.total_checksummed_paths, lib.FileSizeToString(stats.total_checksummed_size)))
       if stats.total_skipped_paths:
         out_pieces.append('%d skipped' % stats.total_skipped_paths)
-      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
       return verify_result
     finally:
@@ -213,8 +213,8 @@ class ChecksumsSyncer(object):
   def Sync(self):
     try:
       self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
-    except (ChecksumsError, lib.ManifestError), e:
-      print >>self.output, '*** Error: %s' % e.message
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
       return False
 
     self.basis_manifest = self.checksums.GetManifest()
@@ -239,7 +239,7 @@ class ChecksumsSyncer(object):
 
       if self.interactive:
         if not ChecksumsSyncer.INTERACTIVE_CHECKER.Confirm('Apply update?', self.output):
-          print >>self.output, '*** Cancelled ***'
+          print('*** Cancelled ***', file=self.output)
           if not self.dry_run:
             os.unlink(self.manifest.GetPath())
           return False
@@ -266,7 +266,7 @@ class ChecksumsSyncer(object):
 
     for path in self.scan_manifest.GetPaths():
       if self.escape_key_detector.WasEscapePressed():
-        print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+        print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
         return
 
       self._HandleExistingPaths(existing_paths, next_new_path=path)
@@ -291,14 +291,14 @@ class ChecksumsSyncer(object):
           self.total_checksummed_paths, lib.FileSizeToString(self.total_checksummed_size)))
       if self.total_skipped_paths:
         out_pieces.append('%d skipped' % self.total_skipped_paths)
-      print >>self.output, 'Paths: %s' % ', '.join(out_pieces)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
   def _HandleExistingPaths(self, existing_paths, next_new_path=None):
     while existing_paths:
       next_existing_path = existing_paths[0]
 
       if self.escape_key_detector.WasEscapePressed():
-        print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(next_existing_path)
+        print('*** Cancelled at path %s' % lib.EscapePath(next_existing_path), file=self.output)
         return
 
       if next_new_path is not None and next_existing_path > next_new_path:
@@ -328,7 +328,7 @@ class ChecksumsSyncer(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
     if path_info.path_type == lib.PathInfo.TYPE_FILE:
       if checksum_copied:
@@ -341,10 +341,10 @@ class ChecksumsSyncer(object):
       matches = False
     if matches:
       if self.verbose:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       return
 
-    print >>self.output, itemized
+    print(itemized, file=self.output)
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -357,7 +357,7 @@ class ChecksumsSyncer(object):
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
-    print >>self.output, itemized
+    print(itemized, file=self.output)
     self.manifest.AddPathInfo(path_info)
 
     if (self.detect_renames and path_info.path_type == lib.PathInfo.TYPE_FILE
@@ -370,7 +370,7 @@ class ChecksumsSyncer(object):
       analyze_result = lib.AnalyzePathInfoDups(
         path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
       for dup_output_line in analyze_result.dup_output_lines:
-        print >>self.output, dup_output_line
+        print(dup_output_line, file=self.output)
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -378,7 +378,7 @@ class ChecksumsSyncer(object):
     basis_path_info = self.basis_manifest.GetPathInfo(path)
     itemized = basis_path_info.GetItemized()
     itemized.delete_path = True
-    print >>self.output, itemized
+    print(itemized, file=self.output)
     self.manifest.RemovePathInfo(path)
 
     self.total_synced_paths += 1
@@ -395,7 +395,7 @@ class ChecksumsSyncer(object):
       for path_info in matching_size_path_infos:
         if path_info.sha256 is None:
           if self.escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+            print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
             return
 
           full_path = os.path.join(self.root_path, path_info.path)
@@ -409,7 +409,7 @@ class ChecksumsSyncer(object):
       analyze_result = lib.AnalyzePathInfoDups(
         basis_path_info, dup_path_infos, replacing_previous=False, verbose=self.verbose)
       for dup_output_line in analyze_result.dup_output_lines:
-        print >>self.output, dup_output_line
+        print(dup_output_line, file=self.output)
       if analyze_result.found_matching_rename:
         self.total_renamed_paths += 1
         self.total_renamed_size += basis_path_info.size
@@ -442,8 +442,8 @@ class ChecksumsPathRenamer(object):
   def RenamePaths(self):
     try:
       self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
-    except (ChecksumsError, lib.ManifestError), e:
-      print >>self.output, '*** Error: %s' % e.message
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
       return False
 
     manifest = self.checksums.GetManifest()
@@ -458,11 +458,11 @@ class ChecksumsPathRenamer(object):
       new_path = self.path_regex_from.sub(self.path_regex_to, path)
       if new_path != path:
         if manifest.HasPath(new_path):
-          print >>self.output, '*** Error: renamed to path %s already in manifest' % lib.EscapePath(new_path)
+          print('*** Error: renamed to path %s already in manifest' % lib.EscapePath(new_path), file=self.output)
           return False
 
-        print >>self.output, path_info.GetItemized()
-        print >>self.output, '  renamed to %s' % lib.EscapePath(new_path)
+        print(path_info.GetItemized(), file=self.output)
+        print('  renamed to %s' % lib.EscapePath(new_path), file=self.output)
         total_renamed_paths += 1
 
         manifest.RemovePathInfo(path)
@@ -472,7 +472,7 @@ class ChecksumsPathRenamer(object):
     if not self.dry_run and total_renamed_paths:
       manifest.Write()
 
-    print >>self.output, 'Paths: %d paths, %d renamed' % (total_paths, total_renamed_paths)
+    print('Paths: %d paths, %d renamed' % (total_paths, total_renamed_paths), file=self.output)
     return True
 
 
@@ -550,5 +550,5 @@ def DoCommand(args, output):
   elif args.command == COMMAND_RENAME_PATHS:
     return DoRenamePaths(args, output=output)
 
-  print >>output, '*** Error: Unknown command %s' % args.command
+  print('*** Error: Unknown command %s' % args.command, file=output)
   return False

@@ -1,7 +1,8 @@
 import contextlib
-import lib
 
-from test_util import DoBackupsMain
+from . import lib
+
+from .test_util import DoBackupsMain
 
 
 def GetManifestItemized(manifest):

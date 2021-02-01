@@ -8,7 +8,7 @@ import shutil
 import stat
 import sys
 
-import lib
+from . import lib
 
 
 COMMAND_CREATE_BACKUP = 'create-backup'
@@ -74,8 +74,8 @@ class BackupCheckpoint(object):
   def __str__(self):
     return 'BackupCheckpoint<%s>' % self.name
 
-  def __cmp__(self, other):
-    return cmp(self.name, other.name)
+  def __lt__(self, other):
+    return self.name < other.name
 
   def GetPath(self):
     return self.path
@@ -95,10 +95,10 @@ def ListBackupCheckpoints(checkpoints_dir):
 
 def PrintSkippedBackups(skipped_backups, output):
   if len(skipped_backups) == 1:
-    print >>output, 'Skipped backup %s' % skipped_backups[0]
+    print('Skipped backup %s' % skipped_backups[0], file=output)
   elif len(skipped_backups) > 1:
-    print >>output, 'Skipped %d backups: %s to %s' % (
-      len(skipped_backups), skipped_backups[0], skipped_backups[-1])
+    print('Skipped %d backups: %s to %s' % (
+      len(skipped_backups), skipped_backups[0], skipped_backups[-1]), file=output)
 
 
 class LogThrottler(object):
@@ -251,21 +251,21 @@ class PathsIntoBackupCopier(object):
       paths_to_copy_set.add(path)
 
     if mismatched_itemizeds:
-      print >>self.output, '*** Error: Failed to copy paths: found mismatched existing paths:'
+      print('*** Error: Failed to copy paths: found mismatched existing paths:', file=self.output)
       for itemized in mismatched_itemizeds:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       result.success = False
       return result
     if missing_from_itemizeds:
-      print >>self.output, '*** Error: Failed to copy paths: found missing from paths:'
+      print('*** Error: Failed to copy paths: found missing from paths:', file=self.output)
       for itemized in missing_from_itemizeds:
-        print >>self.output, itemized
+        print(itemized, file=self.output)
       result.success = False
       return result
 
     paths_to_sync_set = set(paths_to_copy_set)
     paths_to_sync_set.update(paths_to_copy_from_last_set)
-    paths_to_sync_set.update(paths_to_link_map.keys())
+    paths_to_sync_set.update(list(paths_to_link_map.keys()))
 
     if not paths_to_sync_set:
       return result
@@ -280,15 +280,15 @@ class PathsIntoBackupCopier(object):
       if (itemized.path_type == lib.PathInfo.TYPE_DIR
           and not self.path_matcher.Matches(itemized.path)):
         continue
-      print >>self.output, itemized
+      print(itemized, file=self.output)
       link_to_path = paths_to_link_map.get(itemized.path)
       if link_to_path is not None and link_to_path != itemized.path:
         path_info = self.from_manifest.GetPathInfo(itemized.path)
-        print >>self.output, '  duplicate to %s (size=%s)' % (
-          lib.EscapePath(link_to_path), lib.FileSizeToString(path_info.size))
+        print('  duplicate to %s (size=%s)' % (
+          lib.EscapePath(link_to_path), lib.FileSizeToString(path_info.size)), file=self.output)
 
     result.num_copied = len(paths_to_sync_set)
-    for path, path_to in paths_to_link_map.items():
+    for path, path_to in list(paths_to_link_map.items()):
       result.num_hard_linked += 1
       if path != path_to:
         result.num_hard_linked_to_duplicates += 1
@@ -304,7 +304,7 @@ class PathsIntoBackupCopier(object):
       out_pieces.append('%d total in source' % result.total_from_paths)
     if result.total_to_paths:
       out_pieces.append('%d total in result' % result.total_to_paths)
-    print >>self.output, 'Copying paths: %s...' % ', '.join(out_pieces)
+    print('Copying paths: %s...' % ', '.join(out_pieces), file=self.output)
 
     if not self.dry_run:
       if to_backup_is_new:
@@ -326,15 +326,15 @@ class PathsIntoBackupCopier(object):
         PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ResetLastLogTime()
         hard_links_total = len(paths_to_link_map)
         hard_links_remaining = hard_links_total
-        for path, path_to in paths_to_link_map.items():
+        for path, path_to in list(paths_to_link_map.items()):
           last_full_path = os.path.join(self.last_to_backup.GetContentRootPath(), path_to)
           full_path = os.path.join(result.to_backup.GetContentRootPath(), path)
           os.link(last_full_path, full_path)
           hard_links_remaining -= 1
           if PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER.ShouldLog() and hard_links_remaining:
-            print >>self.output, '%d/%d hard links remaining (%d%%)...' % (
+            print('%d/%d hard links remaining (%d%%)...' % (
               hard_links_remaining, hard_links_total,
-              (hard_links_total - hard_links_remaining) * 100.0 / hard_links_total)
+              (hard_links_total - hard_links_remaining) * 100.0 / hard_links_total), file=self.output)
 
         for path in result.to_manifest.GetPaths():
           path_info = result.to_manifest.GetPathInfo(path)
@@ -345,7 +345,7 @@ class PathsIntoBackupCopier(object):
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
         result.to_manifest.Write()
 
-        print >>self.output, 'Verifying %s...' % result.to_backup.GetName()
+        print('Verifying %s...' % result.to_backup.GetName(), file=self.output)
         verifier = lib.ManifestVerifier(
           result.to_manifest, result.to_backup.GetContentRootPath(), self.output,
           checksum_all=self.verify_with_checksums, verbose=self.verbose)
@@ -368,7 +368,7 @@ class DeDuplicateBackupsResult(object):
 
 def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min_file_size=DEDUP_MIN_FILE_SIZE,
                        escape_key_detector=None, dry_run=False, verbose=False):
-  print >>output, 'De-duplicate %s onto %s...' % (backup, last_backup)
+  print('De-duplicate %s onto %s...' % (backup, last_backup), file=output)
 
   result = DeDuplicateBackupsResult()
 
@@ -392,7 +392,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
 
   for path in manifest.GetPaths():
     if escape_key_detector is not None and escape_key_detector.WasEscapePressed():
-      print >>output, '*** Cancelled at path %s' % lib.EscapePath(path)
+      print('*** Cancelled at path %s' % lib.EscapePath(path), file=output)
       break
     path_info = manifest.GetPathInfo(path)
     if path_info.path_type != lib.PathInfo.TYPE_FILE or path_info.size < min_file_size:
@@ -430,11 +430,11 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     if not matching_dup_path_infos:
       if similar_path_infos:
         if verbose:
-          print >>output, 'Similar path %s (size=%s) to:' % (
-            lib.EscapePath(path), lib.FileSizeToString(path_info.size))
+          print('Similar path %s (size=%s) to:' % (
+            lib.EscapePath(path), lib.FileSizeToString(path_info.size)), file=output)
           for similar_path_info in similar_path_infos:
             itemized = lib.PathInfo.GetItemizedDiff(similar_path_info, path_info, ignore_paths=True)
-            print >>output, '  %s' % itemized
+            print('  %s' % itemized, file=output)
         num_similar_files += 1
         num_similar_files_total_size += path_info.size
       continue
@@ -442,10 +442,10 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     result.num_new_dup_files += 1
     new_dup_files_total_size += path_info.size
 
-    print >>output, 'Duplicate path %s (size=%s) to:' % (
-      lib.EscapePath(path), lib.FileSizeToString(path_info.size))
+    print('Duplicate path %s (size=%s) to:' % (
+      lib.EscapePath(path), lib.FileSizeToString(path_info.size)), file=output)
     for dup_path_info in matching_dup_path_infos:
-      print >>output, '  %s' % lib.EscapePath(dup_path_info.path)
+      print('  %s' % lib.EscapePath(dup_path_info.path), file=output)
 
     matching_dup_path_info = matching_dup_path_infos[0]
     matching_dup_full_path = os.path.join(last_backup.GetContentRootPath(), matching_dup_path_info.path)
@@ -472,7 +472,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
     output_messages.append('%d large files' % num_large_files)
 
   if output_messages:
-    print >>output, 'Duplicates: %s' % '; '.join(output_messages)
+    print('Duplicates: %s' % '; '.join(output_messages), file=output)
 
   return result
 
@@ -643,8 +643,8 @@ class Backup(object):
   def __str__(self):
     return 'Backup<%s,%s>' % (self.name, self.state)
 
-  def __cmp__(self, other):
-    return cmp(self.name, other.name)
+  def __lt__(self, other):
+    return self.name < other.name
 
   def GetState(self):
     return self.state
@@ -858,7 +858,7 @@ class BackupCreator:
   def Create(self):
     checkpoints = ListBackupCheckpoints(self.config.checkpoints_dir)
     if not checkpoints:
-      print >>self.output, '*** Error: No previous checkpoints found'
+      print('*** Error: No previous checkpoints found', file=self.output)
       return False
 
     last_checkpoint = checkpoints[-1]
@@ -892,7 +892,7 @@ class CheckpointsToBackupsApplier:
   def Apply(self):
     checkpoints = ListBackupCheckpoints(self.config.checkpoints_dir)
     if not checkpoints:
-      print >>self.output, 'No checkpoints found'
+      print('No checkpoints found', file=self.output)
       return True
 
     self.manager = BackupsManager.Open(
@@ -901,7 +901,7 @@ class CheckpointsToBackupsApplier:
     try:
       last_backup = self.manager.GetLastDone()
       if not last_backup:
-        print >>self.output, '*** Error: No last backup found for %s' % self.manager
+        print('*** Error: No last backup found for %s' % self.manager, file=self.output)
         return False
       checkpoints_to_apply = []
       for checkpoint in checkpoints:
@@ -924,14 +924,14 @@ class CheckpointsToBackupsApplier:
         if not success:
           return False
       if not checkpoints_to_apply:
-        print >>self.output, 'No checkpoints to apply found'
+        print('No checkpoints to apply found', file=self.output)
         return True
       return True
     finally:
       self.manager.Close()
 
   def _CreateBackupFromCheckpoint(self, checkpoint, last_backup):
-    print >>self.output, 'Applying %s onto %s...' % (checkpoint.GetName(), last_backup.GetName())
+    print('Applying %s onto %s...' % (checkpoint.GetName(), last_backup.GetName()), file=self.output)
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=checkpoint, from_manifest=None, to_backup_manager=self.manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
@@ -939,8 +939,8 @@ class CheckpointsToBackupsApplier:
       output=self.output, verify_with_checksums=self.checksum_all, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
     if not result.success:
-      print >>self.output, ('*** Error: Failed to apply %s onto %s'
-                            % (checkpoint.GetName(), last_backup.GetName()))
+      print(('*** Error: Failed to apply %s onto %s'
+                            % (checkpoint.GetName(), last_backup.GetName())), file=self.output)
       return (False, None)
 
     if not self.dry_run:
@@ -964,7 +964,7 @@ class BackupsImageCreator(object):
     self.verbose = verbose
 
   def CreateImage(self):
-    print >>self.output, 'Creating image %s...' % self.config.image_path
+    print('Creating image %s...' % self.config.image_path, file=self.output)
     manager = BackupsManager.Create(
       self.config, volume_name=self.volume_name, encrypt=self.encrypt,
       encryption_manager=self.encryption_manager, browseable=False, dry_run=self.dry_run)
@@ -987,7 +987,7 @@ class BackupsLister(object):
       dry_run=self.dry_run)
     try:
       for backup in backups_manager.GetBackupList():
-        print >>self.output, backup.GetName()
+        print(backup.GetName(), file=self.output)
     finally:
       backups_manager.Close()
     return True
@@ -1034,11 +1034,11 @@ class BackupsVerifier(object):
           (success, last_manifest) = self._VerifyBackup(
             backup, last_backup, last_manifest, escape_key_detector)
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print('*** Cancelled at backup %s' % backup, file=self.output)
             return False
           if not success:
             errors_encountered = True
-            print >>self.output, "*** Error: Failed to verify backup %s" % backup
+            print("*** Error: Failed to verify backup %s" % backup, file=self.output)
             if not self.continue_on_error:
               return False
         finally:
@@ -1052,10 +1052,10 @@ class BackupsVerifier(object):
     return not errors_encountered
 
   def _VerifyBackup(self, backup, last_backup, last_manifest, escape_key_detector):
-    print >>self.output, 'Verifying %s...' % backup.GetName()
+    print('Verifying %s...' % backup.GetName(), file=self.output)
 
     if not os.path.exists(backup.GetManifestPath()):
-      print >>self.output, '*** Error: Manifest file missing for %s' % backup
+      print('*** Error: Manifest file missing for %s' % backup, file=self.output)
       return (False, None)
 
     manifest = lib.Manifest(backup.GetManifestPath())
@@ -1091,7 +1091,7 @@ class BackupsVerifier(object):
         path_info.sha256 = dev_inodes_to_sha256.get(path_info.dev_inode)
         if path_info.sha256 is None:
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+            print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
             return (False, None)
 
           path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
@@ -1101,21 +1101,21 @@ class BackupsVerifier(object):
           num_inode_hits += 1
       new_manifest.AddPathInfo(path_info)
 
-    print >>self.output, 'Paths: %d total, %d inode hits, %d checksummed (%s)' % (
-      num_paths, num_inode_hits, num_checksummed, lib.FileSizeToString(total_checksummed_size))
+    print('Paths: %d total, %d inode hits, %d checksummed (%s)' % (
+      num_paths, num_inode_hits, num_checksummed, lib.FileSizeToString(total_checksummed_size)), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
-      print >>self.output, itemized
+      print(itemized, file=self.output)
       if self.verbose:
         manifest_path_info = manifest.GetPathInfo(itemized.path)
         if manifest_path_info:
-          print >>self.output, '<', manifest_path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+          print('<', manifest_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
         new_manifest_path_info = new_manifest.GetPathInfo(itemized.path)
         if new_manifest_path_info:
-          print >>self.output, '>', new_manifest_path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+          print('>', new_manifest_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
     return (not itemized_results, new_manifest)
 
@@ -1161,7 +1161,7 @@ class BackupsVerifier(object):
               break
         if not new_path_info.sha256:
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at path %s' % lib.EscapePath(path)
+            print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
             return (False, None)
 
           new_path_info.sha256 = lib.Sha256WithProgress(full_path, new_path_info, output=self.output)
@@ -1169,21 +1169,21 @@ class BackupsVerifier(object):
           total_checksummed_size += new_path_info.size
       new_manifest.AddPathInfo(new_path_info)
 
-    print >>self.output, 'Paths: %d unique, %d matching, %d checksummed (%s)' % (
-      num_unique, num_matching, num_checksummed, lib.FileSizeToString(total_checksummed_size))
+    print('Paths: %d unique, %d matching, %d checksummed (%s)' % (
+      num_unique, num_matching, num_checksummed, lib.FileSizeToString(total_checksummed_size)), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
-      print >>self.output, itemized
+      print(itemized, file=self.output)
       if self.verbose:
         manifest_path_info = manifest.GetPathInfo(itemized.path)
         if manifest_path_info:
-          print >>self.output, '<', manifest_path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+          print('<', manifest_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
         new_manifest_path_info = new_manifest.GetPathInfo(itemized.path)
         if new_manifest_path_info:
-          print >>self.output, '>', new_manifest_path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+          print('>', new_manifest_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
     return (not itemized_results, new_manifest)
 
@@ -1221,7 +1221,7 @@ class BackupsDeDuplicator(object):
             continue
 
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled before backup %s' % backup
+            print('*** Cancelled before backup %s' % backup, file=self.output)
             return False
 
           PrintSkippedBackups(skipped_backups, self.output)
@@ -1263,7 +1263,7 @@ class BackupsPruner(object):
       self._PruneInternal(backups_manager)
 
       if not self.num_pruned:
-        print >>self.output, 'No backups needed to be pruned out of %d' % len(backups_manager.GetBackupList())
+        print('No backups needed to be pruned out of %d' % len(backups_manager.GetBackupList()), file=self.output)
         return True
     finally:
       backups_manager.Close()
@@ -1300,7 +1300,7 @@ class BackupsPruner(object):
         else:
           backups_to_prune_pair.append((backup, superseding_backup))
       for backup, superseding_backup in reversed(backups_to_prune_pair):
-        print >>self.output, "Pruning %s: %s supersedes it..." % (backup, superseding_backup)
+        print("Pruning %s: %s supersedes it..." % (backup, superseding_backup), file=self.output)
         backup.CopyMetadataToSupersedingBackup(superseding_backup, dry_run=self.dry_run)
         if not self.dry_run:
           backup.Delete()
@@ -1325,7 +1325,7 @@ class MissingManifestsToBackupsAdder(object):
       for backup in self.manager.GetBackupList():
         manifest_path = backup.GetManifestPath()
         if os.path.lexists(manifest_path):
-          print >>self.output, 'Manifest already exists for backup %s' % backup
+          print('Manifest already exists for backup %s' % backup, file=self.output)
           last_manifest = None
           continue
 
@@ -1340,7 +1340,7 @@ class MissingManifestsToBackupsAdder(object):
       self.manager.Close()
 
   def _CreateManifestForBackup(self, backup, manifest, last_manifest):
-    print >>self.output, 'Add missing manifest for backup %s...' % backup
+    print('Add missing manifest for backup %s...' % backup, file=self.output)
 
     dev_inodes_to_sha256 = {}
     if last_manifest is not None:
@@ -1369,8 +1369,8 @@ class MissingManifestsToBackupsAdder(object):
         else:
           num_inode_hits += 1
       manifest.AddPathInfo(path_info)
-    print >>self.output, 'Paths: %d total, %d inode hits, %d checksummed (%s)' % (
-      num_paths, num_inode_hits, num_checksummed, lib.FileSizeToString(total_checksummed_size))
+    print('Paths: %d total, %d inode hits, %d checksummed (%s)' % (
+      num_paths, num_inode_hits, num_checksummed, lib.FileSizeToString(total_checksummed_size)), file=self.output)
 
 
 class BackupCloner(object):
@@ -1391,7 +1391,7 @@ class BackupCloner(object):
     try:
       backup = self.manager.GetBackup(self.backup_name)
       if not backup:
-        print >>self.output, '*** Error: No backup %s found for %s' % (self.backup_name, self.manager)
+        print('*** Error: No backup %s found for %s' % (self.backup_name, self.manager), file=self.output)
         return False
       return self._CloneBackupInternal(backup)
     finally:
@@ -1399,9 +1399,9 @@ class BackupCloner(object):
 
   def _CloneBackupInternal(self, backup):
     backup_clone = self.manager.StartClone(backup)
-    print >>self.output, 'Cloning %s to %s...' % (backup, backup_clone)
+    print('Cloning %s to %s...' % (backup, backup_clone), file=self.output)
     if os.path.lexists(backup_clone.GetPath()):
-      print >>self.output, '*** Error: directory %s already exists' % backup_clone.GetPath()
+      print('*** Error: directory %s already exists' % backup_clone.GetPath(), file=self.output)
       return False
     if not self.dry_run:
       os.mkdir(backup_clone.GetPath())
@@ -1439,11 +1439,11 @@ class BackupsDeleter(object):
       try:
         for backup_name in self.backup_names:
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled before backup %s' % backup_name
+            print('*** Cancelled before backup %s' % backup_name, file=self.output)
             return False
           backup = self.manager.GetBackup(backup_name)
           if not backup:
-            print >>self.output, '*** Error: No backup %s found for %s' % (backup_name, self.manager)
+            print('*** Error: No backup %s found for %s' % (backup_name, self.manager), file=self.output)
             return False
           if not self._DeleteBackupsInternal(backup):
             return False
@@ -1460,10 +1460,10 @@ class BackupsDeleter(object):
     if backup_index + 1 < len(backups):
       superseding_backup = backups[backup_index + 1]
     if superseding_backup is not None:
-      print >>self.output, "Deleting %s: %s supersedes it..." % (backup, superseding_backup)
+      print("Deleting %s: %s supersedes it..." % (backup, superseding_backup), file=self.output)
       backup.CopyMetadataToSupersedingBackup(superseding_backup, dry_run=self.dry_run)
     else:
-      print >>self.output, "Deleting %s..." % backup
+      print("Deleting %s..." % backup, file=self.output)
     if not self.dry_run:
       backup.Delete()
     return True
@@ -1503,7 +1503,7 @@ class UniqueFilesInBackupsDumper(object):
             next_backup = None
 
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled before backup %s' % backup
+            print('*** Cancelled before backup %s' % backup, file=self.output)
             return False
 
           if not self._DumpUniqueFilesInternal(backup, previous_backup, next_backup):
@@ -1516,14 +1516,14 @@ class UniqueFilesInBackupsDumper(object):
     return True
 
   def _DumpUniqueFilesInternal(self, backup, previous_backup, next_backup):
-    print >>self.output, "Finding unique files in backup %s..." % backup
+    print("Finding unique files in backup %s..." % backup, file=self.output)
     compared_to_output = []
     if previous_backup is not None:
       compared_to_output.append('previous %s' % previous_backup)
     if next_backup is not None:
       compared_to_output.append('next %s' % next_backup)
     if compared_to_output:
-      print >>self.output, "Compare to %s..." % ' and '.join(compared_to_output)
+      print("Compare to %s..." % ' and '.join(compared_to_output), file=self.output)
 
     manifest = lib.Manifest(backup.GetManifestPath())
     manifest.Read()
@@ -1531,8 +1531,8 @@ class UniqueFilesInBackupsDumper(object):
 
     if previous_backup is None and next_backup is None:
       for itemized in manifest.GetItemized():
-        print >>self.output, itemized
-      print >>self.output, 'Paths: %d unique, %d total' % (num_paths, num_paths)
+        print(itemized, file=self.output)
+      print('Paths: %d unique, %d total' % (num_paths, num_paths), file=self.output)
       return True
 
     if previous_backup is not None:
@@ -1566,13 +1566,13 @@ class UniqueFilesInBackupsDumper(object):
 
       if itemized.delete_path:
         if self.verbose:
-          print >>self.output, itemized
+          print(itemized, file=self.output)
           if previous_path_info is not None:
-            print >>self.output, '  <', previous_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+            print('  <', previous_path_info.ToString(
+              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
           if next_path_info is not None:
-            print >>self.output, '  >', next_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+            print('  >', next_path_info.ToString(
+              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
         continue
 
       if next_manifest is not None and previous_path_info is not None:
@@ -1602,22 +1602,22 @@ class UniqueFilesInBackupsDumper(object):
         if path_info.path_type == lib.PathInfo.TYPE_FILE:
           unique_size += path_info.size
 
-        print >>self.output, itemized
+        print(itemized, file=self.output)
         if self.verbose:
           if previous_path_info is not None:
-            print >>self.output, '  <', previous_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
-          print >>self.output, '  =', path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+            print('  <', previous_path_info.ToString(
+              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
+          print('  =', path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
           if next_path_info is not None:
-            print >>self.output, '  >', next_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True)
+            print('  >', next_path_info.ToString(
+              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
         for dup_output_line in dup_output_lines:
-          print >>self.output, dup_output_line
+          print(dup_output_line, file=self.output)
 
-    print >>self.output, 'Paths: %d unique (%s), %d total' % (
-      num_unique, lib.FileSizeToString(unique_size), num_paths)
+    print('Paths: %d unique (%s), %d total' % (
+      num_unique, lib.FileSizeToString(unique_size), num_paths), file=self.output)
     return True
 
 
@@ -1643,10 +1643,10 @@ class PathsFromBackupsExtractor(object):
   def ExtractPaths(self):
     if not self.dry_run:
       if self.output_image_path is None:
-        print >>self.output, '*** Error: --output-image-path argument required'
+        print('*** Error: --output-image-path argument required', file=self.output)
         return False
       if os.path.lexists(self.output_image_path):
-        print >>self.output, '*** Error: Output image path %s already exists' % self.output_image_path
+        print('*** Error: Output image path %s already exists' % self.output_image_path, file=self.output)
         return False
       output_config = BackupsConfig()
       output_config.image_path = os.path.normpath(self.output_image_path)
@@ -1689,7 +1689,7 @@ class PathsFromBackupsExtractor(object):
           (extracted_backup, extracted_manifest) = self._ExtractPathsFromBackup(
             backup, last_extracted_backup, last_extracted_manifest)
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print('*** Cancelled at backup %s' % backup, file=self.output)
             return False
 
           if extracted_backup is not None:
@@ -1706,7 +1706,7 @@ class PathsFromBackupsExtractor(object):
     return True
 
   def _ExtractPathsFromBackup(self, backup, last_extracted_backup, last_extracted_manifest):
-    print >>self.output, 'Extracting from %s...' % backup.GetName()
+    print('Extracting from %s...' % backup.GetName(), file=self.output)
 
     path_matcher = lib.PathsAndPrefixMatcher(self.paths)
 
@@ -1792,7 +1792,7 @@ class IntoBackupsMerger(object):
 
           if backup:
             if escape_key_detector.WasEscapePressed():
-              print >>self.output, '*** Cancelled before backup %s' % backup
+              print('*** Cancelled before backup %s' % backup, file=self.output)
               return False
             if from_backup:
               (last_backup_was_modified, success) = self._MergeBackup(
@@ -1811,7 +1811,7 @@ class IntoBackupsMerger(object):
               continue
           elif from_backup:
             if escape_key_detector.WasEscapePressed():
-              print >>self.output, '*** Cancelled before from backup %s' % from_backup
+              print('*** Cancelled before from backup %s' % from_backup, file=self.output)
               return False
             last_backup = self._ImportNewBackup(from_backup, last_backup)
             last_backup_was_modified = True
@@ -1829,7 +1829,7 @@ class IntoBackupsMerger(object):
     return True
 
   def _MergeBackup(self, backup, from_backup, last_backup):
-    print >>self.output, 'Backup %s: merging...' % backup.GetName()
+    print('Backup %s: merging...' % backup.GetName(), file=self.output)
 
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
@@ -1848,7 +1848,7 @@ class IntoBackupsMerger(object):
     Return: whether the retained backup was modified
     """
 
-    print >>self.output, 'Backup %s: existing retained.' % backup.GetName()
+    print('Backup %s: existing retained.' % backup.GetName(), file=self.output)
     if last_backup is not None and last_backup_was_modified:
       result = DeDuplicateBackups(
         backup=backup, manifest=None, last_backup=last_backup, last_manifest=None,
@@ -1859,7 +1859,7 @@ class IntoBackupsMerger(object):
     return False
 
   def _ImportNewBackup(self, from_backup, last_backup):
-    print >>self.output, 'Backup %s: importing new...' % from_backup.GetName()
+    print('Backup %s: importing new...' % from_backup.GetName(), file=self.output)
 
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
@@ -1908,7 +1908,7 @@ class PathsInBackupsDeleter(object):
 
           self._DeletePathsInBackup(backup, escape_key_detector)
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print('*** Cancelled at backup %s' % backup, file=self.output)
             return False
 
         PrintSkippedBackups(skipped_backups, self.output)
@@ -1920,7 +1920,7 @@ class PathsInBackupsDeleter(object):
     return True
 
   def _DeletePathsInBackup(self, backup, escape_key_detector):
-    print >>self.output, 'Deleting in %s...' % backup.GetName()
+    print('Deleting in %s...' % backup.GetName(), file=self.output)
 
     manifest = lib.Manifest(backup.GetManifestPath())
     manifest.Read()
@@ -1935,7 +1935,7 @@ class PathsInBackupsDeleter(object):
         itemized = path_info.GetItemized()
         itemized.new_path = False
         itemized.delete_path = True
-        print >>self.output, itemized
+        print(itemized, file=self.output)
         paths_to_delete.append(path)
 
     if not paths_to_delete:
@@ -1960,7 +1960,7 @@ class PathsInBackupsDeleter(object):
 
       manifest.Write()
 
-      print >>self.output, 'Verifying %s...' % backup.GetName()
+      print('Verifying %s...' % backup.GetName(), file=self.output)
       verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
                                       verbose=self.verbose)
       if not verifier.Verify():
@@ -1968,7 +1968,7 @@ class PathsInBackupsDeleter(object):
 
       os.unlink(manifest_bak_path)
 
-    print >>self.output, 'Paths: %d deleted, %d total' % (len(paths_to_delete), num_paths)
+    print('Paths: %d deleted, %d total' % (len(paths_to_delete), num_paths), file=self.output)
 
 
 def DoCreateBackup(args, output):
@@ -2120,7 +2120,7 @@ def DoDeleteBackups(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   if not cmd_args.backup_names:
-    print >>output, ('*** Error: One or more --backup-name args required')
+    print(('*** Error: One or more --backup-name args required'), file=output)
     return False
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2142,8 +2142,8 @@ def DoDumpUniqueFilesInBackups(args, output):
   config = GetBackupsConfigFromArgs(cmd_args)
   try:
     backups_matcher = GetBackupsMatcherFromArgs(cmd_args)
-  except BackupsMatcherArgsError, e:
-    print >>output, '*** Error:', e.message
+  except BackupsMatcherArgsError as e:
+    print('*** Error:', e.args[0], file=output)
     return False
 
   dumper = UniqueFilesInBackupsDumper(
@@ -2245,5 +2245,5 @@ def DoCommand(args, output):
   elif args.command == COMMAND_DELETE_IN_BACKUPS:
     return DoDeleteInBackups(args, output=output)
 
-  print >>output, '*** Error: Unknown command %s' % args.command
+  print('*** Error: Unknown command %s' % args.command, file=output)
   return False

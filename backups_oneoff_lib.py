@@ -8,8 +8,8 @@ import stat
 import sys
 import time
 
-import backups_lib
-import lib
+from . import backups_manager_lib
+from . import lib
 
 
 COMMAND_ONEOFF_UPDATE_IGNORED_XATTRS = 'oneoff-update-ignored-xattrs'
@@ -23,7 +23,11 @@ COMMANDS = [
 
 def XattrHashToSummaryString(xattr_hash):
   if xattr_hash is not None:
-    return binascii.b2a_hex(xattr_hash)[:6]
+    return binascii.b2a_hex(xattr_hash)[:6].decode('ascii')
+
+
+def ToOctalString(value):
+  return oct(value).replace('o', '')
 
 
 class OneoffIgnoredXattrsUpdater(object):
@@ -41,12 +45,12 @@ class OneoffIgnoredXattrsUpdater(object):
     self.verbose = verbose
 
   def Apply(self):
-    print >>self.output, 'Old ignored xattrs: %s' % ', '.join(
-      [ lib.EscapeString(s) for s in self.old_ignored_xattrs ])
-    print >>self.output, 'New ignored xattrs: %s' % ', '.join(
-      [ lib.EscapeString(s) for s in self.new_ignored_xattrs ])
+    print('Old ignored xattrs: %s' % ', '.join(
+      [ lib.EscapeString(s) for s in self.old_ignored_xattrs ]), file=self.output)
+    print('New ignored xattrs: %s' % ', '.join(
+      [ lib.EscapeString(s) for s in self.new_ignored_xattrs ]), file=self.output)
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       self.config, readonly=False, encryption_manager=self.encryption_manager,
       dry_run=self.dry_run)
     try:
@@ -56,7 +60,7 @@ class OneoffIgnoredXattrsUpdater(object):
       try:
         for backup in backups_manager.GetBackupList():
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print('*** Cancelled at backup %s' % backup, file=self.output)
             return False
 
           if ((self.min_backup is not None and backup.GetName() < self.min_backup)
@@ -64,12 +68,12 @@ class OneoffIgnoredXattrsUpdater(object):
             skipped_backups.append(backup)
             continue
 
-          backups_lib.PrintSkippedBackups(skipped_backups, self.output)
+          backups_manager_lib.PrintSkippedBackups(skipped_backups, self.output)
           skipped_backups = []
 
           self._ApplyToBackup(backup)
 
-        backups_lib.PrintSkippedBackups(skipped_backups, self.output)
+        backups_manager_lib.PrintSkippedBackups(skipped_backups, self.output)
       finally:
         escape_key_detector.Shutdown()
     finally:
@@ -77,7 +81,7 @@ class OneoffIgnoredXattrsUpdater(object):
     return True
 
   def _ApplyToBackup(self, backup):
-    print >>self.output, 'Applying to backup %s...' % backup.GetName()
+    print('Applying to backup %s...' % backup.GetName(), file=self.output)
 
     if not os.path.exists(backup.GetManifestPath()):
       raise Exception('*** Error: Manifest file missing for %s' % backup)
@@ -103,9 +107,9 @@ class OneoffIgnoredXattrsUpdater(object):
         assert not old_itemized.HasDiffs()
         if path_info.xattr_hash != new_path_info.xattr_hash:
           path_info.xattr_hash = new_path_info.xattr_hash
-          print >>self.output, 'Updated xattr for %s from %s to %s' % (
+          print('Updated xattr for %s from %s to %s' % (
             lib.EscapePath(path), XattrHashToSummaryString(old_path_info.xattr_hash),
-            XattrHashToSummaryString(path_info.xattr_hash))
+            XattrHashToSummaryString(path_info.xattr_hash)), file=self.output)
           num_xattr_changed += 1
 
     if num_xattr_changed:
@@ -117,8 +121,8 @@ class OneoffIgnoredXattrsUpdater(object):
 
         manifest.Write()
 
-    print >>self.output, 'Paths: %d paths with xattrs, %d xattrs changed, %d paths' % (
-      num_xattr, num_xattr_changed, num_paths)
+    print('Paths: %d paths with xattrs, %d xattrs changed, %d paths' % (
+      num_xattr, num_xattr_changed, num_paths), file=self.output)
 
 
 class OneoffSomeFilesUpdater(object):
@@ -136,7 +140,7 @@ class OneoffSomeFilesUpdater(object):
     self.verbose = verbose
 
   def Apply(self):
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       self.config, readonly=False, encryption_manager=self.encryption_manager,
       dry_run=self.dry_run)
     try:
@@ -146,7 +150,7 @@ class OneoffSomeFilesUpdater(object):
       try:
         for backup in backups_manager.GetBackupList():
           if escape_key_detector.WasEscapePressed():
-            print >>self.output, '*** Cancelled at backup %s' % backup
+            print('*** Cancelled at backup %s' % backup, file=self.output)
             return False
 
           if ((self.min_backup is not None and backup.GetName() < self.min_backup)
@@ -154,12 +158,12 @@ class OneoffSomeFilesUpdater(object):
             skipped_backups.append(backup)
             continue
 
-          backups_lib.PrintSkippedBackups(skipped_backups, self.output)
+          backups_manager_lib.PrintSkippedBackups(skipped_backups, self.output)
           skipped_backups = []
 
           self._ApplyToBackup(backup)
 
-        backups_lib.PrintSkippedBackups(skipped_backups, self.output)
+        backups_manager_lib.PrintSkippedBackups(skipped_backups, self.output)
       finally:
         escape_key_detector.Shutdown()
     finally:
@@ -167,7 +171,7 @@ class OneoffSomeFilesUpdater(object):
     return True
 
   def _ApplyToBackup(self, backup):
-    print >>self.output, 'Applying to backup %s...' % backup.GetName()
+    print('Applying to backup %s...' % backup.GetName(), file=self.output)
 
     if not os.path.exists(backup.GetManifestPath()):
       raise Exception('*** Error: Manifest file missing for %s' % backup)
@@ -192,7 +196,7 @@ class OneoffSomeFilesUpdater(object):
       manifest.Write()
 
       if self.verify:
-        print >>self.output, 'Verifying %s...' % backup.GetName()
+        print('Verifying %s...' % backup.GetName(), file=self.output)
         verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
                                         verbose=self.verbose)
         if not verifier.Verify():
@@ -200,7 +204,7 @@ class OneoffSomeFilesUpdater(object):
 
       os.unlink(manifest_bak_path)
 
-    print >>self.output, 'Paths: %d changed, %d total' % (num_changed, num_paths)
+    print('Paths: %d changed, %d total' % (num_changed, num_paths), file=self.output)
 
   def _MaybeChangePath(self, backup, manifest, path):
     if OneoffSomeFilesUpdater.MAYBE_CHANGE_PATH_TEST_HOOK:
@@ -214,10 +218,10 @@ class OneoffSomeFilesUpdater(object):
       self, backup, path_info, incorrect_mtime, corrected_mtime):
     if path_info.mtime == incorrect_mtime:
       full_path = os.path.join(backup.GetContentRootPath(), path_info.path)
-      print >>self.output, 'Updating mtime from %s to %s for path %s' % (
+      print('Updating mtime from %s to %s for path %s' % (
         lib.UnixTimeToSecondsString(incorrect_mtime),
         lib.UnixTimeToSecondsString(corrected_mtime),
-        lib.EscapePath(path_info.path))
+        lib.EscapePath(path_info.path)), file=self.output)
       lib.ClearPathHardlinks(full_path, dry_run=self.dry_run)
       if not self.dry_run:
         os.utime(full_path, (corrected_mtime, corrected_mtime))
@@ -228,8 +232,10 @@ class OneoffSomeFilesUpdater(object):
       self, backup, path_info, incorrect_mode, corrected_mode):
     if stat.S_IMODE(path_info.mode) == incorrect_mode:
       full_path = os.path.join(backup.GetContentRootPath(), path_info.path)
-      print >>self.output, 'Updating mode from %s to %s for path %s' % (
-        oct(incorrect_mode), oct(corrected_mode), lib.EscapePath(path_info.path))
+      print('Updating mode from %s to %s for path %s'
+            % (ToOctalString(incorrect_mode), ToOctalString(corrected_mode),
+               lib.EscapePath(path_info.path)),
+            file=self.output)
       lib.ClearPathHardlinks(full_path, dry_run=self.dry_run)
       if not self.dry_run:
         os.chmod(full_path, corrected_mode)
@@ -239,7 +245,7 @@ class OneoffSomeFilesUpdater(object):
 
 def DoOneoffUpdateIgnoredXattrs(args, output):
   parser = argparse.ArgumentParser()
-  backups_lib.AddBackupsConfigArgs(parser)
+  backups_manager_lib.AddBackupsConfigArgs(parser)
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   parser.add_argument('--old-ignored-xattr', dest='old_ignored_xattrs', action='append', default=[])
@@ -252,7 +258,7 @@ def DoOneoffUpdateIgnoredXattrs(args, output):
   if cmd_args.old_ignored_xattrs == cmd_args.new_ignored_xattrs:
     raise Exception('Old and new ignored xattrs should be different')
 
-  config = backups_lib.GetBackupsConfigFromArgs(cmd_args)
+  config = backups_manager_lib.GetBackupsConfigFromArgs(cmd_args)
 
   updater = OneoffIgnoredXattrsUpdater(
     config, output=output, min_backup=cmd_args.min_backup,
@@ -264,13 +270,13 @@ def DoOneoffUpdateIgnoredXattrs(args, output):
 
 def DoOneoffUpdateSomeFiles(args, output):
   parser = argparse.ArgumentParser()
-  backups_lib.AddBackupsConfigArgs(parser)
+  backups_manager_lib.AddBackupsConfigArgs(parser)
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   parser.add_argument('--no-verify', dest='verify', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
-  config = backups_lib.GetBackupsConfigFromArgs(cmd_args)
+  config = backups_manager_lib.GetBackupsConfigFromArgs(cmd_args)
 
   updater = OneoffSomeFilesUpdater(
     config, output=output, min_backup=cmd_args.min_backup,
@@ -286,5 +292,5 @@ def DoCommand(args, output):
   elif args.command == COMMAND_ONEOFF_UPDATE_SOME_FILES:
     return DoOneoffUpdateSomeFiles(args, output=output)
 
-  print >>output, '*** Error: Unknown command %s' % args.command
+  print('*** Error: Unknown command %s' % args.command, file=output)
   return False

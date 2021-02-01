@@ -1,17 +1,17 @@
-import StringIO
 import contextlib
+import io
 import os
 import re
 import subprocess
 
-import checksums_lib
-import lib
-import checksums_main
+from . import checksums_lib
+from . import lib
+from . import checksums_main
 
-from test_util import AssertEquals
-from test_util import AssertLinesEqual
-from test_util import CreateDir
-from test_util import CreateFile
+from .test_util import AssertEquals
+from .test_util import AssertLinesEqual
+from .test_util import CreateDir
+from .test_util import CreateFile
 
 
 @contextlib.contextmanager
@@ -29,13 +29,13 @@ def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=Tru
   if verbose:
     args.append('--verbose')
   args.extend(cmd_args)
-  output = StringIO.StringIO()
+  output = io.StringIO()
   try:
     success = checksums_main.Main(args, output)
   except:
     output_stripped = output.getvalue().rstrip()
     if output_stripped:
-      print output_stripped
+      print(output_stripped)
     raise
   output_lines = []
   for line in output.getvalue().rstrip().split('\n'):

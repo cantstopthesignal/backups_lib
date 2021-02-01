@@ -1,37 +1,42 @@
-#!/usr/bin/python -u -B
+#!/usr/bin/env python3 -u -B
 
-import StringIO
 import argparse
 import contextlib
+import io
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import xattr
 
-import checksums_lib
+sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
+import backups_lib
+__package__ = backups_lib.__package__
 
-from test_util import AssertEquals
-from test_util import AssertLinesEqual
-from test_util import AssertNotEquals
-from test_util import CreateDir
-from test_util import CreateDirs
-from test_util import CreateFile
-from test_util import CreateSymlink
-from test_util import DeleteFileOrDir
-from test_util import RenameFile
-from test_util import SetMTime
-from test_util import TempDir
+from . import checksums_lib
 
-from lib_test_util import GetFileTreeManifest
-from lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
+from .test_util import AssertEquals
+from .test_util import AssertLinesEqual
+from .test_util import AssertNotEquals
+from .test_util import CreateDir
+from .test_util import CreateDirs
+from .test_util import CreateFile
+from .test_util import CreateSymlink
+from .test_util import DeleteFileOrDir
+from .test_util import RenameFile
+from .test_util import SetMTime
+from .test_util import TempDir
 
-from checksums_lib_test_util import DoCreate
-from checksums_lib_test_util import DoVerify
-from checksums_lib_test_util import DoSync
-from checksums_lib_test_util import DoRenamePaths
-from checksums_lib_test_util import InteractiveCheckerReadyResults
+from .lib_test_util import GetFileTreeManifest
+from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
+
+from .checksums_lib_test_util import DoCreate
+from .checksums_lib_test_util import DoVerify
+from .checksums_lib_test_util import DoSync
+from .checksums_lib_test_util import DoRenamePaths
+from .checksums_lib_test_util import InteractiveCheckerReadyResults
 
 
 def CreateTest():
@@ -287,8 +292,8 @@ def SyncTest():
     file2_renamed = CreateFile(parent1, 'f2_renamed', contents='1'*1025, mtime=None)
     file2_renamed2 = CreateFile(parent1, 'f2_renamed2', contents='1'*1025)
     RenameFile(file4, file4 + '_renamed')
-    xattr.setxattr(root_dir, 'example', 'example_value')
-    xattr.setxattr(parent1, 'example', 'example_value')
+    xattr.setxattr(root_dir, 'example', b'example_value')
+    xattr.setxattr(parent1, 'example', b'example_value')
     DeleteFileOrDir(file3)
     DeleteFileOrDir(parent2)
 
@@ -364,8 +369,8 @@ def SyncTest():
     file5 = CreateFile(parent1, 'f5', contents='4'*1025)
     DeleteFileOrDir(file2_renamed)
     DeleteFileOrDir(file2_renamed2)
-    xattr.setxattr(root_dir, 'example', 'example_value2')
-    xattr.setxattr(parent1, 'example', 'example_value2')
+    xattr.setxattr(root_dir, 'example', b'example_value2')
+    xattr.setxattr(parent1, 'example', b'example_value2')
 
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,

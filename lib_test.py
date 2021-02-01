@@ -1,34 +1,39 @@
-#!/usr/bin/python -u -B
+#!/usr/bin/env python3 -u -B
 
-import StringIO
 import argparse
 import contextlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import xattr
 
-import lib
-import backups_main
+sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
+import backups_lib
+__package__ = backups_lib.__package__
 
-from test_util import AssertEquals
-from test_util import AssertLinesEqual
-from test_util import AssertNotEquals
-from test_util import CreateDir
-from test_util import CreateFile
-from test_util import CreateSymlink
-from test_util import DeleteFileOrDir
-from test_util import DoBackupsMain
-from test_util import SetMTime
-from test_util import SetPacificTimezone
-from test_util import TempDir
+from . import lib
+from . import backups_main
 
-from lib_test_util import GetManifestItemized
-from lib_test_util import SetHdiutilCompactOnBatteryAllowed
+from .test_util import AssertEquals
+from .test_util import AssertLinesEqual
+from .test_util import AssertNotEquals
+from .test_util import CreateDir
+from .test_util import CreateFile
+from .test_util import CreateSymlink
+from .test_util import DeleteFileOrDir
+from .test_util import DoBackupsMain
+from .test_util import SetMTime
+from .test_util import SetPacificTimezone
+from .test_util import TempDir
+
+from .lib_test_util import GetManifestItemized
+from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 
 
 def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=lib.RSYNC_FILTERS):
@@ -51,7 +56,8 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=l
   cmd.append(lib.MakeRsyncDirname(from_path))
   cmd.append(lib.MakeRsyncDirname(to_path))
 
-  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True)
   output = []
   for line in p.stdout:
     line = line.strip()
@@ -61,7 +67,7 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=l
     assert len(pieces) == 2
     output.append((lib.DecodeRsyncEncodedString(pieces[1]), pieces[0]))
   if p.wait():
-    print '\n'.join([ '%s %s' % (change, path) for (path, change) in output ])
+    print('\n'.join([ '%s %s' % (change, path) for (path, change) in output ]))
     raise Exception('Rsync failed')
   output.sort()
   return [ '%s %s' % (change, path) for (path, change) in output ]
@@ -165,7 +171,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
     args.append('--checksum-all')
   if filter_merge_path:
     args.extend(['--filter-merge-path', filter_merge_path])
-  output = StringIO.StringIO()
+  output = io.StringIO()
   AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   checkpoint_path = None
@@ -197,7 +203,7 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
                '--checksum-all',
                '--src-checkpoint-path', src_checkpoint_path,
                '--dest-root', dest_root])
-  output = StringIO.StringIO()
+  output = io.StringIO()
   AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   for line in output.getvalue().strip().split('\n'):
@@ -224,7 +230,7 @@ def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[])
                '--checksum-all',
                '--src-root', src_root,
                manifest_path])
-  output = StringIO.StringIO()
+  output = io.StringIO()
   AssertEquals(backups_main.Main(args, output), expected_success)
   output_lines = []
   for line in output.getvalue().strip().split('\n'):
@@ -483,8 +489,8 @@ def CreateTest():
     finally:
       checkpoint2.Close()
 
-    xattr.setxattr(src_root, 'example', 'example_value')
-    xattr.setxattr(src_root, 'example2', 'example_value2')
+    xattr.setxattr(src_root, 'example', b'example_value')
+    xattr.setxattr(src_root, 'example2', b'example_value2')
     SetMTime(file1, None)
     file2 = CreateFile(parent1, 'f2', contents='abc')
 
@@ -653,13 +659,13 @@ def ApplyDryRunTest():
     file1 = CreateFile(parent1, 'f_\r')
     SetMTime(parent1)
     SetMTime(src_root)
-    xattr.setxattr(src_root, 'example', 'example_value')
+    xattr.setxattr(src_root, 'example', b'example_value')
 
     dest_root = CreateDir(test_dir, 'dest')
     dest_parent1 = CreateDir(dest_root, 'del_par!')
     deleted_file1 = CreateFile(dest_parent1, 'del')
     SetMTime(dest_root)
-    xattr.setxattr(dest_root, 'example', 'example_value')
+    xattr.setxattr(dest_root, 'example', b'example_value')
 
     checkpoint1, manifest1 = DoCreate(
       src_root, checkpoints_dir, '1',
@@ -691,7 +697,7 @@ def ApplyTest():
   with TempDir() as test_dir:
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
-    xattr.setxattr(src_root, 'example', 'example_value')
+    xattr.setxattr(src_root, 'example', b'example_value')
     parent1 = CreateDir(src_root, 'par!')
     file1 = CreateFile(parent1, 'f_\r', mtime=-2082844800)
     ln2 = CreateSymlink(parent1, 'ln2', 'f_\r')
@@ -701,7 +707,7 @@ def ApplyTest():
 
     dest_root = CreateDir(test_dir, 'dest')
     dest_parent1 = CreateDir(dest_root, 'del_par!')
-    xattr.setxattr(dest_root, 'example', 'example_value')
+    xattr.setxattr(dest_root, 'example', b'example_value')
     deleted_file1 = CreateFile(dest_parent1, 'del')
 
     # Initial sync
@@ -740,8 +746,8 @@ def ApplyTest():
     file2 = CreateFile(parent1, 'f2')
     # One with ignored xattr
     file3 = CreateFile(src_root, 'f3')
-    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', 'Initial')
-    xattr.setxattr(file3, 'example', 'example_value_initial')
+    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', b'Initial')
+    xattr.setxattr(file3, 'example', b'example_value_initial')
 
     checkpoint2, manifest2 = DoCreate(
       src_root, checkpoints_dir, '2', last_checkpoint_path=checkpoint1.GetImagePath(),
@@ -759,7 +765,7 @@ def ApplyTest():
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> f_\\r'])
       AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
-                   [u'com.apple.lastuseddate#PS', u'example'])
+                   ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint2.Close()
 
@@ -769,9 +775,9 @@ def ApplyTest():
     AssertEmptyRsync(src_root, dest_root)
 
     # Set xattr of root dir
-    xattr.setxattr(src_root, 'example', 'example_value_new')
+    xattr.setxattr(src_root, 'example', b'example_value_new')
     # And adjust an ignored xattr
-    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', 'Modified')
+    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', b'Modified')
 
     checkpoint3, manifest3 = DoCreate(
       src_root, checkpoints_dir, '3', last_checkpoint_path=checkpoint2.GetImagePath(),
@@ -823,7 +829,7 @@ def ApplyTest():
     ln2 = CreateSymlink(parent1, 'ln2', 'INVALID')
     ln1_dir = CreateSymlink(src_root, 'ln1_dir', 'par!/f2')
     DeleteFileOrDir(ln3)
-    xattr.setxattr(file3, 'example', 'example_value_modified')
+    xattr.setxattr(file3, 'example', b'example_value_modified')
 
     checkpoint5, manifest5 = DoCreate(
       src_root, checkpoints_dir, '5', last_checkpoint_path=checkpoint4.GetImagePath(),
@@ -843,7 +849,7 @@ def ApplyTest():
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> INVALID'])
       AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
-                   [u'com.apple.lastuseddate#PS', u'example'])
+                   ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint5.Close()
 
@@ -930,9 +936,9 @@ def StripTest():
                                'Image size 34mb -> 34mb'])
       DoStrip(checkpoint1.GetImagePath(), defragment=False,
               expected_output=['Checkpoint stripped',
-                               'Starting to compact\xe2\x80\xa6',
-                               'Reclaiming free space\xe2\x80\xa6',
-                               'Finishing compaction\xe2\x80\xa6',
+                               'Starting to compact…',
+                               'Reclaiming free space…',
+                               'Finishing compaction…',
                                'Reclaimed 4 MB out of 1023.6 GB possible.',
                                'Image size 34mb -> 30mb'])
       AssertEquals(31461376, os.lstat(checkpoint1.GetImagePath()).st_size)
@@ -954,15 +960,15 @@ def StripTest():
                 '<... snip APFS operation ...>',
                 re.compile('^Resizing image to minimum size: (2600960|2596864) -> 69632 blocks[.][.][.]$'),
                 re.compile('^Restoring image size to (2600960|2596864) blocks[.][.][.]$'),
-                'Starting to compact\xe2\x80\xa6',
-                'Reclaiming free space\xe2\x80\xa6',
-                'Finishing compaction\xe2\x80\xa6',
+                'Starting to compact…',
+                'Reclaiming free space…',
+                'Finishing compaction…',
                 'Reclaimed 22 MB out of 1.2 GB possible.',
                 'Restoring apfs container size to 1023.8gb...',
                 '<... snip APFS operation ...>',
-                'Starting to compact\xe2\x80\xa6',
-                'Reclaiming free space\xe2\x80\xa6',
-                'Finishing compaction\xe2\x80\xa6',
+                'Starting to compact…',
+                'Reclaiming free space…',
+                'Finishing compaction…',
                 'Reclaimed 3 MB out of 1023.6 GB possible.',
                 'Image size 34mb -> 13mb'])
       AssertEquals(13635584, os.lstat(checkpoint2_path).st_size)
@@ -992,9 +998,9 @@ def CompactTest():
       DoCompact(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
                 expected_output=['Image size 34mb -> 34mb'])
       DoCompact(checkpoint1.GetImagePath(), defragment=False,
-                expected_output=['Starting to compact\xe2\x80\xa6',
-                                 'Reclaiming free space\xe2\x80\xa6',
-                                 'Finishing compaction\xe2\x80\xa6',
+                expected_output=['Starting to compact…',
+                                 'Reclaiming free space…',
+                                 'Finishing compaction…',
                                  'Reclaimed 4 MB out of 1023.6 GB possible.',
                                  'Image size 34mb -> 30mb'])
       AssertEquals(31461376, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
@@ -1014,15 +1020,15 @@ def CompactTest():
                   '<... snip APFS operation ...>',
                   re.compile('^Resizing image to minimum size: 3538944 -> (503808|499712) blocks[.][.][.]$'),
                   'Restoring image size to 3538944 blocks...',
-                  'Starting to compact\xe2\x80\xa6',
-                  'Reclaiming free space\xe2\x80\xa6',
-                  'Finishing compaction\xe2\x80\xa6',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
                   'Reclaimed 13 MB out of 1.7 GB possible.',
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
-                  'Starting to compact\xe2\x80\xa6',
-                  'Reclaiming free space\xe2\x80\xa6',
-                  'Finishing compaction\xe2\x80\xa6',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
                   'Reclaimed 1 MB out of 1023.6 GB possible.',
                   'Image size 30mb -> 20mb'])
       AssertEquals(20975616, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
@@ -1038,9 +1044,9 @@ def CompactTest():
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '229.4mb', '229.6mb')
 
       DoCompact(image_path2, defragment=False,
-                expected_output=['Starting to compact\xe2\x80\xa6',
-                                 'Reclaiming free space\xe2\x80\xa6',
-                                 'Finishing compaction\xe2\x80\xa6',
+                expected_output=['Starting to compact…',
+                                 'Reclaiming free space…',
+                                 'Finishing compaction…',
                                  'Reclaimed 4.0 MB out of 1023.4 GB possible.',
                                  re.compile('^Image size 229[.]5mb -> 225[.]5mb$')])
       AssertEquals('225.5mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
@@ -1064,15 +1070,15 @@ def CompactTest():
                   re.compile("^Deleting 27 bands between [(]29,130943[)] for empty partition "
                              + "Partition<start=475176, length=(2144903095|2144907191), hint='Apple_Free'>[.][.][.]$"),
                   re.compile('^Restoring image size to (2170880|2166784) blocks[.][.][.]$'),
-                  'Starting to compact\xe2\x80\xa6',
-                  'Reclaiming free space\xe2\x80\xa6',
-                  'Finishing compaction\xe2\x80\xa6',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
                   'Reclaimed 2.8 MB out of 1.0 GB possible.',
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
-                  'Starting to compact\xe2\x80\xa6',
-                  'Reclaiming free space\xe2\x80\xa6',
-                  'Finishing compaction\xe2\x80\xa6',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
                   re.compile('^Reclaimed (4|6) MB out of 1023[.]6 GB possible[.]$'),
                   'Image size 225.5mb -> 23.6mb'])
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '23.5mb', '23.7mb')

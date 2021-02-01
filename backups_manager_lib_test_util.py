@@ -1,23 +1,23 @@
-import StringIO
 import contextlib
+import io
 import os
 import re
 import subprocess
 
-import backups_lib
-import backups_main
-import lib
+from . import backups_manager_lib
+from . import backups_main
+from . import lib
 
-from test_util import AssertEquals
-from test_util import AssertLinesEqual
-from test_util import CreateDir
-from test_util import CreateFile
-from test_util import DoBackupsMain
+from .test_util import AssertEquals
+from .test_util import AssertLinesEqual
+from .test_util import CreateDir
+from .test_util import CreateFile
+from .test_util import DoBackupsMain
 
 
 def CreateConfig(parent_dir, backups_filename_prefix='backups', filter_merge_path=None):
   config_path = os.path.join(parent_dir, '%s.config' % backups_filename_prefix)
-  config = backups_lib.BackupsConfig(config_path)
+  config = backups_manager_lib.BackupsConfig(config_path)
   config.image_path = os.path.join(parent_dir, '%s.sparsebundle' % backups_filename_prefix)
   config.mount_path = os.path.join(parent_dir, '%s_mount' % backups_filename_prefix)
   config.src_path = CreateDir(parent_dir, '%s_src' % backups_filename_prefix)
@@ -37,7 +37,7 @@ def CreateBackupsBundle(config, encrypt=False, create_example_content=True):
   subprocess.check_call(cmd)
   with lib.ImageAttacher(config.image_path, config.mount_path, readonly=False,
                          browseable=False) as attacher:
-    backups_dir = CreateDir(attacher.GetMountPoint(), backups_lib.BACKUPS_SUBDIR)
+    backups_dir = CreateDir(attacher.GetMountPoint(), backups_manager_lib.BACKUPS_SUBDIR)
     backup1_dir = CreateDir(backups_dir, '2020-01-01-120000')
     CreateDir(backup1_dir, '.metadata')
     disk_dir = CreateDir(backup1_dir, 'Root')
@@ -48,7 +48,7 @@ def CreateBackupsBundle(config, encrypt=False, create_example_content=True):
 
 
 def CreateLatestManifestCheckpoint(config):
-  backups_manager = backups_lib.BackupsManager.Open(
+  backups_manager = backups_manager_lib.BackupsManager.Open(
     config, readonly=False, browseable=False)
   try:
     last_backup = backups_manager.GetLastDone()
@@ -86,7 +86,7 @@ def VerifyBackupManifest(backup, path=None):
   else:
     manifest = lib.ReadManifestFromCheckpointOrPath(path)
 
-  output = StringIO.StringIO()
+  output = io.StringIO()
   verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), output, checksum_all=True)
   success = verifier.Verify()
   output_lines = [ line for line in output.getvalue().strip().split('\n') if line ]
@@ -118,7 +118,7 @@ def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_outp
     args.extend(['--last-checkpoint', last_checkpoint_path])
   if filter_merge_path is not None:
     args.extend(['--filter-merge-path', filter_merge_path])
-  output = StringIO.StringIO()
+  output = io.StringIO()
   AssertEquals(backups_main.Main(args, output), True)
   output_lines = []
   checkpoint_path = None
@@ -207,9 +207,9 @@ def DoPruneBackups(config, dry_run=False, did_prune=True, expected_output=[]):
               '--backups-config', config.path]
   if not dry_run and did_prune:
     expected_output = expected_output + [
-      'Starting to compact\xe2\x80\xa6',
-      'Reclaiming free space\xe2\x80\xa6',
-      'Finishing compaction\xe2\x80\xa6',
+      'Starting to compact…',
+      'Reclaiming free space…',
+      'Finishing compaction…',
       re.compile('^Reclaimed .* out of .* possible[.]$')]
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=expected_output)
 

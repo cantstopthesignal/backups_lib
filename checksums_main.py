@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-import checksums_lib
+from . import checksums_lib
 
 
 COMMANDS = checksums_lib.COMMANDS
@@ -18,5 +18,5 @@ def Main(main_args=sys.argv[1:], output=sys.stdout):
   if args.command in checksums_lib.COMMANDS:
     return checksums_lib.DoCommand(args, output=output)
 
-  print >>output, '*** Error: Unknown command %s' % args.command
+  print('*** Error: Unknown command %s' % args.command, file=output)
   return False

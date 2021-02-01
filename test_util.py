@@ -1,12 +1,12 @@
-import StringIO
 import contextlib
-import shutil
-import tempfile
+import io
 import os
-import time
+import shutil
 import subprocess
+import tempfile
+import time
 
-import backups_main
+from . import backups_main
 
 
 @contextlib.contextmanager
@@ -18,7 +18,7 @@ def TempDir():
     try:
       shutil.rmtree(path)
     except:
-      print 'Test: Failed to remove tree %s' % path
+      print('Test: Failed to remove tree %s' % path)
 
 
 def AssertEquals(a, b):
@@ -89,7 +89,7 @@ def CreateFile(parent_dir, filename, mtime=1500000000, contents=''):
   DeleteFileOrDir(path)
   if type(contents) == list:
     contents = '\n'.join(contents + [''])
-  with open(path, 'wb') as f:
+  with open(path, 'w') as f:
     f.write(contents)
   SetMTime(path, mtime)
   SetMTime(parent_dir, parent_mtime)
@@ -140,11 +140,11 @@ def DoBackupsMain(cmd_args, dry_run=False, verbose=False, expected_success=True,
   if verbose:
     args.append('--verbose')
   args.extend(cmd_args)
-  output = StringIO.StringIO()
+  output = io.StringIO()
   try:
     success = backups_main.Main(args, output)
   except:
-    print output.getvalue().rstrip()
+    print(output.getvalue().rstrip())
     raise
   output_lines = []
   for line in output.getvalue().rstrip().split('\n'):

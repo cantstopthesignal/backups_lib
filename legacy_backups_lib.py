@@ -11,8 +11,8 @@ import sys
 import xml.dom.minidom
 import unicodedata
 
-import backups_lib
-import lib
+from . import backups_lib
+from . import lib
 
 
 COMMAND_VERIFY_LEGACY_BACKUP_CHECKSUMS = 'verify-legacy-backup-checksums'
@@ -89,7 +89,7 @@ class LegacyChecksumsVerifier(object):
         manifest = lib.Manifest()
         legacy_checksums = self._LoadLegacyChecksums(backup)
         if legacy_checksums is None:
-          print >>self.output, 'Legacy checksums do not exists for backup %s' % backup
+          print('Legacy checksums do not exists for backup %s' % backup, file=self.output)
           last_manifest = None
           continue
         if not self._VerifyInternal(
@@ -107,7 +107,7 @@ class LegacyChecksumsVerifier(object):
       return LegacyChecksums.LoadFromFile(checksums_path)
 
   def _VerifyInternal(self, backup, manifest, last_manifest, legacy_md5_map, legacy_ignore_pattern):
-    print >>self.output, 'Verify backup %s using legacy checksums...' % backup
+    print('Verify backup %s using legacy checksums...' % backup, file=self.output)
 
     legacy_md5_map = dict(legacy_md5_map)
 
@@ -141,7 +141,7 @@ class LegacyChecksumsVerifier(object):
               num_ignored += 1
             else:
               num_errors += 1
-              print >>self.output, "*** Error: Missing md5 for %r" % path
+              print("*** Error: Missing md5 for %r" % path, file=self.output)
           else:
             del legacy_md5_map[path]
             while len(legacy_md5) < 32:
@@ -149,14 +149,14 @@ class LegacyChecksumsVerifier(object):
             legacy_md5_bin = binascii.a2b_hex(legacy_md5)
             md5 = Md5(full_path)
             if md5 != legacy_md5_bin:
-              print >>self.output, ("*** Error: md5 mismatch for %r: %r != %r"
-                                    % (path, binascii.b2a_hex(md5), legacy_md5))
+              print(("*** Error: md5 mismatch for %r: %r != %r"
+                                    % (path, binascii.b2a_hex(md5), legacy_md5)), file=self.output)
               num_errors += 1
       manifest.AddPathInfo(path_info)
     if legacy_md5_map:
       raise Exception('Some paths unverified: %r' % legacy_md5_map)
-    print >>self.output, ('Verify cache: %d hits, %d misses, %d ignored'
-                          % (num_hits, num_misses, num_ignored))
+    print(('Verify cache: %d hits, %d misses, %d ignored'
+                          % (num_hits, num_misses, num_ignored)), file=self.output)
 
     return (num_errors == 0)
 

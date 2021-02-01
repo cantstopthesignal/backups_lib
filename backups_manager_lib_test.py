@@ -1,55 +1,60 @@
-#!/usr/bin/python -u -B
+#!/usr/bin/env python3 -u -B
 
-import StringIO
 import argparse
 import contextlib
+import io
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import xattr
 
+sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
-import lib
+__package__ = backups_lib.__package__
 
-from test_util import AssertEquals
-from test_util import AssertLinesEqual
-from test_util import AssertNotEquals
-from test_util import CreateDir
-from test_util import CreateDirs
-from test_util import CreateFile
-from test_util import CreateSymlink
-from test_util import DeleteFileOrDir
-from test_util import SetMTime
-from test_util import SetPacificTimezone
-from test_util import TempDir
+from . import backups_manager_lib
+from . import lib
 
-from lib_test_util import GetFileTreeManifest
-from lib_test_util import GetManifestItemized
-from lib_test_util import SetHdiutilCompactOnBatteryAllowed
-from lib_test_util import SetMaxDupCounts
-from lib_test_util import SetOmitUidAndGidInPathInfoToString
+from .test_util import AssertEquals
+from .test_util import AssertLinesEqual
+from .test_util import AssertNotEquals
+from .test_util import CreateDir
+from .test_util import CreateDirs
+from .test_util import CreateFile
+from .test_util import CreateSymlink
+from .test_util import DeleteFileOrDir
+from .test_util import SetMTime
+from .test_util import SetPacificTimezone
+from .test_util import TempDir
 
-from backups_lib_test_util import CreateBackupsBundle
-from backups_lib_test_util import CreateConfig
-from backups_lib_test_util import CreateLatestManifestCheckpoint
-from backups_lib_test_util import DoAddMissingManifestsToBackups
-from backups_lib_test_util import DoApplyToBackups
-from backups_lib_test_util import DoCloneBackup
-from backups_lib_test_util import DoCreateBackup
-from backups_lib_test_util import DoCreateCheckpoint
-from backups_lib_test_util import DoDeduplicateBackups
-from backups_lib_test_util import DoDeleteBackups
-from backups_lib_test_util import DoDeleteInBackups
-from backups_lib_test_util import DoDumpUniqueFilesInBackups
-from backups_lib_test_util import DoExtractFromBackups
-from backups_lib_test_util import DoListBackups
-from backups_lib_test_util import DoMergeIntoBackups
-from backups_lib_test_util import DoPruneBackups
-from backups_lib_test_util import DoVerifyBackups
-from backups_lib_test_util import SetLogThrottlerLogAlways
-from backups_lib_test_util import VerifyBackupManifest
+from .lib_test_util import GetFileTreeManifest
+from .lib_test_util import GetManifestItemized
+from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
+from .lib_test_util import SetMaxDupCounts
+from .lib_test_util import SetOmitUidAndGidInPathInfoToString
+
+from .backups_manager_lib_test_util import CreateBackupsBundle
+from .backups_manager_lib_test_util import CreateConfig
+from .backups_manager_lib_test_util import CreateLatestManifestCheckpoint
+from .backups_manager_lib_test_util import DoAddMissingManifestsToBackups
+from .backups_manager_lib_test_util import DoApplyToBackups
+from .backups_manager_lib_test_util import DoCloneBackup
+from .backups_manager_lib_test_util import DoCreateBackup
+from .backups_manager_lib_test_util import DoCreateCheckpoint
+from .backups_manager_lib_test_util import DoDeduplicateBackups
+from .backups_manager_lib_test_util import DoDeleteBackups
+from .backups_manager_lib_test_util import DoDeleteInBackups
+from .backups_manager_lib_test_util import DoDumpUniqueFilesInBackups
+from .backups_manager_lib_test_util import DoExtractFromBackups
+from .backups_manager_lib_test_util import DoListBackups
+from .backups_manager_lib_test_util import DoMergeIntoBackups
+from .backups_manager_lib_test_util import DoPruneBackups
+from .backups_manager_lib_test_util import DoVerifyBackups
+from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
+from .backups_manager_lib_test_util import VerifyBackupManifest
 
 
 def ApplyToBackupsTest():
@@ -78,7 +83,7 @@ def ApplyToBackupsTest():
                        'Transferring 5 of 8 paths (0b of 0b)'])
 
     file2 = CreateFile(parent1, 'f2')
-    xattr.setxattr(fileX, 'example', 'example_value')
+    xattr.setxattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     SetMTime(parent1, None)
     file3 = CreateFile(config.src_path, 'f3_original', contents='1' * 1025)
@@ -159,7 +164,7 @@ def ApplyToBackupsTest():
         'Copying paths: 10 to copy, 5 to hard link, 1 to duplicate, 10 total in source, 10 total in result...',
         'Verifying 2020-01-04-120000...'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       backup1 = backups_manager.GetBackup('2020-01-01-120000')
@@ -313,7 +318,7 @@ def VerifyBackupsTest():
                        'Transferring 3 of 6 paths (1kb of 1kb)'])
 
     file2 = CreateFile(parent1, 'f2')
-    xattr.setxattr(fileX, 'example', 'example_value')
+    xattr.setxattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     SetMTime(parent1, None)
     DeleteFileOrDir(file3)
@@ -394,7 +399,7 @@ def VerifyBackupsTest():
                        'Verifying 2020-01-03-120000...',
                        'Paths: 5 unique, 2 matching, 3 checksummed (0b)'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=False, browseable=False)
     try:
       backup1 = backups_manager.GetBackup('2020-01-01-120000')
@@ -402,7 +407,7 @@ def VerifyBackupsTest():
 
       backup2 = backups_manager.GetBackup('2020-01-02-120000')
       SetMTime(os.path.join(backup2.GetContentRootPath(), 'par!'), None)
-      xattr.setxattr(os.path.join(backup2.GetContentRootPath(), 'fX'), 'example', 'example_value2')
+      xattr.setxattr(os.path.join(backup2.GetContentRootPath(), 'fX'), 'example', b'example_value2')
     finally:
       backups_manager.Close()
 
@@ -507,7 +512,7 @@ def AddMissingManifestsToBackupsTest():
                        'Manifest already exists for backup Backup<2020-01-03-120000,DONE>',
                        'Manifest already exists for backup Backup<2020-01-04-120000,DONE>'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=False, browseable=False)
     try:
       for backup in backups_manager.GetBackupList():
@@ -533,7 +538,7 @@ def AddMissingManifestsToBackupsTest():
                        'Add missing manifest for backup Backup<2020-01-04-120000,DONE>...',
                        'Paths: 5 total, 3 inode hits, 1 checksummed (3b)'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       for backup in backups_manager.GetBackupList():
@@ -718,7 +723,7 @@ def DeDuplicateBackupsTest():
         'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
         'Duplicates: 6 existing; 6 large files'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       for backup in backups_manager.GetBackupList():
@@ -749,7 +754,7 @@ def PruneBackupsTest():
       DoPruneBackups(config, did_prune=False,
                      expected_output=['No backups needed to be pruned out of 1'])
 
-      backups_manager = backups_lib.BackupsManager.Open(
+      backups_manager = backups_manager_lib.BackupsManager.Open(
         config, readonly=False, browseable=False)
       try:
         backups_dir = backups_manager.GetBackupsRootDir()
@@ -789,7 +794,7 @@ def PruneBackupsTest():
           'Pruning Backup<2020-01-11-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
           'Pruning Backup<2020-01-13-120000,DONE>: Backup<2020-01-14-120000,DONE> supersedes it...'])
 
-      backups_manager = backups_lib.BackupsManager.Open(
+      backups_manager = backups_manager_lib.BackupsManager.Open(
         config, readonly=True, browseable=False)
       try:
         AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
@@ -880,7 +885,7 @@ def CloneBackupTest():
         'Cloning Backup<2020-01-02-120000,DONE> to Backup<2020-01-02-120000,CLONE>...',
         re.compile('^[*]{3} Error: directory .*/2020-01-02-120000.clone already exists$')])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       backup = backups_manager.GetBackup('2020-01-02-120000')
@@ -965,7 +970,7 @@ def DeleteBackupsTest():
                                             '2020-01-03-120000',
                                             '2020-01-04-120000'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
@@ -1002,7 +1007,7 @@ def DeleteBackupsTest():
 
     DoListBackups(config, expected_backups=['2020-01-04-120000'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
@@ -1465,7 +1470,7 @@ def DumpUniqueFilesInBackupsTest():
 
 
 def ExtractFromBackupsTest():
-  with SetLogThrottlerLogAlways(backups_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+  with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
     with TempDir() as test_dir:
       config = CreateConfig(test_dir)
       CreateBackupsBundle(config)
@@ -1501,11 +1506,11 @@ def ExtractFromBackupsTest():
                          '*deleting par!/f_\\r \\xc2\\xa9'])
 
       fileX = CreateFile(config.src_path, 'fX')
-      xattr.setxattr(fileX, 'example', 'example_value')
+      xattr.setxattr(fileX, 'example', b'example_value')
       SetMTime(fileT, None)
       file3 = CreateFile(config.src_path, 'f3')
       parent1 = CreateDir(config.src_path, 'par!')
-      xattr.setxattr(parent1, 'example', 'example_value2')
+      xattr.setxattr(parent1, 'example', b'example_value2')
       SetMTime(parent1, None)
       file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
       file4 = CreateFile(parent1, 'f4')
@@ -1532,7 +1537,7 @@ def ExtractFromBackupsTest():
                          '>f+++++++ par2/f8',
                          'Transferring 12 of 13 paths (4kb of 4kb)'])
 
-      xattr.setxattr(parent2, 'example', 'example_value3')
+      xattr.setxattr(parent2, 'example', b'example_value3')
       file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
       file9 = CreateFile(parent2, 'f9', contents='2' * 1025)
 
@@ -1551,7 +1556,7 @@ def ExtractFromBackupsTest():
         expected_success=False,
         expected_output=['*** Error: --output-image-path argument required'])
 
-      extracted_config = backups_lib.BackupsConfig()
+      extracted_config = backups_manager_lib.BackupsConfig()
       extracted_config.image_path = os.path.join(test_dir, 'extracted.sparsebundle')
 
       DoExtractFromBackups(
@@ -1640,7 +1645,7 @@ def ExtractFromBackupsTest():
           '1/5 hard links remaining (80%)...',
           'Verifying 2020-01-05-120000...'])
 
-      extracted_manager = backups_lib.BackupsManager.Open(
+      extracted_manager = backups_manager_lib.BackupsManager.Open(
         extracted_config, readonly=True, browseable=False)
       try:
         AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(extracted_manager.GetBackupsRootDir())),
@@ -1699,7 +1704,7 @@ def ExtractFromBackupsTest():
 
 
 def MergeIntoBackupsTest():
-  with SetLogThrottlerLogAlways(backups_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+  with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
     with TempDir() as test_dir:
       config = CreateConfig(test_dir)
       CreateBackupsBundle(config)
@@ -1777,7 +1782,7 @@ def MergeIntoBackupsTest():
 
       DoApplyToBackups(config2, expected_output=None)
 
-      backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+      backups_manager2 = backups_manager_lib.BackupsManager.Open(config2, readonly=False)
       try:
         backup3 = backups_manager2.GetBackup('2020-01-03-120000')
         c2_metadata3_parent = CreateDir(backup3.GetMetadataPath(), 'metapar')
@@ -1848,7 +1853,7 @@ def MergeIntoBackupsTest():
         config,
         expected_output=None)
 
-      backups_manager = backups_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+      backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=True, browseable=False)
       try:
         AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
                          ['.d....... .',
@@ -1914,7 +1919,7 @@ def MergeIntoBackupsTest():
       finally:
         backups_manager.Close()
 
-      backups_manager2 = backups_lib.BackupsManager.Open(config2, readonly=False)
+      backups_manager2 = backups_manager_lib.BackupsManager.Open(config2, readonly=False)
       try:
         backup5 = backups_manager2.GetBackup('2020-01-05-120000')
         manifest = lib.Manifest(backup5.GetManifestPath())
@@ -1924,8 +1929,8 @@ def MergeIntoBackupsTest():
         file5_full_path = os.path.join(backup5.GetContentRootPath(), file5_path)
         file7_path = 'par/f7_from'
         file7_full_path = os.path.join(backup5.GetContentRootPath(), file7_path)
-        xattr.setxattr(file5_full_path, 'example', 'v1')
-        xattr.setxattr(file7_full_path, 'example', 'v1')
+        xattr.setxattr(file5_full_path, 'example', b'v1')
+        xattr.setxattr(file7_full_path, 'example', b'v1')
 
         manifest.AddPathInfo(
           lib.PathInfo.FromPath(file5_path, file5_full_path), allow_replace=True)
@@ -1972,10 +1977,10 @@ def DeleteInBackupsTest():
                        'Transferring 4 of 7 paths (0b of 0b)'])
 
     fileX = CreateFile(config.src_path, 'fX')
-    xattr.setxattr(fileX, 'example', 'example_value')
+    xattr.setxattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     file3 = CreateFile(config.src_path, 'f3')
-    xattr.setxattr(parent1, 'example', 'example_value2')
+    xattr.setxattr(parent1, 'example', b'example_value2')
     file4 = CreateFile(parent1, 'f4')
     parent2 = CreateDir(config.src_path, 'par2')
     ln2 = CreateSymlink(config.src_path, 'ln2', 'fT')
@@ -1995,7 +2000,7 @@ def DeleteInBackupsTest():
                        '>f+++++++ par2/f8',
                        'Transferring 9 of 12 paths (1kb of 1kb)'])
 
-    xattr.setxattr(parent2, 'example', 'example_value3')
+    xattr.setxattr(parent2, 'example', b'example_value3')
 
     DoCreateBackup(
       config, backup_name='2020-01-04-120000',
@@ -2004,7 +2009,7 @@ def DeleteInBackupsTest():
 
     DoApplyToBackups(config, expected_output=None)
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
@@ -2148,7 +2153,7 @@ def DeleteInBackupsTest():
                        'Deleting in 2020-01-03-120000...',
                        'Deleting in 2020-01-04-120000...'])
 
-    backups_manager = backups_lib.BackupsManager.Open(
+    backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
     try:
       AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),

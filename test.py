@@ -1,13 +1,19 @@
-#!/usr/bin/python -u -B
+#!/usr/bin/env python3 -u -B
 
 import argparse
+import os
+import sys
 
-import backups_lib_test
-import backups_oneoff_lib_test
-import checksums_lib_test
-import lib_test
+sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
+import backups_lib
+__package__ = backups_lib.__package__
 
-from test_util import SetPacificTimezone
+from . import backups_manager_lib_test
+from . import backups_oneoff_lib_test
+from . import checksums_lib_test
+from . import lib_test
+
+from .test_util import SetPacificTimezone
 
 
 if __name__ == '__main__':
@@ -18,6 +24,6 @@ if __name__ == '__main__':
   SetPacificTimezone()
 
   lib_test.Test(tests=args.tests)
-  backups_lib_test.Test(tests=args.tests)
+  backups_manager_lib_test.Test(tests=args.tests)
   backups_oneoff_lib_test.Test(tests=args.tests)
   checksums_lib_test.Test(tests=args.tests)

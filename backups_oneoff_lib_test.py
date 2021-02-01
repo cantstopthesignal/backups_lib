@@ -1,43 +1,48 @@
-#!/usr/bin/python -u -B
+#!/usr/bin/env python3 -u -B
 
-import StringIO
 import argparse
 import contextlib
+import io
 import os
 import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import xattr
 
+sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
-import backups_oneoff_lib
-import lib
+__package__ = backups_lib.__package__
 
-from test_util import AssertEquals
-from test_util import AssertNotEquals
-from test_util import CreateDir
-from test_util import CreateDirs
-from test_util import CreateFile
-from test_util import CreateSymlink
-from test_util import DeleteFileOrDir
-from test_util import DoBackupsMain
-from test_util import SetMTime
-from test_util import SetPacificTimezone
-from test_util import TempDir
+from . import backups_manager_lib
+from . import backups_oneoff_lib
+from . import lib
 
-from lib_test_util import GetManifestItemized
-from lib_test_util import DoVerifyManifest
+from .test_util import AssertEquals
+from .test_util import AssertNotEquals
+from .test_util import CreateDir
+from .test_util import CreateDirs
+from .test_util import CreateFile
+from .test_util import CreateSymlink
+from .test_util import DeleteFileOrDir
+from .test_util import DoBackupsMain
+from .test_util import SetMTime
+from .test_util import SetPacificTimezone
+from .test_util import TempDir
 
-from backups_lib_test_util import CreateConfig
-from backups_lib_test_util import CreateBackupsBundle
-from backups_lib_test_util import CreateLatestManifestCheckpoint
-from backups_lib_test_util import DoApplyToBackups
-from backups_lib_test_util import DoCreateBackup
-from backups_lib_test_util import DoCreateCheckpoint
-from backups_lib_test_util import DoDeduplicateBackups
-from backups_lib_test_util import DoVerifyBackups
+from .lib_test_util import GetManifestItemized
+from .lib_test_util import DoVerifyManifest
+
+from .backups_manager_lib_test_util import CreateConfig
+from .backups_manager_lib_test_util import CreateBackupsBundle
+from .backups_manager_lib_test_util import CreateLatestManifestCheckpoint
+from .backups_manager_lib_test_util import DoApplyToBackups
+from .backups_manager_lib_test_util import DoCreateBackup
+from .backups_manager_lib_test_util import DoCreateCheckpoint
+from .backups_manager_lib_test_util import DoDeduplicateBackups
+from .backups_manager_lib_test_util import DoVerifyBackups
 
 
 @contextlib.contextmanager
@@ -104,17 +109,17 @@ def OneoffUpdateIgnoredXattrsTest():
       latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
 
       fileX = CreateFile(config.src_path, 'fX')
-      xattr.setxattr(fileX, 'example', 'example_value')
-      xattr.setxattr(fileX, 'com.apple.quarantine', 'quarantine1')
+      xattr.setxattr(fileX, 'example', b'example_value')
+      xattr.setxattr(fileX, 'com.apple.quarantine', b'quarantine1')
 
       fileT = CreateFile(config.src_path, 'fT')
-      xattr.setxattr(fileT, 'example', 'example_value2')
-      xattr.setxattr(fileT, 'com.apple.quarantine', 'quarantine4')
+      xattr.setxattr(fileT, 'example', b'example_value2')
+      xattr.setxattr(fileT, 'com.apple.quarantine', b'quarantine4')
 
       parent1 = CreateDir(config.src_path, 'par!')
       file3 = CreateFile(parent1, 'f3')
       file4 = CreateFile(parent1, 'f4')
-      xattr.setxattr(file4, 'example', 'example_value3')
+      xattr.setxattr(file4, 'example', b'example_value3')
 
       DoCreateCheckpoint(
         config.src_path, config.checkpoints_dir, '2020-01-02-120000',
@@ -127,10 +132,10 @@ def OneoffUpdateIgnoredXattrsTest():
                          '>f+++++++ par!/f4',
                          'Transferring 5 of 6 paths (0b of 0b)'])
 
-      xattr.setxattr(fileX, 'com.apple.quarantine', 'quarantine2')
-      xattr.setxattr(file3, 'com.apple.quarantine', 'quarantine3')
+      xattr.setxattr(fileX, 'com.apple.quarantine', b'quarantine2')
+      xattr.setxattr(file3, 'com.apple.quarantine', b'quarantine3')
       xattr.removexattr(fileT, 'com.apple.quarantine')
-      xattr.setxattr(file4, 'example', 'example_value4')
+      xattr.setxattr(file4, 'example', b'example_value4')
 
       checkpoint_path2 = DoCreateBackup(
         config, backup_name='2020-01-03-120000',
@@ -193,7 +198,7 @@ def OneoffUpdateIgnoredXattrsTest():
         new_ignored_xattrs=new_ignored_xattr_keys,
         expected_output=do_oneoff_expected_output)
 
-      backups_manager = backups_lib.BackupsManager.Open(
+      backups_manager = backups_manager_lib.BackupsManager.Open(
         config, readonly=True, browseable=False)
       try:
         backup1 = backups_manager.GetBackup('2020-01-01-120000')
@@ -252,9 +257,9 @@ def OneoffUpdateSomeFilesTest():
     parent1 = CreateDir(config.src_path, 'par!')
     file3 = CreateFile(parent1, 'f3')
     file4 = CreateFile(parent1, 'f4', contents='2'*1025)
-    os.chmod(file4, 0700)
+    os.chmod(file4, 0o700)
     file5 = CreateFile(parent1, 'f5', contents='1'*1025)
-    os.chmod(file5, 0700)
+    os.chmod(file5, 0o700)
 
     DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
@@ -266,7 +271,7 @@ def OneoffUpdateSomeFilesTest():
                        '>f+++++++ par!/f5',
                        'Transferring 4 of 7 paths (2kb of 2kb)'])
 
-    xattr.setxattr(fileX, 'example', 'example_value4')
+    xattr.setxattr(fileX, 'example', b'example_value4')
     SetMTime(fileX, mtime=1510000000)
     SetMTime(file3, mtime=1510000000)
 
@@ -276,7 +281,7 @@ def OneoffUpdateSomeFilesTest():
                        '.f..t.... par!/f3',
                        'Transferring 2 of 7 paths (0b of 2kb)'])
 
-    os.chmod(file4, 0600)
+    os.chmod(file4, 0o600)
 
     DoCreateBackup(
       config, backup_name='2020-01-04-120000',
@@ -339,8 +344,8 @@ def OneoffUpdateSomeFilesTest():
           return True
 
       if backup.GetName() <= '2020-01-03-120000' and path in ['par!/f4', 'par!/f5']:
-        incorrect_mode = 0700
-        corrected_mode = 0600
+        incorrect_mode = 0o700
+        corrected_mode = 0o600
 
         if updater._MaybeUpdatePermissionModeIfMatching(backup, path_info, incorrect_mode, corrected_mode):
           return True
