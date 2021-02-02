@@ -402,7 +402,7 @@ def Sha256WithProgress(full_path, path_info, output):
         message = '[%s/%s] ' % (read_bytes_str, total_bytes_str)
         max_path_len = terminal_width - len(message) - 2
         if len(path_info.path) > max_path_len:
-          message += '\xe2\x80\xa6' + path_info.path[len(path_info.path)-max_path_len+1:]
+          message += '\u2026' + path_info.path[len(path_info.path)-max_path_len+1:]
         else:
           message += path_info.path
         output.write('\033[K%s\r' % message)
