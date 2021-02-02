@@ -11,7 +11,7 @@ import sys
 import xml.dom.minidom
 import unicodedata
 
-from . import backups_lib
+from . import backups_manager_lib
 from . import lib
 
 
@@ -80,7 +80,7 @@ class LegacyChecksumsVerifier(object):
     self.manager = None
 
   def Verify(self):
-    self.manager = backups_lib.BackupsManager.Open(
+    self.manager = backups_manager_lib.BackupsManager.Open(
       self.config, encryption_manager=self.encryption_manager, readonly=True,
       dry_run=self.dry_run)
     try:
@@ -166,7 +166,7 @@ def DoVerifyLegacyChecksums(args, output):
   parser.add_argument('--backups-config', required=True)
   cmd_args = parser.parse_args(args.cmd_args)
 
-  config = backups_lib.BackupsConfig.Load(cmd_args.backups_config)
+  config = backups_manager_lib.BackupsConfig.Load(cmd_args.backups_config)
 
   verifier = LegacyChecksumsVerifier(
     config, output=output, encryption_manager=lib.EncryptionManager(),

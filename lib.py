@@ -126,6 +126,11 @@ def GetPathMatcherFromArgs(args, match_all_by_default=True):
     return MatchAllPathMatcher()
 
 
+def EnsureRunningAsRoot():
+  if os.geteuid() != 0:
+    raise Exception('This script must be run with sudo')
+
+
 def GetManifestBackupPath(manifest_path):
   path = '%s.bak' % manifest_path
   assert path.endswith('.pbdata.bak')
@@ -689,7 +694,7 @@ def CompactImageWithResize(image_path, output, encryption_manager=None, encrypte
 
 
 def StripUtf8BidiCommandChars(s):
-  return s.replace('\xe2\x81\xa8', '').replace('\xe2\x81\xa9', '')
+  return s.replace('\u2068', '').replace('\u2069', '')
 
 
 def GetApfsDeviceFromAttachedImageDevice(image_device, output):
