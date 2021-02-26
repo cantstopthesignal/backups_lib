@@ -263,7 +263,10 @@ class MtimePreserver(object):
 
   def __exit__(self, exc_type, exc, exc_traceback):
     for path, mtime in list(self.preserved_path_mtimes.items()):
-      os.utime(path, (mtime, mtime))
+      try:
+        os.utime(path, (mtime, mtime))
+      except FileNotFoundError:
+        pass
 
   def PreserveMtime(self, path):
     if path not in self.preserved_path_mtimes:

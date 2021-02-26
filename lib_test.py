@@ -1192,6 +1192,22 @@ def MtimePreserverTest():
     AssertNotEquals(1500000000.0, os.lstat(file1).st_mtime)
     AssertEquals(1500000000.0, os.lstat(file2).st_mtime)
 
+    with lib.MtimePreserver() as preserver:
+      preserver.PreserveMtime(dir2)
+      file3 = CreateFile(dir1, 'file3')
+
+      preserver.PreserveMtime(file3)
+      subprocess.check_call(['touch', file3])
+      AssertNotEquals(1500000000.0, os.lstat(file3).st_mtime)
+
+      file4 = CreateFile(dir1, 'file4')
+      preserver.PreserveMtime(file4)
+
+      AssertEquals({dir2: 1500000000.0, file3: 1500000000.0, file4: 1500000000.0}, preserver.preserved_path_mtimes)
+      DeleteFileOrDir(dir2)
+      DeleteFileOrDir(file4)
+    AssertEquals(1500000000.0, os.lstat(file3).st_mtime)
+
 
 def PathsAndPrefixMatcherTest():
   matcher = lib.PathsAndPrefixMatcher([])
