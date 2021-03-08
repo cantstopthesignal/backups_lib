@@ -1593,7 +1593,9 @@ class Manifest(object):
 
   def AddPathInfo(self, path_info, allow_replace=False):
     if not allow_replace:
-      assert path_info.path not in self.path_map
+      if path_info.path in self.path_map:
+        raise Exception('Cannot add path info (%s): already in map (%s)'
+                        % (path_info, self.path_map[path_info.path]))
     self.path_map[path_info.path] = path_info
 
   def RemovePathInfo(self, path):
