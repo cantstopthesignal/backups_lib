@@ -158,7 +158,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
   args = []
   if dry_run:
     args.append('--dry-run')
-  args.extend(['create',
+  args.extend(['create-checkpoint',
                '--no-encrypt',
                '--src-root', src_root,
                '--checkpoints-dir', checkpoints_dir,
@@ -199,7 +199,7 @@ def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
   args = []
   if dry_run:
     args.append('--dry-run')
-  args.extend(['apply',
+  args.extend(['apply-checkpoint',
                '--checksum-all',
                '--src-checkpoint-path', src_checkpoint_path,
                '--dest-root', dest_root])
@@ -243,7 +243,7 @@ def DoVerify(manifest_path, src_root, expected_success=True, expected_output=[])
 
 def DoStrip(checkpoint_path, defragment=True, defragment_iterations=None,
             dry_run=False, expected_output=[]):
-  cmd_args = ['strip',
+  cmd_args = ['strip-checkpoint',
               '--checkpoint-path', checkpoint_path]
   if not defragment:
     cmd_args.append('--no-defragment')
@@ -256,7 +256,7 @@ def DoStrip(checkpoint_path, defragment=True, defragment_iterations=None,
 
 def DoCompact(checkpoint_path, defragment=True, defragment_iterations=None,
               dry_run=False, expected_output=[]):
-  cmd_args = ['compact',
+  cmd_args = ['compact-image',
               '--image-path', checkpoint_path]
   if not defragment:
     cmd_args.append('--no-defragment')
@@ -925,9 +925,11 @@ def StripTest():
                           '.f....... f1'])
       finally:
         checkpoint1.Close()
+      checkpoint1_path_parts = lib.CheckpointPathParts(checkpoint1.GetImagePath())
       AssertCheckpointStripState(checkpoint1.GetImagePath(), False)
 
       checkpoint2_path = os.path.join(checkpoints_dir, '2.sparseimage')
+      checkpoint2_path_parts = lib.CheckpointPathParts(checkpoint2_path)
       shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
       AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
@@ -941,8 +943,9 @@ def StripTest():
                                'Finishing compaction…',
                                'Reclaimed 4 MB out of 1023.6 GB possible.',
                                'Image size 34mb -> 30mb'])
-      AssertEquals(31461376, os.lstat(checkpoint1.GetImagePath()).st_size)
-      AssertCheckpointStripState(checkpoint1.GetImagePath(), True)
+      checkpoint1_path_parts.SetIsManifestOnly(True)
+      AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
 
       DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
               expected_output=[
@@ -951,10 +954,11 @@ def StripTest():
                 'Resizing image to minimum size: 2147073968 -> 1441792 blocks...',
                 'Restoring image size to 2147073968 blocks...',
                 'Image size 34mb -> 34mb'])
+      checkpoint2_path_parts.SetIsManifestOnly(True)
       DoStrip(checkpoint2_path, defragment_iterations=2,
               expected_output=[
                 'Checkpoint stripped',
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
+                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
                 '<... snip APFS operation ...>',
                 'Iteration 2, new apfs min size 1.2gb...',
                 '<... snip APFS operation ...>',
@@ -971,8 +975,8 @@ def StripTest():
                 'Finishing compaction…',
                 'Reclaimed 3 MB out of 1023.6 GB possible.',
                 'Image size 34mb -> 13mb'])
-      AssertEquals(13635584, os.lstat(checkpoint2_path).st_size)
-      AssertCheckpointStripState(checkpoint2_path, True)
+      AssertEquals(13635584, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
 def CompactTest():

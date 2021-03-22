@@ -54,7 +54,7 @@ SUPERSEDED_METADATA_PREFIX = 'superseded-'
 
 class BackupCheckpoint(object):
   BACKUP_CHECKPOINTS_PATTERN = re.compile(
-    '([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}).sparseimage')
+    '([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6})(-manifest)?[.]sparseimage')
 
   STATE_NEW = 'NEW'
   STATE_IN_PROGRESS = 'IN_PROGRESS'
@@ -63,16 +63,18 @@ class BackupCheckpoint(object):
 
   @staticmethod
   def IsMatchingPath(path):
-    return BackupCheckpoint.BACKUP_CHECKPOINTS_PATTERN.match(os.path.basename(path))
+    return BackupCheckpoint.BACKUP_CHECKPOINTS_PATTERN.match(os.path.basename(path)) is not None
 
   def __init__(self, path):
     self.path = path
     m = BackupCheckpoint.BACKUP_CHECKPOINTS_PATTERN.match(os.path.basename(path))
     assert m
     self.name = m.group(1)
+    self.is_manifest_only = m.group(2) is not None
 
   def __str__(self):
-    return 'BackupCheckpoint<%s>' % self.name
+    manifest_only_str = self.is_manifest_only and ',manifest-only' or ''
+    return 'BackupCheckpoint<%s%s>' % (self.name, manifest_only_str)
 
   def __lt__(self, other):
     return self.name < other.name
@@ -83,12 +85,20 @@ class BackupCheckpoint(object):
   def GetName(self):
     return self.name
 
+  def IsManifestOnly(self):
+    return self.is_manifest_only
+
 
 def ListBackupCheckpoints(checkpoints_dir):
   checkpoints = []
+  checkpoint_names = set()
   for filename in os.listdir(checkpoints_dir):
     if BackupCheckpoint.IsMatchingPath(filename):
-      checkpoints.append(BackupCheckpoint(os.path.join(checkpoints_dir, filename)))
+      checkpoint = BackupCheckpoint(os.path.join(checkpoints_dir, filename))
+      if checkpoint.GetName() in checkpoint_names:
+        raise Exception('Checkpoint %s already in checkpoints list' % checkpoint)
+      checkpoints.append(checkpoint)
+      checkpoint_names.add(checkpoint.GetName())
   checkpoints.sort()
   return checkpoints
 
@@ -912,6 +922,8 @@ class CheckpointsToBackupsApplier:
           checkpoint.GetPath(), encryption_manager=self.encryption_manager, readonly=True,
           dry_run=self.dry_run)
         test_open_checkpoint.Close()
+        if checkpoint.IsManifestOnly():
+          raise Exception('Checkpoint %s is manifest only: cannot apply to backups' % checkpoint)
         checkpoints_to_apply.append(checkpoint)
       for checkpoint in checkpoints_to_apply:
         open_checkpoint = lib.Checkpoint.Open(

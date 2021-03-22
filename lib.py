@@ -28,19 +28,19 @@ import xattr
 from . import staged_backup_pb2
 
 
-COMMAND_CREATE = 'create'
-COMMAND_APPLY = 'apply'
-COMMAND_STRIP = 'strip'
-COMMAND_COMPACT = 'compact'
+COMMAND_CREATE_CHECKPOINT = 'create-checkpoint'
+COMMAND_APPLY_CHECKPOINT = 'apply-checkpoint'
+COMMAND_STRIP_CHECKPOINT = 'strip-checkpoint'
+COMMAND_COMPACT_IMAGE = 'compact-image'
 COMMAND_DUMP_MANIFEST = 'dump-manifest'
 COMMAND_DIFF_MANIFESTS = 'diff-manifests'
 COMMAND_VERIFY_MANIFEST = 'verify-manifest'
 
 COMMANDS = [
-  COMMAND_CREATE,
-  COMMAND_APPLY,
-  COMMAND_STRIP,
-  COMMAND_COMPACT,
+  COMMAND_CREATE_CHECKPOINT,
+  COMMAND_APPLY_CHECKPOINT,
+  COMMAND_STRIP_CHECKPOINT,
+  COMMAND_COMPACT_IMAGE,
   COMMAND_DUMP_MANIFEST,
   COMMAND_DIFF_MANIFESTS,
   COMMAND_VERIFY_MANIFEST,
@@ -1664,6 +1664,31 @@ class Manifest(object):
     return size_to_pathinfos
 
 
+class CheckpointPathParts(object):
+  PATTERN = re.compile('^((?:(?!-manifest).)*)(-manifest)?([.]sparseimage)$')
+
+  def __init__(self, path):
+    m = CheckpointPathParts.PATTERN.match(path)
+    if not m:
+      raise Exception('Invalid checkpint path %s' % path)
+    self.prefix = m.group(1)
+    self.is_manifest_only = m.group(2) is not None
+    self.extension = m.group(3)
+
+  def GetPath(self):
+    path = self.prefix
+    if self.is_manifest_only:
+      path += '-manifest'
+    path += self.extension
+    return path
+
+  def IsManifestOnly(self):
+    return self.is_manifest_only
+
+  def SetIsManifestOnly(self, is_manifest_only):
+    self.is_manifest_only = is_manifest_only
+
+
 class Checkpoint(object):
   STATE_NEW = 'NEW'
   STATE_IN_PROGRESS = 'IN_PROGRESS'
@@ -1674,6 +1699,8 @@ class Checkpoint(object):
   def New(base_path, name, encryption_manager=None, manifest_only=False, encrypt=False, dry_run=False):
     if name is None:
       name = time.strftime('%Y-%m-%d-%H%M%S')
+      if manifest_only:
+        name += '-manifest'
     return Checkpoint(base_path, name, Checkpoint.STATE_NEW, encryption_manager=encryption_manager,
                       encrypt=encrypt, manifest_only=manifest_only, readonly=False, dry_run=dry_run)
 
@@ -2172,11 +2199,17 @@ class CheckpointStripper(object):
     self.checkpoint = None
 
   def Strip(self):
+    if self._CheckpointAlreadyStripped():
+      print("Checkpoint already stripped", file=self.output)
+      return True
+    if not self._RenameCheckpointForStrip():
+      return False
     self.checkpoint = Checkpoint.Open(
       self.checkpoint_path, encryption_manager=self.encryption_manager, readonly=False,
       dry_run=self.dry_run)
     try:
-      self._StripInternal()
+      if not self._StripInternal():
+        return False
     finally:
       if self.checkpoint is not None:
         self.checkpoint.Close()
@@ -2189,14 +2222,39 @@ class CheckpointStripper(object):
     return compactor.Compact()
 
   def _StripInternal(self):
-    if not os.path.exists(self.checkpoint.GetContentRootPath()):
-      print("Checkpoint already stripped", file=self.output)
-      return True
-
     if not self.dry_run:
       shutil.rmtree(self.checkpoint.GetContentRootPath())
 
     print("Checkpoint stripped", file=self.output)
+    return True
+
+  def _CheckpointAlreadyStripped(self):
+    path_parts = CheckpointPathParts(self.checkpoint_path)
+    if path_parts.IsManifestOnly():
+      return True
+
+    test_open_checkpoint = Checkpoint.Open(
+      self.checkpoint_path, encryption_manager=self.encryption_manager, readonly=True,
+      dry_run=self.dry_run)
+    try:
+      if not os.path.exists(test_open_checkpoint.GetContentRootPath()):
+        return True
+    finally:
+      test_open_checkpoint.Close()
+    return False
+
+  def _RenameCheckpointForStrip(self):
+    path_parts = CheckpointPathParts(self.checkpoint_path)
+    assert not path_parts.IsManifestOnly()
+    path_parts.SetIsManifestOnly(True)
+    new_path = path_parts.GetPath()
+    assert self.checkpoint_path != new_path
+    if os.path.lexists(new_path):
+      print("*** Error: Path %s already exists" % new_path, file=self.output)
+      return False
+    if not self.dry_run:
+      os.rename(self.checkpoint_path, new_path)
+      self.checkpoint_path = new_path
     return True
 
 
@@ -2541,13 +2599,13 @@ def DoVerifyManifest(args, output):
 
 
 def DoCommand(args, output):
-  if args.command == COMMAND_CREATE:
+  if args.command == COMMAND_CREATE_CHECKPOINT:
     return DoCreateCheckpoint(args, output=output)
-  elif args.command == COMMAND_APPLY:
+  elif args.command == COMMAND_APPLY_CHECKPOINT:
     return DoApplyCheckpoint(args, output=output)
-  elif args.command == COMMAND_STRIP:
+  elif args.command == COMMAND_STRIP_CHECKPOINT:
     return DoStripCheckpoint(args, output=output)
-  elif args.command == COMMAND_COMPACT:
+  elif args.command == COMMAND_COMPACT_IMAGE:
     return DoCompactImage(args, output=output)
   elif args.command == COMMAND_DUMP_MANIFEST:
     return DoDumpManifest(args, output=output)

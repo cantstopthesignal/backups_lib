@@ -53,7 +53,7 @@ def CreateLatestManifestCheckpoint(config):
   try:
     last_backup = backups_manager.GetLastDone()
     src_root = last_backup.GetContentRootPath()
-    output_lines = DoBackupsMain(['create',
+    output_lines = DoBackupsMain(['create-checkpoint',
                                   '--src-root', src_root,
                                   '--checksum-all',
                                   '--manifest-only',
@@ -108,7 +108,7 @@ def SetLogThrottlerLogAlways(log_throttler):
 
 def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
                        last_checkpoint_path=None, filter_merge_path=None):
-  args = ['create',
+  args = ['create-checkpoint',
           '--no-encrypt',
           '--checksum-all',
           '--src-root', src_root,
