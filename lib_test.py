@@ -474,12 +474,12 @@ def CreateTest():
     try:
       AssertLinesEqual(GetManifestDiffItemized(manifest1, manifest2), [])
       AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                       ['.d..t...... ./',
-                        '>f+++++++++ .staged_backup_filter',
-                        'cd+++++++++ par!/',
-                        '>f+++++++++ par!/f2',
-                        '>f+++++++++ par!/f3',
-                        '>f+++++++++ par!/f_\r'])
+                       ['.d..t....... ./',
+                        '>f++++++++++ .staged_backup_filter',
+                        'cd++++++++++ par!/',
+                        '>f++++++++++ par!/f2',
+                        '>f++++++++++ par!/f3',
+                        '>f++++++++++ par!/f_\r'])
       AssertBasisInfoFileEquals(checkpoint2.GetMetadataPath(), checkpoint1.GetImagePath())
       DoVerify(manifest2.GetPath(), src_root,
                expected_success=False,
@@ -517,14 +517,14 @@ def CreateTest():
       checkpoint2 = lib.Checkpoint.Open(checkpoint2.GetImagePath(), readonly=False)
       try:
         AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                         ['.d........x ./',
-                          '>fcs....... par!/f2',
-                          '.f..t...... par!/f_\r'])
+                         ['.d........x. ./',
+                          '>fcs........ par!/f2',
+                          '.f..t....... par!/f_\r'])
       finally:
         checkpoint2.Close()
       AssertLinesEqual(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
-                       ['>f+++++++++ .staged_backup_filter',
-                        '>f+++++++++ par!/f3'])
+                       ['>f++++++++++ .staged_backup_filter',
+                        '>f++++++++++ par!/f3'])
     finally:
       checkpoint3.Close()
 
@@ -552,10 +552,10 @@ def CreateTest():
                          ['.d..t.... par!',
                           '>fc...... par!/f2'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
-                         ['.d..t.....x ./',
-                          '>f+++++++++ .staged_backup_filter',
-                          '>f+++++++++ par!/f3',
-                          '>f+++++++++ par!/f_\r'])
+                         ['.d..t.....x. ./',
+                          '>f++++++++++ .staged_backup_filter',
+                          '>f++++++++++ par!/f3',
+                          '>f++++++++++ par!/f_\r'])
         AssertBasisInfoFileEquals(checkpoint4.GetMetadataPath(), checkpoint3.GetImagePath())
         DoVerify(manifest4.GetPath(), checkpoint4.GetContentRootPath())
       finally:
@@ -593,11 +593,11 @@ def CreateTest():
                          ['.d..t.... par!',
                           '>f+++++++ par!/f4'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
-                         ['.d..t.....x ./',
-                          '>f+++++++++ .staged_backup_filter',
-                          '>f+++++++++ par!/f2',
-                          '>f+++++++++ par!/f3',
-                          '>f+++++++++ par!/f_\r'])
+                         ['.d..t.....x. ./',
+                          '>f++++++++++ .staged_backup_filter',
+                          '>f++++++++++ par!/f2',
+                          '>f++++++++++ par!/f3',
+                          '>f++++++++++ par!/f_\r'])
         AssertBasisInfoFileEquals(checkpoint5.GetMetadataPath(), checkpoint4.GetImagePath())
         DoVerify(manifest5.GetPath(), checkpoint5.GetContentRootPath())
       finally:
@@ -689,8 +689,8 @@ def ApplyDryRunTest():
     AssertLinesEqual(RsyncPaths(src_root, dest_root),
                      ['*deleting del_par!/',
                       '*deleting del_par!/del',
-                      'cd+++++++++ par!/',
-                      '>f+++++++++ par!/f_\r'])
+                      'cd++++++++++ par!/',
+                      '>f++++++++++ par!/f_\r'])
 
 
 def ApplyTest():
@@ -799,7 +799,7 @@ def ApplyTest():
     DoApply(checkpoint3.GetImagePath(), dest_root,
             expected_output=['.d......x .'])
     AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['.f........x f3'])
+                     ['.f........x. f3'])
 
     # No modifications
 
@@ -822,7 +822,7 @@ def ApplyTest():
     DoApply(checkpoint4.GetImagePath(), dest_root,
             expected_output=[])
     AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['.f........x f3'])
+                     ['.f........x. f3'])
 
     # Modify some existing files
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -878,7 +878,7 @@ def ApplyTest():
     DoApply(checkpoint6.GetImagePath(), dest_root)
     AssertEmptyRsync(src_root, dest_root, checksum=False)
     AssertLinesEqual(RsyncPaths(src_root, dest_root, checksum=True, dry_run=True),
-                     ['>fc........ par!/f2'])
+                     ['>fc......... par!/f2'])
 
     # Now do a sync with checksum all and verify the diffing file gets transferred
 
