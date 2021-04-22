@@ -3,6 +3,6 @@ Helper library for backups
 
 # setup
 ```
-pip3 install xattr
-pip3 install protobuf
+python3 -m pip install xattr
+python3 -m pip install protobuf
 ```
