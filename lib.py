@@ -237,11 +237,14 @@ RSYNC_DIR_MERGE_FILENAME = '.staged_backup_filter'
 
 RSYNC_FILTERS = [RsyncFilterDirMerge(RSYNC_DIR_MERGE_FILENAME)]
 
-IGNORED_XATTR_KEYS = ['com.apple.avkit.thumbnailCacheEncryptionKey',
-                      'com.apple.avkit.thumbnailCacheIdentifier',
-                      'com.apple.diskimages.recentcksum',
-                      'com.apple.lastuseddate#PS',
-                      'com.apple.quarantine']
+IGNORED_XATTR_KEYS = [
+  'com.apple.avkit.thumbnailCacheEncryptionKey',
+  'com.apple.avkit.thumbnailCacheIdentifier',
+  'com.apple.diskimages.recentcksum',
+  'com.apple.lastuseddate#PS',
+  'com.apple.macl',
+  'com.apple.quarantine',
+]
 
 
 @contextlib.contextmanager
