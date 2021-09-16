@@ -19,6 +19,7 @@ message PathInfoProto {
   string link_dest = 8;
   bytes sha256 = 9;
   bytes xattr_hash = 10;
+  repeated string xattr_keys = 11;
 }
 
 message ManifestProto {

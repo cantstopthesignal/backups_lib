@@ -417,13 +417,19 @@ def Sha256WithProgress(full_path, path_info, output):
   return hasher.digest()
 
 
-def GetXattrHash(path, ignored_keys=[]):
+def GetXattrKeysAndHash(path, ignored_keys=[]):
+  xattr_hash = None
+  xattr_keys = []
+
   xattr_data = xattr.xattr(path)
   xattr_list = []
   for key in sorted(xattr_data.keys()):
     if key in ignored_keys:
       continue
+    if key not in xattr_data:
+      continue
     value = xattr_data[key]
+    xattr_keys.append(key)
     xattr_list.append((key, value))
   if xattr_list:
     hasher = hashlib.sha256()
@@ -437,7 +443,8 @@ def GetXattrHash(path, ignored_keys=[]):
       byte_str_list.append(b'(%b, %b)' % (key_encoded, value_encoded[1:]))
     byte_str = b'[%b]' % b', '.join(byte_str_list)
     hasher.update(byte_str)
-    return hasher.digest()
+    xattr_hash = hasher.digest()
+  return xattr_hash, xattr_keys
 
 
 def GetPathTreeSize(path, files_only=False, excludes=[]):
@@ -1357,8 +1364,12 @@ class PathInfo(object):
     xattr_hash = None
     if pb.xattr_hash:
       xattr_hash = pb.xattr_hash
+    xattr_keys = []
+    if pb.xattr_keys:
+      xattr_keys = list(pb.xattr_keys)
     return PathInfo(path, path_type=pb.path_type, mode=pb.mode, uid=uid, gid=gid, mtime=mtime,
-                    size=size, link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash)
+                    size=size, link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash,
+                    xattr_keys=xattr_keys)
 
   @staticmethod
   def FromPath(path, full_path, ignored_xattr_keys=None):
@@ -1369,13 +1380,14 @@ class PathInfo(object):
     sha256 = None
     link_dest = None
     xattr_hash = None
+    xattr_keys = []
     if stat.S_ISDIR(stat_result.st_mode):
       path_type = PathInfo.TYPE_DIR
-      xattr_hash = GetXattrHash(full_path, ignored_keys=ignored_xattr_keys)
+      xattr_hash, xattr_keys = GetXattrKeysAndHash(full_path, ignored_keys=ignored_xattr_keys)
     elif stat.S_ISREG(stat_result.st_mode):
       path_type = PathInfo.TYPE_FILE
       size = stat_result.st_size
-      xattr_hash = GetXattrHash(full_path, ignored_keys=ignored_xattr_keys)
+      xattr_hash, xattr_keys = GetXattrKeysAndHash(full_path, ignored_keys=ignored_xattr_keys)
     elif stat.S_ISLNK(stat_result.st_mode):
       path_type = PathInfo.TYPE_SYMLINK
       link_dest = os.readlink(full_path)
@@ -1383,7 +1395,7 @@ class PathInfo(object):
       raise Exeption('Unexpected file mode for %r: %d' % (full_path, stat_result.st_mode))
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
                     gid=stat_result.st_gid, mtime=int(stat_result.st_mtime), size=size,
-                    link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash,
+                    link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash, xattr_keys=xattr_keys,
                     dev_inode=(stat_result.st_dev, stat_result.st_ino))
 
   @staticmethod
@@ -1418,7 +1430,7 @@ class PathInfo(object):
       itemized.replace_path = True
     if first.link_dest != second.link_dest:
       itemized.checksum_diff = True
-    if first.xattr_hash != second.xattr_hash:
+    if first.xattr_hash != second.xattr_hash or first.xattr_keys != second.xattr_keys:
       itemized.xattr_diff = True
     return itemized
 
@@ -1432,7 +1444,7 @@ class PathInfo(object):
     return [ path_info for (ratio, path, path_info) in sorting_list ]
 
   def __init__(self, path, path_type, mode, uid, gid, mtime, size, link_dest, sha256, xattr_hash,
-               dev_inode=None):
+               xattr_keys, dev_inode=None):
     self.path = path
     self.path_type = path_type
     self.mode = mode
@@ -1443,6 +1455,7 @@ class PathInfo(object):
     self.link_dest = link_dest
     self.sha256 = sha256
     self.xattr_hash = xattr_hash
+    self.xattr_keys = xattr_keys
     self.dev_inode = dev_inode
 
   def GetItemized(self):
@@ -1450,7 +1463,8 @@ class PathInfo(object):
 
   def Clone(self):
     return PathInfo(self.path, self.path_type, self.mode, self.uid, self.gid, self.mtime, self.size,
-                    self.link_dest, self.sha256, self.xattr_hash, dev_inode=self.dev_inode)
+                    self.link_dest, self.sha256, self.xattr_hash, self.xattr_keys,
+                    dev_inode=self.dev_inode)
 
   def __str__(self):
     return self.ToString()
@@ -1484,6 +1498,8 @@ class PathInfo(object):
         out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash)[:6].decode('ascii')
       else:
         out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash).decode('ascii')
+    if self.xattr_keys:
+      out += ', xattr-keys=%r' % self.xattr_keys
     if self.dev_inode is not None:
       out += ', dev-inode=%r' % (self.dev_inode,)
     return out
@@ -1516,6 +1532,7 @@ class PathInfo(object):
         pb.sha256 = self.sha256
       if self.xattr_hash is not None:
         pb.xattr_hash = self.xattr_hash
+      pb.xattr_keys[:] = self.xattr_keys
     except ValueError:
       print('*** Error in ToProto for path %r' % self.path)
       raise
