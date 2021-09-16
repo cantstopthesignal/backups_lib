@@ -224,7 +224,7 @@ class OneoffSomeFilesUpdater(object):
         lib.EscapePath(path_info.path)), file=self.output)
       lib.ClearPathHardlinks(full_path, dry_run=self.dry_run)
       if not self.dry_run:
-        os.utime(full_path, (corrected_mtime, corrected_mtime))
+        os.utime(full_path, (corrected_mtime, corrected_mtime), follow_symlinks=False)
       path_info.mtime = corrected_mtime
       return True
 

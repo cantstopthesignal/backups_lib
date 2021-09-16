@@ -267,7 +267,7 @@ class MtimePreserver(object):
   def __exit__(self, exc_type, exc, exc_traceback):
     for path, mtime in list(self.preserved_path_mtimes.items()):
       try:
-        os.utime(path, (mtime, mtime))
+        os.utime(path, (mtime, mtime), follow_symlinks=False)
       except FileNotFoundError:
         pass
 
@@ -284,7 +284,7 @@ def PreserveParentMtime(path):
   parent_dir = os.path.dirname(path)
   parent_stat = os.lstat(parent_dir)
   yield
-  os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime))
+  os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime), follow_symlinks=False)
 
 
 def ClearPathHardlinks(path, dry_run=False):
@@ -299,7 +299,7 @@ def ClearPathHardlinks(path, dry_run=False):
       tmp.close()
       subprocess.check_call(['cp', '-a', path, tmp.name])
       os.rename(tmp.name, path)
-      os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime))
+      os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime), follow_symlinks=False)
     except:
       os.unlink(tmp.name)
       raise
@@ -2180,7 +2180,7 @@ class CheckpointApplier(object):
       src_mtime = int(os.lstat(self.src_checkpoint.GetContentRootPath()).st_mtime)
       updated_dest_mtime = int(os.lstat(self.dest_root).st_mtime)
       if updated_dest_mtime not in [src_mtime, original_dest_mtime]:
-        os.utime(self.dest_root, (original_dest_mtime, original_dest_mtime))
+        os.utime(self.dest_root, (original_dest_mtime, original_dest_mtime), follow_symlinks=False)
 
   def _ClearHardlinks(self, paths):
     for path in paths:

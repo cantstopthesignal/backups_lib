@@ -350,7 +350,7 @@ class PathsIntoBackupCopier(object):
           path_info = result.to_manifest.GetPathInfo(path)
           if path_info.path_type == lib.PathInfo.TYPE_DIR:
             full_path = os.path.join(result.to_backup.GetContentRootPath(), path)
-            os.utime(full_path, (path_info.mtime, path_info.mtime))
+            os.utime(full_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
 
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
         result.to_manifest.Write()
@@ -467,7 +467,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
       parent_stat = os.lstat(parent_dir)
       os.unlink(full_path)
       os.link(matching_dup_full_path, full_path)
-      os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime))
+      os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime), follow_symlinks=False)
 
   output_messages = []
   if result.num_new_dup_files:
@@ -1968,7 +1968,7 @@ class PathsInBackupsDeleter(object):
           os.rmdir(full_path)
         else:
           os.unlink(full_path)
-        os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime))
+        os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime), follow_symlinks=False)
 
       manifest.Write()
 

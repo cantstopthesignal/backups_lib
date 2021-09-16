@@ -56,8 +56,7 @@ def AssertLinesEqual(a_lines, b_lines):
 def SetMTime(path, mtime=1500000000):
   if mtime is None:
     mtime = 1600000000
-  cmd = ['touch', '-h', '-t', time.strftime('%Y%m%d%H%M.%S', time.localtime(mtime)), path]
-  subprocess.check_call(cmd)
+  os.utime(path, (mtime, mtime), follow_symlinks=False)
 
 
 def CreateDir(parent_dir, child_dir, mtime=1500000000):
