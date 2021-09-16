@@ -68,6 +68,9 @@ PRINT_PROGRESS_MIN_INTERVAL = .05
 
 DEFAULT_DEFRAGMENT_ITERATIONS = 5
 
+# resize during compaction on Big Sur seems to error
+DEFRAGMENT_WITH_COMPACT_WITH_RESIZE = False
+
 
 class PathMatcher(object):
   def Matches(self, path):
@@ -824,8 +827,12 @@ def CompactAndDefragmentImage(
           min_bytes = new_min_bytes
         ResizeApfsContainer(apfs_device, min_bytes, output=output)
 
-  CompactImageWithResize(image_path, output=output, encryption_manager=encryption_manager,
-                         encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
+  if DEFRAGMENT_WITH_COMPACT_WITH_RESIZE:
+    CompactImageWithResize(image_path, output=output, encryption_manager=encryption_manager,
+                           encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
+  else:
+    CompactImage(image_path, output=output, encryption_manager=encryption_manager,
+                 encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
 
   if not dry_run:
     print('Restoring apfs container size to %s...' % (
