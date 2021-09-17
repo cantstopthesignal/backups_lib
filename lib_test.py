@@ -152,6 +152,14 @@ def CollapseApfsOperationsInOutput(output_lines):
   return new_output_lines
 
 
+def CreateGoogleDriveRemoteFile(parent_dir, filename):
+  path = CreateFile(parent_dir, filename, contents='IGNORE')
+  xattr_data = xattr.xattr(path)
+  xattr_data[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = (
+    ('%sdocument' % lib.GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX).encode('ascii'))
+  return path
+
+
 def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_output=[],
              last_checkpoint_path=None, manifest_only=False, checksum_all=True, filter_merge_path=None,
              dry_run=False, readonly=True):
@@ -278,13 +286,16 @@ def PathInfoTest():
     file1 = CreateFile(test_dir, 'file1')
     dir1 = CreateDir(test_dir, 'dir1')
     ln1 = CreateSymlink(test_dir, 'ln1', 'INVALID')
+    gdrf1 = CreateGoogleDriveRemoteFile(test_dir, 'gdrf1')
     file1_path_info = lib.PathInfo.FromPath(os.path.basename(file1), file1)
     dir1_path_info = lib.PathInfo.FromPath(os.path.basename(dir1), dir1)
     ln1_path_info = lib.PathInfo.FromPath(os.path.basename(ln1), ln1)
+    gdrf1_path_info = lib.PathInfo.FromPath(os.path.basename(gdrf1), gdrf1)
 
     AssertEquals('.f....... file1', str(file1_path_info.GetItemized()))
     AssertEquals('.d....... dir1', str(dir1_path_info.GetItemized()))
     AssertEquals('.L....... ln1 -> INVALID', str(ln1_path_info.GetItemized()))
+    AssertEquals('.f....... gdrf1', str(gdrf1_path_info.GetItemized()))
 
     AssertEquals('.f....... file1', str(lib.PathInfo.GetItemizedDiff(file1_path_info, file1_path_info)))
     AssertEquals('>fcs.p... file1', str(lib.PathInfo.GetItemizedDiff(file1_path_info, dir1_path_info, ignore_paths=True)))
@@ -297,6 +308,21 @@ def PathInfoTest():
     AssertEquals('>Lcs.p... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, file1_path_info, ignore_paths=True)))
     AssertEquals('>Lc...... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
     AssertEquals('.L....... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, ln1_path_info)))
+
+    AssertEquals('.f.s....x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, file1_path_info, ignore_paths=True)))
+    AssertEquals('>fc..p..x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, dir1_path_info, ignore_paths=True)))
+    AssertEquals('>fc..p..x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, ln1_path_info, ignore_paths=True)))
+    AssertEquals('.f....... gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, gdrf1_path_info)))
+
+    AssertEquals(False, file1_path_info.google_drive_remote_file)
+    AssertEquals(False, dir1_path_info.google_drive_remote_file)
+    AssertEquals(False, ln1_path_info.google_drive_remote_file)
+    AssertEquals(True, gdrf1_path_info.google_drive_remote_file)
+
+    AssertEquals(True, file1_path_info.HasFileContents())
+    AssertEquals(False, dir1_path_info.HasFileContents())
+    AssertEquals(False, ln1_path_info.HasFileContents())
+    AssertEquals(False, gdrf1_path_info.HasFileContents())
 
   class PathInfoLike:
     def __init__(self, path):

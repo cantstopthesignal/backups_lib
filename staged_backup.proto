@@ -20,6 +20,7 @@ message PathInfoProto {
   bytes sha256 = 9;
   bytes xattr_hash = 10;
   repeated string xattr_keys = 11;
+  bool google_drive_remote_file = 12;
 }
 
 message ManifestProto {

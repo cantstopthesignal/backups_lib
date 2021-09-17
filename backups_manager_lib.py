@@ -240,13 +240,13 @@ class PathsIntoBackupCopier(object):
         last_to_path_info = self.last_to_manifest.GetPathInfo(path)
         matches_last_to = not lib.PathInfo.GetItemizedDiff(path_info, last_to_path_info).HasDiffs()
         if matches_last_to:
-          if path_info.path_type == lib.PathInfo.TYPE_FILE:
+          if path_info.HasFileContents():
             paths_to_link_map[path] = path
           else:
             paths_to_copy_from_last_set.add(path)
           continue
 
-        if path_info.path_type == lib.PathInfo.TYPE_FILE:
+        if path_info.HasFileContents():
           if self.deduplicate and sha256_to_last_pathinfos is not None:
             dup_path_info = path_info.FindBestDup(sha256_to_last_pathinfos)
             if dup_path_info is not None:
@@ -405,7 +405,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
       print('*** Cancelled at path %s' % lib.EscapePath(path), file=output)
       break
     path_info = manifest.GetPathInfo(path)
-    if path_info.path_type != lib.PathInfo.TYPE_FILE or path_info.size < min_file_size:
+    if not path_info.HasFileContents() or path_info.size < min_file_size:
       continue
     assert path_info.sha256 is not None
 
@@ -1098,7 +1098,7 @@ class BackupsVerifier(object):
       num_paths += 1
       full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
-      if path_info.path_type == lib.PathInfo.TYPE_FILE:
+      if path_info.HasFileContents():
         assert path_info.dev_inode is not None
         path_info.sha256 = dev_inodes_to_sha256.get(path_info.dev_inode)
         if path_info.sha256 is None:
@@ -1162,7 +1162,7 @@ class BackupsVerifier(object):
 
       full_path = os.path.join(backup.GetContentRootPath(), path)
       new_path_info = lib.PathInfo.FromPath(path, full_path)
-      if path_info.path_type == lib.PathInfo.TYPE_FILE:
+      if path_info.HasFileContents():
         if last_manifest is not None:
           assert path_info.sha256
           for dup_path_info in sha256_to_last_pathinfos.get(path_info.sha256, []):
@@ -1371,7 +1371,7 @@ class MissingManifestsToBackupsAdder(object):
       num_paths += 1
       full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
-      if path_info.path_type == lib.PathInfo.TYPE_FILE:
+      if path_info.HasFileContents():
         assert path_info.dev_inode is not None
         path_info.sha256 = dev_inodes_to_sha256.get(path_info.dev_inode)
         if path_info.sha256 is None:
@@ -1598,7 +1598,7 @@ class UniqueFilesInBackupsDumper(object):
       found_matching_rename = False
 
       dup_output_lines = []
-      if itemized.new_path and path_info.path_type == lib.PathInfo.TYPE_FILE:
+      if itemized.new_path and path_info.HasFileContents():
         for sha256_to_other_pathinfos, replacing_previous in [
             (sha256_to_next_pathinfos, False), (sha256_to_previous_pathinfos, True)]:
           if sha256_to_other_pathinfos is not None:
@@ -1611,7 +1611,7 @@ class UniqueFilesInBackupsDumper(object):
 
       if not self.ignore_matching_renames or not found_matching_rename:
         num_unique += 1
-        if path_info.path_type == lib.PathInfo.TYPE_FILE:
+        if path_info.HasFileContents():
           unique_size += path_info.size
 
         print(itemized, file=self.output)

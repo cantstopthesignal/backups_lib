@@ -319,7 +319,7 @@ class ChecksumsSyncer(object):
     self.manifest.AddPathInfo(path_info, allow_replace=True)
 
     checksum_copied = False
-    if path_info.path_type == lib.PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       if path_info.sha256 is None:
         path_info.sha256 = basis_path_info.sha256
         checksum_copied = True
@@ -330,7 +330,7 @@ class ChecksumsSyncer(object):
       if self.verbose:
         print(itemized, file=self.output)
       return
-    if path_info.path_type == lib.PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       if checksum_copied:
         path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
         self.total_checksummed_paths += 1
@@ -349,7 +349,7 @@ class ChecksumsSyncer(object):
     self._AddStatsForSyncedPath(path_info)
 
   def _SyncNewPath(self, path, full_path, path_info):
-    if path_info.path_type == lib.PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       if path_info.sha256 is None:
         path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
         self.total_checksummed_paths += 1
@@ -360,7 +360,7 @@ class ChecksumsSyncer(object):
     print(itemized, file=self.output)
     self.manifest.AddPathInfo(path_info)
 
-    if (self.detect_renames and path_info.path_type == lib.PathInfo.TYPE_FILE
+    if (self.detect_renames and path_info.HasFileContents()
         and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.sha256_to_basis_pathinfos is None:
         self.sha256_to_basis_pathinfos = self.basis_manifest.CreateSha256ToPathInfosMap(
@@ -383,7 +383,7 @@ class ChecksumsSyncer(object):
 
     self.total_synced_paths += 1
 
-    if (self.detect_renames and basis_path_info.path_type == lib.PathInfo.TYPE_FILE
+    if (self.detect_renames and basis_path_info.HasFileContents()
         and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.size_to_pathinfos is None:
         self.size_to_pathinfos = self.scan_manifest.CreateSizeToPathInfosMap(

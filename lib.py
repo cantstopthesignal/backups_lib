@@ -71,6 +71,9 @@ DEFAULT_DEFRAGMENT_ITERATIONS = 5
 # resize during compaction on Big Sur seems to error
 DEFRAGMENT_WITH_COMPACT_WITH_RESIZE = False
 
+GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY = 'user.drive.mime_type'
+GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX = 'application/vnd.google-apps.'
+
 
 class PathMatcher(object):
   def Matches(self, path):
@@ -249,6 +252,8 @@ IGNORED_XATTR_KEYS = [
   'com.apple.quarantine',
   'user.drive.can_manage_team_drive_members',
   'user.drive.md5',
+  'user.drive.shortcut.target.stableid',
+  'user.drive.stableid',
 ]
 
 
@@ -422,20 +427,26 @@ def Sha256WithProgress(full_path, path_info, output):
   return hasher.digest()
 
 
-def GetXattrKeysAndHash(path, ignored_keys=[]):
+def ParseXattrData(path, path_type, ignored_keys=[]):
   xattr_hash = None
   xattr_keys = []
+  google_drive_remote_file = False
 
   xattr_data = xattr.xattr(path)
   xattr_list = []
   for key in sorted(xattr_data.keys()):
     if key in ignored_keys:
       continue
-    if key not in xattr_data:
+    try:
+      value = xattr_data[key]
+    except KeyError as e:
       continue
-    value = xattr_data[key]
     xattr_keys.append(key)
     xattr_list.append((key, value))
+    if (path_type == PathInfo.TYPE_FILE
+        and key == GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY
+        and value.decode('ascii').startswith(GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX)):
+      google_drive_remote_file = True
   if xattr_list:
     hasher = hashlib.sha256()
     byte_str_list = []
@@ -449,7 +460,7 @@ def GetXattrKeysAndHash(path, ignored_keys=[]):
     byte_str = b'[%b]' % b', '.join(byte_str_list)
     hasher.update(byte_str)
     xattr_hash = hasher.digest()
-  return xattr_hash, xattr_keys
+  return xattr_hash, xattr_keys, google_drive_remote_file
 
 
 def GetPathTreeSize(path, files_only=False, excludes=[]):
@@ -1358,8 +1369,9 @@ class PathInfo(object):
   def FromProto(pb):
     path = pb.path
     assert pb.path_type in PathInfo.TYPES
+    google_drive_remote_file = pb.google_drive_remote_file
     size = None
-    if pb.path_type == PathInfo.TYPE_FILE:
+    if pb.path_type == PathInfo.TYPE_FILE and not google_drive_remote_file:
       size = int(pb.size)
     uid = int(pb.uid)
     gid = int(pb.gid)
@@ -1378,7 +1390,7 @@ class PathInfo(object):
       xattr_keys = list(pb.xattr_keys)
     return PathInfo(path, path_type=pb.path_type, mode=pb.mode, uid=uid, gid=gid, mtime=mtime,
                     size=size, link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash,
-                    xattr_keys=xattr_keys)
+                    xattr_keys=xattr_keys, google_drive_remote_file=google_drive_remote_file)
 
   @staticmethod
   def FromPath(path, full_path, ignored_xattr_keys=None):
@@ -1390,13 +1402,18 @@ class PathInfo(object):
     link_dest = None
     xattr_hash = None
     xattr_keys = []
+    google_drive_remote_file = False
     if stat.S_ISDIR(stat_result.st_mode):
       path_type = PathInfo.TYPE_DIR
-      xattr_hash, xattr_keys = GetXattrKeysAndHash(full_path, ignored_keys=ignored_xattr_keys)
+      xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
+        full_path, path_type, ignored_keys=ignored_xattr_keys)
+      assert not google_drive_remote_file
     elif stat.S_ISREG(stat_result.st_mode):
       path_type = PathInfo.TYPE_FILE
-      size = stat_result.st_size
-      xattr_hash, xattr_keys = GetXattrKeysAndHash(full_path, ignored_keys=ignored_xattr_keys)
+      xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
+        full_path, path_type, ignored_keys=ignored_xattr_keys)
+      if not google_drive_remote_file:
+        size = stat_result.st_size
     elif stat.S_ISLNK(stat_result.st_mode):
       path_type = PathInfo.TYPE_SYMLINK
       link_dest = os.readlink(full_path)
@@ -1405,6 +1422,7 @@ class PathInfo(object):
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
                     gid=stat_result.st_gid, mtime=int(stat_result.st_mtime), size=size,
                     link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash, xattr_keys=xattr_keys,
+                    google_drive_remote_file=google_drive_remote_file,
                     dev_inode=(stat_result.st_dev, stat_result.st_ino))
 
   @staticmethod
@@ -1439,7 +1457,8 @@ class PathInfo(object):
       itemized.replace_path = True
     if first.link_dest != second.link_dest:
       itemized.checksum_diff = True
-    if first.xattr_hash != second.xattr_hash or first.xattr_keys != second.xattr_keys:
+    if (first.xattr_hash != second.xattr_hash or first.xattr_keys != second.xattr_keys
+        or first.google_drive_remote_file != second.google_drive_remote_file):
       itemized.xattr_diff = True
     return itemized
 
@@ -1453,7 +1472,7 @@ class PathInfo(object):
     return [ path_info for (ratio, path, path_info) in sorting_list ]
 
   def __init__(self, path, path_type, mode, uid, gid, mtime, size, link_dest, sha256, xattr_hash,
-               xattr_keys, dev_inode=None):
+               xattr_keys, google_drive_remote_file, dev_inode=None):
     self.path = path
     self.path_type = path_type
     self.mode = mode
@@ -1465,15 +1484,17 @@ class PathInfo(object):
     self.sha256 = sha256
     self.xattr_hash = xattr_hash
     self.xattr_keys = xattr_keys
+    self.google_drive_remote_file = google_drive_remote_file
     self.dev_inode = dev_inode
 
   def GetItemized(self):
     return ItemizedPathChange(self.path, self.path_type, link_dest=self.link_dest)
 
   def Clone(self):
-    return PathInfo(self.path, self.path_type, self.mode, self.uid, self.gid, self.mtime, self.size,
-                    self.link_dest, self.sha256, self.xattr_hash, self.xattr_keys,
-                    dev_inode=self.dev_inode)
+    return PathInfo(self.path, path_type=self.path_type, mode=self.mode, uid=self.uid, gid=self.gid,
+                    mtime=self.mtime, size=self.size, link_dest=self.link_dest, sha256=self.sha256,
+                    xattr_hash=self.xattr_hash, xattr_keys=self.xattr_keys,
+                    google_drive_remote_file=self.google_drive_remote_file, dev_inode=self.dev_inode)
 
   def __str__(self):
     return self.ToString()
@@ -1509,6 +1530,8 @@ class PathInfo(object):
         out += ', xattr-hash=%r' % binascii.b2a_hex(self.xattr_hash).decode('ascii')
     if self.xattr_keys:
       out += ', xattr-keys=%r' % self.xattr_keys
+    if self.google_drive_remote_file:
+      out += ', google_drive_remote_file'
     if self.dev_inode is not None:
       out += ', dev-inode=%r' % (self.dev_inode,)
     return out
@@ -1522,6 +1545,9 @@ class PathInfo(object):
       itemized = PathInfo.GetItemizedDiff(dup_path_info, self, ignore_paths=True)
       if not itemized.HasDiffs():
         return dup_path_info
+
+  def HasFileContents(self):
+    return self.path_type == PathInfo.TYPE_FILE and not self.google_drive_remote_file
 
   def ToProto(self, pb=None):
     try:
@@ -1542,6 +1568,7 @@ class PathInfo(object):
       if self.xattr_hash is not None:
         pb.xattr_hash = self.xattr_hash
       pb.xattr_keys[:] = self.xattr_keys
+      pb.google_drive_remote_file = self.google_drive_remote_file
     except ValueError:
       print('*** Error in ToProto for path %r' % self.path)
       raise
@@ -1672,8 +1699,7 @@ class Manifest(object):
     sha256_to_pathinfos = {}
     for path in self.GetPaths():
       path_info = self.GetPathInfo(path)
-      if (path_info.path_type == PathInfo.TYPE_FILE
-          and path_info.size >= min_file_size):
+      if (path_info.HasFileContents() and path_info.size >= min_file_size):
         assert path_info.sha256 is not None
         if path_info.sha256 not in sha256_to_pathinfos:
           sha256_to_pathinfos[path_info.sha256] = []
@@ -1684,7 +1710,7 @@ class Manifest(object):
     size_to_pathinfos = {}
     for path in self.GetPaths():
       path_info = self.GetPathInfo(path)
-      if path_info.path_type == PathInfo.TYPE_FILE:
+      if path_info.HasFileContents():
         assert path_info.size is not None
         if path_info.size >= min_file_size:
           if path_info.size not in size_to_pathinfos:
@@ -1961,7 +1987,7 @@ class CheckpointCreator(object):
       self._AddPath(path, full_path, path_info, allow_replace=allow_replace)
       return
 
-    if path_info.path_type == PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       path_info.sha256 = basis_path_info.sha256
     self.manifest.AddPathInfo(path_info, allow_replace=allow_replace)
 
@@ -1971,7 +1997,7 @@ class CheckpointCreator(object):
       if self.verbose:
         print(itemized, file=self.output)
       return
-    if path_info.path_type == PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       path_info.sha256 = Sha256WithProgress(full_path, path_info, output=self.output)
     if path_info.sha256 != basis_path_info.sha256:
       itemized.checksum_diff = True
@@ -1987,7 +2013,7 @@ class CheckpointCreator(object):
     self._AddPathContents(path_info)
 
   def _AddPath(self, path, full_path, path_info, allow_replace=False):
-    if path_info.path_type == PathInfo.TYPE_FILE:
+    if path_info.HasFileContents():
       path_info.sha256 = Sha256WithProgress(full_path, path_info, output=self.output)
 
     itemized = path_info.GetItemized()
@@ -2017,9 +2043,19 @@ class CheckpointCreator(object):
       if CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK:
         CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK(self)
 
-      paths_to_sync = [ path_info.path for path_info in self.path_infos_to_sync ]
-      RsyncPaths(paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
-                 output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+      paths_to_sync = []
+      google_drive_remote_path_infos_to_sync = []
+      for path_info in self.path_infos_to_sync:
+        if not path_info.google_drive_remote_file:
+          paths_to_sync.append(path_info.path)
+        else:
+          google_drive_remote_path_infos_to_sync.append(path_info)
+      if paths_to_sync:
+        RsyncPaths(paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
+                   output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+      if google_drive_remote_path_infos_to_sync:
+        self._SyncGoogleDriveRemoteFiles(
+          google_drive_remote_path_infos_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath())
 
       if not self.dry_run:
         self._CleanUpRsyncXattrFalseCopies(
@@ -2040,15 +2076,15 @@ class CheckpointCreator(object):
 
   def _ReQueuePathsModifiedSinceManifest(self, path, first_requeued):
     expected_path_info = self.manifest.GetPathInfo(path)
-    if expected_path_info.path_type == PathInfo.TYPE_FILE:
+    if expected_path_info.HasFileContents():
       assert expected_path_info.sha256
     full_path = os.path.join(self.checkpoint.GetContentRootPath(), path)
     checkpoint_path_info = PathInfo.FromPath(path, full_path)
-    if checkpoint_path_info.path_type == PathInfo.TYPE_FILE:
+    if checkpoint_path_info.HasFileContents():
       checkpoint_path_info.sha256 = expected_path_info.sha256
     itemized = PathInfo.GetItemizedDiff(checkpoint_path_info, expected_path_info)
     if not itemized.HasDiffs():
-      if checkpoint_path_info.path_type == PathInfo.TYPE_FILE:
+      if checkpoint_path_info.HasFileContents():
         checkpoint_path_info.sha256 = Sha256WithProgress(
           full_path, checkpoint_path_info, output=self.output)
         if checkpoint_path_info.sha256 == expected_path_info.sha256:
@@ -2059,6 +2095,29 @@ class CheckpointCreator(object):
       print("*** Warning: Paths changed since syncing, checking...", file=self.output)
     self._AddPathIfChanged(path, allow_replace=True)
     return True
+
+  def _SyncGoogleDriveRemoteFiles(self, path_infos, src_root_path, dest_root_path):
+    for path_info in path_infos:
+      if self.verbose:
+        print(path_info.GetItemized(), file=self.output)
+      if self.dry_run:
+        continue
+      assert path_info.path_type == PathInfo.TYPE_FILE and path_info.google_drive_remote_file
+      src_path = os.path.join(src_root_path, path_info.path)
+      dest_path = os.path.join(dest_root_path, path_info.path)
+      f = open(dest_path, 'w')
+      f.close()
+      os.utime(dest_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
+      shutil.copymode(src_path, dest_path, follow_symlinks=False)
+      shutil.chown(dest_path, path_info.uid, path_info.gid)
+      src_xattr = xattr.xattr(src_path)
+      dest_xattr = xattr.xattr(dest_path)
+      for key in src_xattr:
+        try:
+          value = src_xattr[key]
+        except KeyError as e:
+          continue
+        dest_xattr[key] = value
 
   def _CleanUpRsyncXattrFalseCopies(self, path_infos, src_root_dir, dest_root_dir):
     for path_info in path_infos:
@@ -2167,7 +2226,7 @@ class CheckpointApplier(object):
       if self.verbose:
         print(itemized, file=self.output)
       return
-    if dest_path_info.path_type == PathInfo.TYPE_FILE:
+    if dest_path_info.HasFileContents():
       dest_path_info.sha256 = Sha256WithProgress(full_path, dest_path_info, output=self.output)
     if dest_path_info.sha256 != src_path_info.sha256:
       itemized.checksum_diff = True
@@ -2358,11 +2417,11 @@ class ManifestDiffDumper(object):
       if has_diffs or self.verbose:
         dup_analyze_result = None
         if second_path_info is None:
-          if first_path_info.path_type == PathInfo.TYPE_FILE:
+          if first_path_info.HasFileContents():
             dup_analyze_result = AnalyzePathInfoDups(
               first_path_info, sha256_to_second_pathinfos.get(first_path_info.sha256, []),
               replacing_previous=False, verbose=self.verbose)
-        elif second_path_info.path_type == PathInfo.TYPE_FILE:
+        elif second_path_info.HasFileContents():
           dup_analyze_result = AnalyzePathInfoDups(
             second_path_info, sha256_to_first_pathinfos.get(second_path_info.sha256, []),
             replacing_previous=True, verbose=self.verbose)
@@ -2461,7 +2520,7 @@ class ManifestVerifier(object):
       if self.verbose:
         print(itemized, file=self.output)
       return
-    if src_path_info.path_type == PathInfo.TYPE_FILE:
+    if src_path_info.HasFileContents():
       src_path_info.sha256 = Sha256WithProgress(full_path, src_path_info, output=self.output)
       self.stats.total_checksummed_paths += 1
       self.stats.total_checksummed_size += src_path_info.size
