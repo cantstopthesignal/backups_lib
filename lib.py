@@ -247,6 +247,8 @@ IGNORED_XATTR_KEYS = [
   'com.apple.lastuseddate#PS',
   'com.apple.macl',
   'com.apple.quarantine',
+  'user.drive.can_manage_team_drive_members',
+  'user.drive.md5',
 ]
 
 
@@ -1870,7 +1872,7 @@ class CheckpointCreator(object):
     self.name = name
     self.checkpoint = None
     self.manifest = None
-    self.paths_to_sync = []
+    self.path_infos_to_sync = []
     self.file_enumerator = FileEnumerator(src_root_dir, output, filters=filters, verbose=verbose)
     self.total_paths = 0
     self.total_checkpoint_paths = 0
@@ -1996,7 +1998,7 @@ class CheckpointCreator(object):
     self._AddPathContents(path_info)
 
   def _AddPathContents(self, path_info):
-    self.paths_to_sync.append(path_info.path)
+    self.path_infos_to_sync.append(path_info)
     self.total_checkpoint_paths += 1
     if path_info.size is not None:
       self.total_checkpoint_size += path_info.size
@@ -2007,7 +2009,7 @@ class CheckpointCreator(object):
 
     max_retries = 5
     num_retries_left = max_retries
-    while self.paths_to_sync:
+    while self.path_infos_to_sync:
       if not num_retries_left:
         raise Exception('Failed to create checkpoint after %d retries' % max_retries)
       num_retries_left -= 1
@@ -2015,16 +2017,21 @@ class CheckpointCreator(object):
       if CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK:
         CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK(self)
 
-      RsyncPaths(self.paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
+      paths_to_sync = [ path_info.path for path_info in self.path_infos_to_sync ]
+      RsyncPaths(paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
                  output=self.output, dry_run=self.dry_run, verbose=self.verbose)
 
+      if not self.dry_run:
+        self._CleanUpRsyncXattrFalseCopies(
+          self.path_infos_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath())
+
       paths_just_synced_set = set()
-      for path in self.paths_to_sync:
-        paths_just_synced_set.add(path)
-        parent_dir = os.path.dirname(path)
+      for path_info in self.path_infos_to_sync:
+        paths_just_synced_set.add(path_info.path)
+        parent_dir = os.path.dirname(path_info.path)
         if parent_dir:
           paths_just_synced_set.add(parent_dir)
-      self.paths_to_sync = []
+      self.path_infos_to_sync = []
 
       first_requeued = True
       for path in sorted(paths_just_synced_set):
@@ -2052,6 +2059,21 @@ class CheckpointCreator(object):
       print("*** Warning: Paths changed since syncing, checking...", file=self.output)
     self._AddPathIfChanged(path, allow_replace=True)
     return True
+
+  def _CleanUpRsyncXattrFalseCopies(self, path_infos, src_root_dir, dest_root_dir):
+    for path_info in path_infos:
+      if path_info.path_type != PathInfo.TYPE_DIR and path_info.path_type != PathInfo.TYPE_FILE:
+        continue
+      dest_xattr_data = xattr.xattr(os.path.join(dest_root_dir, path_info.path))
+      dest_keys = list(dest_xattr_data.keys())
+      if not dest_keys:
+        return
+      src_xattr_data = xattr.xattr(os.path.join(src_root_dir, path_info.path))
+      for key in dest_keys:
+        if key not in src_xattr_data:
+          if self.verbose:
+            print('Removing unexpected xattr from dest path %s: %r' % (EscapePath(path_info.path), key))
+          dest_xattr_data.remove(key)
 
   def _WriteBasisInfo(self):
     if not self.dry_run and self.basis_path is not None:
