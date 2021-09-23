@@ -282,11 +282,17 @@ class MtimePreserver(object):
         pass
 
   def PreserveMtime(self, path):
+    path = os.path.normpath(path)
     if path not in self.preserved_path_mtimes:
       self.preserved_path_mtimes[path] = os.lstat(path).st_mtime
 
   def PreserveParentMtime(self, path):
+    path = os.path.normpath(path)
     self.PreserveMtime(os.path.dirname(path))
+
+  def RemovePreservationForPath(self, path):
+    path = os.path.normpath(path)
+    self.preserved_path_mtimes.pop(path, None)
 
 
 @contextlib.contextmanager
@@ -427,12 +433,16 @@ def Sha256WithProgress(full_path, path_info, output):
   return hasher.digest()
 
 
+def Xattr(path):
+  return xattr.xattr(path, options=xattr.XATTR_NOFOLLOW)
+
+
 def ParseXattrData(path, path_type, ignored_keys=[]):
   xattr_hash = None
   xattr_keys = []
   google_drive_remote_file = False
 
-  xattr_data = xattr.xattr(path)
+  xattr_data = Xattr(path)
   xattr_list = []
   for key in sorted(xattr_data.keys()):
     if key in ignored_keys:
@@ -1032,6 +1042,110 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
     print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
+
+
+class PathSyncer(object):
+  def __init__(self, paths, src_root_path, dest_root_path, output, dry_run=False, verbose=False):
+    self.paths = paths
+    self.src_root_path = src_root_path
+    self.dest_root_path = dest_root_path
+    self.output = output
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.mtime_preserver = MtimePreserver()
+
+  def Sync(self):
+    with self.mtime_preserver:
+      for path in sorted(self.paths):
+        self._SyncPath(path)
+
+  def _SyncPath(self, path):
+    src_path = os.path.join(self.src_root_path, path)
+    path_info = PathInfo.FromPath(path, src_path)
+    dest_path = os.path.join(self.dest_root_path, path)
+    if os.path.lexists(dest_path):
+      dest_path_info = PathInfo.FromPath(path, dest_path)
+    else:
+      dest_path_info = None
+    itemized = PathInfo.GetItemizedDiff(path_info, dest_path_info)
+
+    if self.verbose:
+      print(itemized, file=self.output)
+
+    if self.dry_run:
+      return
+
+    if not dest_path_info:
+      self._EnsureParentDirsSynced(path)
+
+    if path_info.google_drive_remote_file:
+      assert path_info.path_type == PathInfo.TYPE_FILE
+      self._SyncGoogleDriveRemoteFile(path_info, dest_path_info, src_path, dest_path)
+    elif path_info.path_type == PathInfo.TYPE_DIR:
+      self._SyncDir(path_info, dest_path_info, src_path, dest_path)
+    else:
+      self._SyncFileOrSymlink(path_info, dest_path_info, src_path, dest_path)
+
+  def _EnsureParentDirsSynced(self, path):
+    parent_dir = os.path.dirname(path)
+    parent_dest_dir = os.path.join(self.dest_root_path, parent_dir)
+    parent_dirs_to_sync = []
+    while parent_dir and not os.path.lexists(parent_dest_dir):
+      parent_dirs_to_sync.append((parent_dir, parent_dest_dir))
+      parent_dir = os.path.dirname(parent_dir)
+      parent_dest_dir = os.path.join(self.dest_root_path, parent_dir)
+    if not parent_dirs_to_sync:
+      return
+    for (parent_dir, parent_dest_dir) in reversed(parent_dirs_to_sync):
+      parent_src_dir = os.path.join(self.src_root_path, parent_dir)
+      parent_src_path_info = PathInfo.FromPath(parent_dir, parent_src_dir)
+      self._SyncDir(parent_src_path_info, None, parent_src_dir, parent_dest_dir)
+
+  def _SyncGoogleDriveRemoteFile(self, path_info, dest_path_info, src_path, dest_path):
+    assert dest_path_info is None
+
+    self.mtime_preserver.PreserveParentMtime(dest_path)
+    f = open(dest_path, 'w')
+    f.close()
+    self._SyncXattrs(src_path, dest_path)
+    self._SyncMeta(path_info, src_path, dest_path)
+
+  def _SyncDir(self, path_info, dest_path_info, src_path, dest_path):
+    if dest_path_info:
+      assert dest_path_info.path_type == PathInfo.TYPE_DIR
+    else:
+      self.mtime_preserver.PreserveParentMtime(dest_path)
+      os.mkdir(dest_path)
+    self.mtime_preserver.RemovePreservationForPath(dest_path)
+    self._SyncXattrs(src_path, dest_path)
+    self._SyncMeta(path_info, src_path, dest_path)
+
+  def _SyncFileOrSymlink(self, path_info, dest_path_info, src_path, dest_path):
+    assert dest_path_info is None or dest_path_info.path_type == path_info.path_type
+    self.mtime_preserver.PreserveParentMtime(dest_path)
+    dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=False)
+    assert dest_path == dest_path_result
+    self._SyncXattrs(src_path, dest_path)
+    self._SyncMeta(path_info, src_path, dest_path)
+
+  def _SyncMeta(self, path_info, src_path, dest_path):
+    os.utime(dest_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
+    shutil.copymode(src_path, dest_path, follow_symlinks=False)
+    os.chown(dest_path, path_info.uid, path_info.gid, follow_symlinks=False)
+
+  def _SyncXattrs(self, src_path, dest_path):
+    src_xattr = Xattr(src_path)
+    dest_xattr = Xattr(dest_path)
+    src_xattr_keys = src_xattr.keys()
+    for key in dest_xattr:
+      if key not in src_xattr_keys:
+        del dest_xattr[key]
+    for key in src_xattr_keys:
+      try:
+        value = src_xattr[key]
+      except KeyError as e:
+        continue
+      dest_xattr[key] = value
 
 
 class AnalyzePathInfoDupsResult(object):
@@ -2043,30 +2157,20 @@ class CheckpointCreator(object):
       if CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK:
         CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK(self)
 
-      paths_to_sync = []
-      google_drive_remote_path_infos_to_sync = []
+      paths_to_sync_set = set()
       for path_info in self.path_infos_to_sync:
-        if not path_info.google_drive_remote_file:
-          paths_to_sync.append(path_info.path)
-        else:
-          google_drive_remote_path_infos_to_sync.append(path_info)
-      if paths_to_sync:
-        RsyncPaths(paths_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath(),
-                   output=self.output, dry_run=self.dry_run, verbose=self.verbose)
-      if google_drive_remote_path_infos_to_sync:
-        self._SyncGoogleDriveRemoteFiles(
-          google_drive_remote_path_infos_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath())
-
-      if not self.dry_run:
-        self._CleanUpRsyncXattrFalseCopies(
-          self.path_infos_to_sync, self.src_root_dir, self.checkpoint.GetContentRootPath())
-
-      paths_just_synced_set = set()
-      for path_info in self.path_infos_to_sync:
-        paths_just_synced_set.add(path_info.path)
+        paths_to_sync_set.add(path_info.path)
         parent_dir = os.path.dirname(path_info.path)
         if parent_dir:
-          paths_just_synced_set.add(parent_dir)
+          paths_to_sync_set.add(parent_dir)
+
+      path_syncer = PathSyncer(
+        paths_to_sync_set,
+        self.src_root_dir, self.checkpoint.GetContentRootPath(),
+        output=self.output, dry_run=self.dry_run, verbose=self.verbose)
+      path_syncer.Sync()
+
+      paths_just_synced_set = paths_to_sync_set
       self.path_infos_to_sync = []
 
       first_requeued = True
@@ -2095,44 +2199,6 @@ class CheckpointCreator(object):
       print("*** Warning: Paths changed since syncing, checking...", file=self.output)
     self._AddPathIfChanged(path, allow_replace=True)
     return True
-
-  def _SyncGoogleDriveRemoteFiles(self, path_infos, src_root_path, dest_root_path):
-    for path_info in path_infos:
-      if self.verbose:
-        print(path_info.GetItemized(), file=self.output)
-      if self.dry_run:
-        continue
-      assert path_info.path_type == PathInfo.TYPE_FILE and path_info.google_drive_remote_file
-      src_path = os.path.join(src_root_path, path_info.path)
-      dest_path = os.path.join(dest_root_path, path_info.path)
-      f = open(dest_path, 'w')
-      f.close()
-      os.utime(dest_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
-      shutil.copymode(src_path, dest_path, follow_symlinks=False)
-      shutil.chown(dest_path, path_info.uid, path_info.gid)
-      src_xattr = xattr.xattr(src_path)
-      dest_xattr = xattr.xattr(dest_path)
-      for key in src_xattr:
-        try:
-          value = src_xattr[key]
-        except KeyError as e:
-          continue
-        dest_xattr[key] = value
-
-  def _CleanUpRsyncXattrFalseCopies(self, path_infos, src_root_dir, dest_root_dir):
-    for path_info in path_infos:
-      if path_info.path_type != PathInfo.TYPE_DIR and path_info.path_type != PathInfo.TYPE_FILE:
-        continue
-      dest_xattr_data = xattr.xattr(os.path.join(dest_root_dir, path_info.path))
-      dest_keys = list(dest_xattr_data.keys())
-      if not dest_keys:
-        return
-      src_xattr_data = xattr.xattr(os.path.join(src_root_dir, path_info.path))
-      for key in dest_keys:
-        if key not in src_xattr_data:
-          if self.verbose:
-            print('Removing unexpected xattr from dest path %s: %r' % (EscapePath(path_info.path), key))
-          dest_xattr_data.remove(key)
 
   def _WriteBasisInfo(self):
     if not self.dry_run and self.basis_path is not None:

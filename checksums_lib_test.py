@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xattr
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -27,6 +26,7 @@ from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import RenameFile
 from .test_util import SetMTime
+from .test_util import SetXattr
 from .test_util import TempDir
 
 from .lib_test_util import GetFileTreeManifest
@@ -292,8 +292,8 @@ def SyncTest():
     file2_renamed = CreateFile(parent1, 'f2_renamed', contents='1'*1025, mtime=None)
     file2_renamed2 = CreateFile(parent1, 'f2_renamed2', contents='1'*1025)
     RenameFile(file4, file4 + '_renamed')
-    xattr.setxattr(root_dir, 'example', b'example_value')
-    xattr.setxattr(parent1, 'example', b'example_value')
+    SetXattr(root_dir, 'example', b'example_value')
+    SetXattr(parent1, 'example', b'example_value')
     DeleteFileOrDir(file3)
     DeleteFileOrDir(parent2)
 
@@ -369,8 +369,8 @@ def SyncTest():
     file5 = CreateFile(parent1, 'f5', contents='4'*1025)
     DeleteFileOrDir(file2_renamed)
     DeleteFileOrDir(file2_renamed2)
-    xattr.setxattr(root_dir, 'example', b'example_value2')
-    xattr.setxattr(parent1, 'example', b'example_value2')
+    SetXattr(root_dir, 'example', b'example_value2')
+    SetXattr(parent1, 'example', b'example_value2')
 
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,

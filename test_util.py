@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import xattr
 
 from . import backups_main
 
@@ -57,6 +58,14 @@ def SetMTime(path, mtime=1500000000):
   if mtime is None:
     mtime = 1600000000
   os.utime(path, (mtime, mtime), follow_symlinks=False)
+
+
+def Xattr(path):
+  return xattr.xattr(path, options=xattr.XATTR_NOFOLLOW)
+
+
+def SetXattr(path, key, value):
+  xattr.setxattr(path, key, value, options=xattr.XATTR_NOFOLLOW)
 
 
 def CreateDir(parent_dir, child_dir, mtime=1500000000):

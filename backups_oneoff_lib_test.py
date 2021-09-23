@@ -10,7 +10,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import xattr
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -30,7 +29,9 @@ from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
+from .test_util import SetXattr
 from .test_util import TempDir
+from .test_util import Xattr
 
 from .lib_test_util import GetManifestItemized
 from .lib_test_util import DoVerifyManifest
@@ -111,17 +112,17 @@ def OneoffUpdateIgnoredXattrsTest():
       latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
 
       fileX = CreateFile(config.src_path, 'fX')
-      xattr.setxattr(fileX, 'example', b'example_value')
-      xattr.setxattr(fileX, 'com.apple.quarantine', b'quarantine1')
+      SetXattr(fileX, 'example', b'example_value')
+      SetXattr(fileX, 'com.apple.quarantine', b'quarantine1')
 
       fileT = CreateFile(config.src_path, 'fT')
-      xattr.setxattr(fileT, 'example', b'example_value2')
-      xattr.setxattr(fileT, 'com.apple.quarantine', b'quarantine4')
+      SetXattr(fileT, 'example', b'example_value2')
+      SetXattr(fileT, 'com.apple.quarantine', b'quarantine4')
 
       parent1 = CreateDir(config.src_path, 'par!')
       file3 = CreateFile(parent1, 'f3')
       file4 = CreateFile(parent1, 'f4')
-      xattr.setxattr(file4, 'example', b'example_value3')
+      SetXattr(file4, 'example', b'example_value3')
 
       DoCreateCheckpoint(
         config.src_path, config.checkpoints_dir, '2020-01-02-120000',
@@ -134,10 +135,10 @@ def OneoffUpdateIgnoredXattrsTest():
                          '>f+++++++ par!/f4',
                          'Transferring 5 of 6 paths (0b of 0b)'])
 
-      xattr.setxattr(fileX, 'com.apple.quarantine', b'quarantine2')
-      xattr.setxattr(file3, 'com.apple.quarantine', b'quarantine3')
-      xattr.removexattr(fileT, 'com.apple.quarantine')
-      xattr.setxattr(file4, 'example', b'example_value4')
+      SetXattr(fileX, 'com.apple.quarantine', b'quarantine2')
+      SetXattr(file3, 'com.apple.quarantine', b'quarantine3')
+      del Xattr(fileT)['com.apple.quarantine']
+      SetXattr(file4, 'example', b'example_value4')
 
       checkpoint_path2 = DoCreateBackup(
         config, backup_name='2020-01-03-120000',
@@ -257,17 +258,17 @@ def OneoffAddXattrKeysTest():
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
 
     fileX = CreateFile(config.src_path, 'fX')
-    xattr.setxattr(fileX, 'example', b'example_value')
-    xattr.setxattr(fileX, 'com.apple.quarantine', b'quarantine1')
+    SetXattr(fileX, 'example', b'example_value')
+    SetXattr(fileX, 'com.apple.quarantine', b'quarantine1')
 
     fileT = CreateFile(config.src_path, 'fT')
-    xattr.setxattr(fileT, 'example', b'example_value2')
-    xattr.setxattr(fileT, 'com.apple.quarantine', b'quarantine4')
+    SetXattr(fileT, 'example', b'example_value2')
+    SetXattr(fileT, 'com.apple.quarantine', b'quarantine4')
 
     parent1 = CreateDir(config.src_path, 'par!')
     file3 = CreateFile(parent1, 'f3')
     file4 = CreateFile(parent1, 'f4')
-    xattr.setxattr(file4, 'example', b'example_value3')
+    SetXattr(file4, 'example', b'example_value3')
 
     DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
@@ -387,7 +388,7 @@ def OneoffUpdateSomeFilesTest():
                        '>f+++++++ par!/f5',
                        'Transferring 4 of 7 paths (2kb of 2kb)'])
 
-    xattr.setxattr(fileX, 'example', b'example_value4')
+    SetXattr(fileX, 'example', b'example_value4')
     SetMTime(fileX, mtime=1510000000)
     SetMTime(file3, mtime=1510000000)
 

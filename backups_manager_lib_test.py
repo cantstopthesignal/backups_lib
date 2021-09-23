@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xattr
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -28,6 +27,7 @@ from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
+from .test_util import SetXattr
 from .test_util import TempDir
 
 from .lib_test_util import GetFileTreeManifest
@@ -83,7 +83,7 @@ def ApplyToBackupsTest():
                        'Transferring 5 of 8 paths (0b of 0b)'])
 
     file2 = CreateFile(parent1, 'f2')
-    xattr.setxattr(fileX, 'example', b'example_value')
+    SetXattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     SetMTime(parent1, None)
     file3 = CreateFile(config.src_path, 'f3_original', contents='1' * 1025)
@@ -318,7 +318,7 @@ def VerifyBackupsTest():
                        'Transferring 3 of 6 paths (1kb of 1kb)'])
 
     file2 = CreateFile(parent1, 'f2')
-    xattr.setxattr(fileX, 'example', b'example_value')
+    SetXattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     SetMTime(parent1, None)
     DeleteFileOrDir(file3)
@@ -407,7 +407,7 @@ def VerifyBackupsTest():
 
       backup2 = backups_manager.GetBackup('2020-01-02-120000')
       SetMTime(os.path.join(backup2.GetContentRootPath(), 'par!'), None)
-      xattr.setxattr(os.path.join(backup2.GetContentRootPath(), 'fX'), 'example', b'example_value2')
+      SetXattr(os.path.join(backup2.GetContentRootPath(), 'fX'), 'example', b'example_value2')
     finally:
       backups_manager.Close()
 
@@ -1506,11 +1506,11 @@ def ExtractFromBackupsTest():
                          '*deleting par!/f_\\r \\xc2\\xa9'])
 
       fileX = CreateFile(config.src_path, 'fX')
-      xattr.setxattr(fileX, 'example', b'example_value')
+      SetXattr(fileX, 'example', b'example_value')
       SetMTime(fileT, None)
       file3 = CreateFile(config.src_path, 'f3')
       parent1 = CreateDir(config.src_path, 'par!')
-      xattr.setxattr(parent1, 'example', b'example_value2')
+      SetXattr(parent1, 'example', b'example_value2')
       SetMTime(parent1, None)
       file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
       file4 = CreateFile(parent1, 'f4')
@@ -1537,7 +1537,7 @@ def ExtractFromBackupsTest():
                          '>f+++++++ par2/f8',
                          'Transferring 12 of 13 paths (4kb of 4kb)'])
 
-      xattr.setxattr(parent2, 'example', b'example_value3')
+      SetXattr(parent2, 'example', b'example_value3')
       file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
       file9 = CreateFile(parent2, 'f9', contents='2' * 1025)
 
@@ -1929,8 +1929,8 @@ def MergeIntoBackupsTest():
         file5_full_path = os.path.join(backup5.GetContentRootPath(), file5_path)
         file7_path = 'par/f7_from'
         file7_full_path = os.path.join(backup5.GetContentRootPath(), file7_path)
-        xattr.setxattr(file5_full_path, 'example', b'v1')
-        xattr.setxattr(file7_full_path, 'example', b'v1')
+        SetXattr(file5_full_path, 'example', b'v1')
+        SetXattr(file7_full_path, 'example', b'v1')
 
         manifest.AddPathInfo(
           lib.PathInfo.FromPath(file5_path, file5_full_path), allow_replace=True)
@@ -1977,10 +1977,10 @@ def DeleteInBackupsTest():
                        'Transferring 4 of 7 paths (0b of 0b)'])
 
     fileX = CreateFile(config.src_path, 'fX')
-    xattr.setxattr(fileX, 'example', b'example_value')
+    SetXattr(fileX, 'example', b'example_value')
     SetMTime(fileT, None)
     file3 = CreateFile(config.src_path, 'f3')
-    xattr.setxattr(parent1, 'example', b'example_value2')
+    SetXattr(parent1, 'example', b'example_value2')
     file4 = CreateFile(parent1, 'f4')
     parent2 = CreateDir(config.src_path, 'par2')
     ln2 = CreateSymlink(config.src_path, 'ln2', 'fT')
@@ -2000,7 +2000,7 @@ def DeleteInBackupsTest():
                        '>f+++++++ par2/f8',
                        'Transferring 9 of 12 paths (1kb of 1kb)'])
 
-    xattr.setxattr(parent2, 'example', b'example_value3')
+    SetXattr(parent2, 'example', b'example_value3')
 
     DoCreateBackup(
       config, backup_name='2020-01-04-120000',

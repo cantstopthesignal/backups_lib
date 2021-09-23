@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import xattr
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -30,7 +29,9 @@ from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
+from .test_util import SetXattr
 from .test_util import TempDir
+from .test_util import Xattr
 
 from .lib_test_util import GetManifestItemized
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
@@ -154,7 +155,7 @@ def CollapseApfsOperationsInOutput(output_lines):
 
 def CreateGoogleDriveRemoteFile(parent_dir, filename):
   path = CreateFile(parent_dir, filename, contents='IGNORE')
-  xattr_data = xattr.xattr(path)
+  xattr_data = Xattr(path)
   xattr_data[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = (
     ('%sdocument' % lib.GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX).encode('ascii'))
   return path
@@ -515,8 +516,8 @@ def CreateTest():
     finally:
       checkpoint2.Close()
 
-    xattr.setxattr(src_root, 'example', b'example_value')
-    xattr.setxattr(src_root, 'example2', b'example_value2')
+    SetXattr(src_root, 'example', b'example_value')
+    SetXattr(src_root, 'example2', b'example_value2')
     SetMTime(file1, None)
     file2 = CreateFile(parent1, 'f2', contents='abc')
 
@@ -556,10 +557,15 @@ def CreateTest():
 
     file2 = CreateFile(parent1, 'f2', contents='def')
     SetMTime(parent1, 1510000000)
+    parent2 = CreateDir(src_root, 'par2')
+    file2b = CreateFile(parent2, 'f2b', contents='def')
 
     def PreSyncContentsTestHook(checkpoint_creator):
       CreateFile(parent1, 'f2', contents='ghi')
+      SetXattr(parent1, 'example', b'example_value_5')
       SetMTime(parent1, 1520000000)
+      CreateFile(parent2, 'f2b', contents='jkl')
+      SetMTime(parent2, 1520000000)
 
     lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = PreSyncContentsTestHook
     try:
@@ -569,14 +575,20 @@ def CreateTest():
         readonly=False,
         expected_output=['.d..t.... par!',
                          '>fc...... par!/f2',
+                         '>d+++++++ par2',
+                         '>f+++++++ par2/f2b',
                          '*** Warning: Paths changed since syncing, checking...',
-                         '.d..t.... par!',
+                         '.d..t...x par!',
                          '>fc...... par!/f2',
-                         'Transferring 4 of 8 paths (6b of 35b)'])
+                         '>d+++++++ par2',
+                         '>f+++++++ par2/f2b',
+                         'Transferring 8 of 12 paths (12b of 41b)'])
       try:
         AssertLinesEqual(GetManifestDiffItemized(manifest3, manifest4),
-                         ['.d..t.... par!',
-                          '>fc...... par!/f2'])
+                         ['.d..t...x par!',
+                          '>fc...... par!/f2',
+                          '>d+++++++ par2',
+                          '>f+++++++ par2/f2b'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
                          ['.d..t.....x. ./',
                           '>f++++++++++ .staged_backup_filter',
@@ -613,7 +625,7 @@ def CreateTest():
                          '*** Warning: Paths changed since syncing, checking...',
                          '.d..t.... par!',
                          '>f+++++++ par!/f4',
-                         'Transferring 5 of 10 paths (0b of 32b)'])
+                         'Transferring 5 of 12 paths (0b of 35b)'])
       try:
         AssertLinesEqual(GetManifestDiffItemized(manifest4, manifest5),
                          ['.d..t.... par!',
@@ -623,7 +635,9 @@ def CreateTest():
                           '>f++++++++++ .staged_backup_filter',
                           '>f++++++++++ par!/f2',
                           '>f++++++++++ par!/f3',
-                          '>f++++++++++ par!/f_\r'])
+                          '>f++++++++++ par!/f_\r',
+                          'cd++++++++++ par2/',
+                          '>f++++++++++ par2/f2b'])
         AssertBasisInfoFileEquals(checkpoint5.GetMetadataPath(), checkpoint4.GetImagePath())
         DoVerify(manifest5.GetPath(), checkpoint5.GetContentRootPath())
       finally:
@@ -685,13 +699,13 @@ def ApplyDryRunTest():
     file1 = CreateFile(parent1, 'f_\r')
     SetMTime(parent1)
     SetMTime(src_root)
-    xattr.setxattr(src_root, 'example', b'example_value')
+    SetXattr(src_root, 'example', b'example_value')
 
     dest_root = CreateDir(test_dir, 'dest')
     dest_parent1 = CreateDir(dest_root, 'del_par!')
     deleted_file1 = CreateFile(dest_parent1, 'del')
     SetMTime(dest_root)
-    xattr.setxattr(dest_root, 'example', b'example_value')
+    SetXattr(dest_root, 'example', b'example_value')
 
     checkpoint1, manifest1 = DoCreate(
       src_root, checkpoints_dir, '1',
@@ -723,7 +737,7 @@ def ApplyTest():
   with TempDir() as test_dir:
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
-    xattr.setxattr(src_root, 'example', b'example_value')
+    SetXattr(src_root, 'example', b'example_value')
     parent1 = CreateDir(src_root, 'par!')
     file1 = CreateFile(parent1, 'f_\r', mtime=-2082844800)
     ln2 = CreateSymlink(parent1, 'ln2', 'f_\r')
@@ -733,7 +747,7 @@ def ApplyTest():
 
     dest_root = CreateDir(test_dir, 'dest')
     dest_parent1 = CreateDir(dest_root, 'del_par!')
-    xattr.setxattr(dest_root, 'example', b'example_value')
+    SetXattr(dest_root, 'example', b'example_value')
     deleted_file1 = CreateFile(dest_parent1, 'del')
 
     # Initial sync
@@ -772,8 +786,8 @@ def ApplyTest():
     file2 = CreateFile(parent1, 'f2')
     # One with ignored xattr
     file3 = CreateFile(src_root, 'f3')
-    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', b'Initial')
-    xattr.setxattr(file3, 'example', b'example_value_initial')
+    SetXattr(file3, 'com.apple.lastuseddate#PS', b'Initial')
+    SetXattr(file3, 'example', b'example_value_initial')
 
     checkpoint2, manifest2 = DoCreate(
       src_root, checkpoints_dir, '2', last_checkpoint_path=checkpoint1.GetImagePath(),
@@ -790,7 +804,7 @@ def ApplyTest():
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> f_\\r'])
-      AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
                    ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint2.Close()
@@ -801,9 +815,9 @@ def ApplyTest():
     AssertEmptyRsync(src_root, dest_root)
 
     # Set xattr of root dir
-    xattr.setxattr(src_root, 'example', b'example_value_new')
+    SetXattr(src_root, 'example', b'example_value_new')
     # And adjust an ignored xattr
-    xattr.setxattr(file3, 'com.apple.lastuseddate#PS', b'Modified')
+    SetXattr(file3, 'com.apple.lastuseddate#PS', b'Modified')
 
     checkpoint3, manifest3 = DoCreate(
       src_root, checkpoints_dir, '3', last_checkpoint_path=checkpoint2.GetImagePath(),
@@ -855,7 +869,7 @@ def ApplyTest():
     ln2 = CreateSymlink(parent1, 'ln2', 'INVALID')
     ln1_dir = CreateSymlink(src_root, 'ln1_dir', 'par!/f2')
     DeleteFileOrDir(ln3)
-    xattr.setxattr(file3, 'example', b'example_value_modified')
+    SetXattr(file3, 'example', b'example_value_modified')
 
     checkpoint5, manifest5 = DoCreate(
       src_root, checkpoints_dir, '5', last_checkpoint_path=checkpoint4.GetImagePath(),
@@ -874,7 +888,7 @@ def ApplyTest():
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> INVALID'])
-      AssertEquals(sorted(xattr.xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
                    ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint5.Close()
