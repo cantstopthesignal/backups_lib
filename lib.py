@@ -2,6 +2,7 @@ import argparse
 import binascii
 import contextlib
 import difflib
+import errno
 import fcntl
 import getpass
 import hashlib
@@ -73,6 +74,15 @@ DEFRAGMENT_WITH_COMPACT_WITH_RESIZE = False
 
 GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY = 'user.drive.mime_type'
 GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX = 'application/vnd.google-apps.'
+
+GOOGLE_DRIVE_STUB_CONTENTS_XATTR_KEYS = set([
+  'user.drive.email',
+  'user.drive.id',
+  'user.drive.mime_type',
+  'user.drive.item_open_url',
+])
+
+OPEN_CONTENT_FUNCTION = open
 
 
 class PathMatcher(object):
@@ -384,7 +394,7 @@ class EscapeKeyDetector(threading.Thread):
 def Sha256(path):
   BLOCKSIZE = 65536
   hasher = hashlib.sha256()
-  with open(path, 'rb') as f:
+  with OPEN_CONTENT_FUNCTION(path, 'rb') as f:
     buf = f.read(BLOCKSIZE)
     while len(buf) > 0:
       hasher.update(buf)
@@ -405,7 +415,10 @@ def Sha256WithProgress(full_path, path_info, output):
   read_bytes_str_max_len = 0
   print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
   last_progress_time = 0
-  with open(full_path, 'rb') as f:
+  if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
+    hasher.update(GetGoogleDriveRemoteFileStubContents(full_path))
+    return hasher.digest()
+  with OPEN_CONTENT_FUNCTION(full_path, 'rb') as f:
     buf = f.read(BLOCKSIZE)
     read_bytes += len(buf)
     while len(buf) > 0:
@@ -471,6 +484,30 @@ def ParseXattrData(path, path_type, ignored_keys=[]):
     hasher.update(byte_str)
     xattr_hash = hasher.digest()
   return xattr_hash, xattr_keys, google_drive_remote_file
+
+
+def GetGoogleDriveRemoteFileStubContents(path):
+  contents_map = {}
+  xattr_data = Xattr(path)
+  for key in sorted(xattr_data.keys()):
+    if key not in GOOGLE_DRIVE_STUB_CONTENTS_XATTR_KEYS:
+      continue
+    try:
+      value = xattr_data[key]
+    except KeyError as e:
+      continue
+    contents_map[key] = value.decode('utf8')
+  return json.dumps(contents_map).encode('utf8')
+
+
+def IsReadUnsupportedContentFile(path):
+  try:
+    with OPEN_CONTENT_FUNCTION(path, 'r') as f:
+      f.read(1)
+  except OSError as e:
+    if e.errno == errno.ENOTSUP:
+      return True
+  return False
 
 
 def GetPathTreeSize(path, files_only=False, excludes=[]):
@@ -1078,10 +1115,7 @@ class PathSyncer(object):
     if not dest_path_info:
       self._EnsureParentDirsSynced(path)
 
-    if path_info.google_drive_remote_file:
-      assert path_info.path_type == PathInfo.TYPE_FILE
-      self._SyncGoogleDriveRemoteFile(path_info, dest_path_info, src_path, dest_path)
-    elif path_info.path_type == PathInfo.TYPE_DIR:
+    if path_info.path_type == PathInfo.TYPE_DIR:
       self._SyncDir(path_info, dest_path_info, src_path, dest_path)
     else:
       self._SyncFileOrSymlink(path_info, dest_path_info, src_path, dest_path)
@@ -1101,15 +1135,6 @@ class PathSyncer(object):
       parent_src_path_info = PathInfo.FromPath(parent_dir, parent_src_dir)
       self._SyncDir(parent_src_path_info, None, parent_src_dir, parent_dest_dir)
 
-  def _SyncGoogleDriveRemoteFile(self, path_info, dest_path_info, src_path, dest_path):
-    assert dest_path_info is None
-
-    self.mtime_preserver.PreserveParentMtime(dest_path)
-    f = open(dest_path, 'w')
-    f.close()
-    self._SyncXattrs(src_path, dest_path)
-    self._SyncMeta(path_info, src_path, dest_path)
-
   def _SyncDir(self, path_info, dest_path_info, src_path, dest_path):
     if dest_path_info:
       assert dest_path_info.path_type == PathInfo.TYPE_DIR
@@ -1123,8 +1148,13 @@ class PathSyncer(object):
   def _SyncFileOrSymlink(self, path_info, dest_path_info, src_path, dest_path):
     assert dest_path_info is None or dest_path_info.path_type == path_info.path_type
     self.mtime_preserver.PreserveParentMtime(dest_path)
-    dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=False)
-    assert dest_path == dest_path_result
+    if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(src_path):
+      assert dest_path_info is None or dest_path_info.path_type == PathInfo.TYPE_FILE
+      with open(dest_path, 'wb') as f:
+        f.write(GetGoogleDriveRemoteFileStubContents(src_path))
+    else:
+      dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=False)
+      assert dest_path == dest_path_result
     self._SyncXattrs(src_path, dest_path)
     self._SyncMeta(path_info, src_path, dest_path)
 
@@ -1485,7 +1515,7 @@ class PathInfo(object):
     assert pb.path_type in PathInfo.TYPES
     google_drive_remote_file = pb.google_drive_remote_file
     size = None
-    if pb.path_type == PathInfo.TYPE_FILE and not google_drive_remote_file:
+    if pb.path_type == PathInfo.TYPE_FILE:
       size = int(pb.size)
     uid = int(pb.uid)
     gid = int(pb.gid)
@@ -1526,7 +1556,9 @@ class PathInfo(object):
       path_type = PathInfo.TYPE_FILE
       xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
         full_path, path_type, ignored_keys=ignored_xattr_keys)
-      if not google_drive_remote_file:
+      if google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
+        size = len(GetGoogleDriveRemoteFileStubContents(full_path))
+      if size is None:
         size = stat_result.st_size
     elif stat.S_ISLNK(stat_result.st_mode):
       path_type = PathInfo.TYPE_SYMLINK
@@ -1661,7 +1693,7 @@ class PathInfo(object):
         return dup_path_info
 
   def HasFileContents(self):
-    return self.path_type == PathInfo.TYPE_FILE and not self.google_drive_remote_file
+    return self.path_type == PathInfo.TYPE_FILE
 
   def ToProto(self, pb=None):
     try:
@@ -1784,7 +1816,7 @@ class Manifest(object):
 
   def Dump(self, output):
     for path in sorted(self.path_map.keys()):
-      print(self.path_map[path], file=output)
+      print(self.path_map[path].ToString(shorten_sha256=True, shorten_xattr_hash=True), file=output)
 
   def GetItemized(self):
     itemizeds = []
@@ -2020,26 +2052,29 @@ class CheckpointCreator(object):
     self.total_checkpoint_size = 0
 
   def Create(self):
+    success = False
     try:
       self.checkpoint = Checkpoint.New(
         self.checkpoints_root_dir, self.name, encryption_manager=self.encryption_manager,
         manifest_only=self.manifest_only, encrypt=self.encrypt, dry_run=self.dry_run)
-
-      self._CreateInternal()
-
-      self.checkpoint.Close()
-
-      self._PrintResults()
-      return True
+      try:
+        if self._CreateInternal():
+          self._PrintResults()
+          success = True
+      finally:
+        self.checkpoint.Close()
     except Exception as e:
-      if self.checkpoint is not None:
+      success = False
+      raise
+    finally:
+      if not success and self.checkpoint is not None:
         try:
           self.checkpoint.Delete()
-        except Exception as e2:
-          print('Suppressed exception: %s' % e2)
+        except Exception as e:
+          print('Suppressed exception: %s' % e)
           traceback.print_exc()
         self.checkpoint = None
-      raise
+    return success
 
   def _CreateInternal(self):
     if not self.dry_run:
@@ -2058,11 +2093,13 @@ class CheckpointCreator(object):
     self._HandleExistingPaths(existing_paths, next_new_path=None)
 
     if not self.manifest_only:
-      self._SyncContents()
+      if not self._SyncContents():
+        return False
 
     self._WriteBasisInfo()
     if not self.dry_run:
       self.manifest.Write()
+    return True
 
   def _PrintResults(self):
     if self.basis_manifest is None:
@@ -2145,13 +2182,14 @@ class CheckpointCreator(object):
 
   def _SyncContents(self):
     if self.dry_run:
-      return
+      return True
 
     max_retries = 5
     num_retries_left = max_retries
     while self.path_infos_to_sync:
       if not num_retries_left:
-        raise Exception('Failed to create checkpoint after %d retries' % max_retries)
+        print('*** Error: Failed to create checkpoint after %d retries' % max_retries, file=self.output)
+        return False
       num_retries_left -= 1
 
       if CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK:
@@ -2177,6 +2215,7 @@ class CheckpointCreator(object):
       for path in sorted(paths_just_synced_set):
         if self._ReQueuePathsModifiedSinceManifest(path, first_requeued):
           first_requeued = False
+    return True
 
   def _ReQueuePathsModifiedSinceManifest(self, path, first_requeued):
     expected_path_info = self.manifest.GetPathInfo(path)
