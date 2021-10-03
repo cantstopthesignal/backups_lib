@@ -39,7 +39,7 @@ from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 
 
-def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=lib.RSYNC_FILTERS):
+def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, filters=lib.STAGED_BACKUP_DEFAULT_FILTERS):
   cmd = [lib.GetRsyncBin(),
          '-aXi',
          '--delete',
@@ -52,9 +52,9 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False, rsync_filters=l
   if dry_run:
     cmd.append('-n')
 
-  if rsync_filters is not None:
-    for rsync_filter in rsync_filters:
-      cmd.append(rsync_filter.GetArg())
+  if filters is not None:
+    for a_filter in filters:
+      cmd.append(a_filter.GetRsyncArg())
 
   cmd.append(lib.MakeRsyncDirname(from_path))
   cmd.append(lib.MakeRsyncDirname(to_path))
@@ -485,7 +485,7 @@ def CreateTest():
 
     file_skip1 = CreateFile(src_root, 'SKIP1')
     file_skip1 = CreateFile(parent1, '2.skp')
-    CreateFile(src_root, lib.RSYNC_DIR_MERGE_FILENAME,
+    CreateFile(src_root, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
                contents=['exclude /SKIP1',
                          'exclude *.skp'])
 
@@ -705,7 +705,7 @@ def CreateWithFilterMergeTest():
 
     CreateFile(parent1, 'SKIP1')
     CreateFile(parent1, '2.skp')
-    CreateFile(parent1, lib.RSYNC_DIR_MERGE_FILENAME,
+    CreateFile(parent1, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
                contents=['exclude /SKIP1'])
 
     checkpoint1, manifest1 = DoCreate(
@@ -765,6 +765,83 @@ def CreateFromGoogleDriveTest():
       AssertEquals('abc', open(f2_checkpoint, 'r').read())
     finally:
       checkpoint1.Close()
+
+
+def CreateWithFollowSymlinksTest():
+  with TempDir() as test_dir2:
+    with TempDir() as test_dir:
+      checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+      src_root = CreateDir(test_dir, 'src')
+
+      file1 = CreateFile(src_root, 'f1')
+      ln1 = CreateSymlink(src_root, 'ln1', 'INVALID')
+
+      ref_dir1 = CreateDir(test_dir2, 'd1')
+      ref_file2 = CreateFile(ref_dir1, 'f2', contents='abc')
+      ln2 = CreateSymlink(src_root, 'ln2', test_dir2)
+      ln3 = CreateSymlink(src_root, 'ln3', test_dir2)
+
+      ln4 = CreateSymlink(test_dir2, 'ln4', 'd1/f2')
+      ln5 = CreateSymlink(test_dir2, 'ln5', 'd1/f2')
+
+      ln6 = CreateSymlink(test_dir2, 'ln6', 'd1')
+      ln7 = CreateSymlink(test_dir2, 'ln7', 'd1')
+
+      DoCreate(
+        src_root, checkpoints_dir, '1', dry_run=True,
+        expected_output=['>d+++++++ .',
+                         '>f+++++++ f1',
+                         '>L+++++++ ln1 -> INVALID',
+                         '>L+++++++ ln2 -> %s' % test_dir2,
+                         '>L+++++++ ln3 -> %s' % test_dir2,
+                         'Transferring 5 paths (0b)'])
+
+      CreateFile(src_root, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                 contents=['follow-symlinks /ln2/',
+                           'follow-symlinks /ln2/ln4',
+                           'follow-symlinks /ln2/ln6'])
+
+      checkpoint1, manifest1 = DoCreate(
+        src_root, checkpoints_dir, '1',
+        expected_output=['>d+++++++ .',
+                         '>f+++++++ .staged_backup_filter',
+                         '>f+++++++ f1',
+                         '>L+++++++ ln1 -> INVALID',
+                         '>d+++++++ ln2',
+                         '>d+++++++ ln2/d1',
+                         '>f+++++++ ln2/d1/f2',
+                         '>f+++++++ ln2/ln4',
+                         '>L+++++++ ln2/ln5 -> d1/f2',
+                         '>d+++++++ ln2/ln6',
+                         '>f+++++++ ln2/ln6/f2',
+                         '>L+++++++ ln2/ln7 -> d1',
+                         '>L+++++++ ln3 -> %s' % test_dir2,
+                         'Transferring 13 paths (81b)'])
+
+      try:
+        AssertLinesEqual(GetManifestItemized(manifest1),
+                         ['.d....... .',
+                          '.f....... .staged_backup_filter',
+                          '.f....... f1',
+                          '.L....... ln1 -> INVALID',
+                          '.d....... ln2',
+                          '.d....... ln2/d1',
+                          '.f....... ln2/d1/f2',
+                          '.f....... ln2/ln4',
+                          '.L....... ln2/ln5 -> d1/f2',
+                          '.d....... ln2/ln6',
+                          '.f....... ln2/ln6/f2',
+                          '.L....... ln2/ln7 -> d1',
+                          '.L....... ln3 -> %s' % test_dir2])
+        f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
+        f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/d1/f2')
+        AssertEquals('abc', open(f2_checkpoint, 'r').read())
+        ln2_ln4_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln4')
+        AssertEquals('abc', open(ln2_ln4_checkpoint, 'r').read())
+        ln6_f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln6/f2')
+        AssertEquals('abc', open(ln6_f2_checkpoint, 'r').read())
+      finally:
+        checkpoint1.Close()
 
 
 def ApplyDryRunTest():
@@ -1283,7 +1360,7 @@ def CompactTest():
                   'Reclaiming free space…',
                   'Finishing compaction…',
                   'Reclaimed 0 bytes out of 1023.6 GB possible.',
-                  'Image size 225.5mb -> 42.6mb'])
+                  re.compile('^Image size 225[.]5mb -> 42[.][67]mb$')])
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '42.6mb', '42.7mb')
 
 
@@ -1474,6 +1551,222 @@ def PathsFromArgsTest():
     DoPathsFromArgsTest(['a', 'b\' ', 'f_\r \xc2\xa9'], ['--paths-from', paths_file])
 
 
+def PathEnumeratorTest():
+  def GetEnumeratePathInfos(root_dir, filters, use_rsync):
+    paths = []
+    for enumerated_path in lib.PathEnumerator(
+        root_dir, output=sys.stdout, filters=filters, use_rsync=use_rsync).Scan():
+      path_info = enumerated_path.GetPath()
+      if enumerated_path.GetFollowSymlinks():
+        path_info += ';follow-symlinks'
+      paths.append(path_info)
+    return paths
+
+  def DoEnumeratePathsTest(root_dir, filters=[], expected_paths=[], verify_rsync=True):
+    if verify_rsync:
+      rsync_paths = GetEnumeratePathInfos(test_dir, filters=filters, use_rsync=True)
+      AssertLinesEqual(expected_paths, rsync_paths)
+    non_rsync_paths = GetEnumeratePathInfos(test_dir, filters=filters, use_rsync=False)
+    AssertLinesEqual(expected_paths, non_rsync_paths)
+
+  with TempDir() as test_dir:
+    file1 = CreateFile(test_dir, 'f1')
+
+    DoEnumeratePathsTest(test_dir, expected_paths=['.', 'f1'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('f2')],
+                         expected_paths=['.', 'f1'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('f1')],
+                         expected_paths=['.'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('/f1')],
+                         expected_paths=['.'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('f1/')],
+                         expected_paths=['.', 'f1'])
+
+    dir2 = CreateDir(test_dir, 'd2')
+    file3 = CreateFile(dir2, 'f3')
+
+    DoEnumeratePathsTest(test_dir, expected_paths=['.', 'd2', 'd2/f3', 'f1'])
+
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('d2')],
+                         expected_paths=['.', 'f1'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('d2/')],
+                         expected_paths=['.', 'f1'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('f3')],
+                         expected_paths=['.', 'd2', 'f1'])
+
+    file1_in_dir2 = CreateFile(dir2, 'f1')
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('f1')],
+                         expected_paths=['.', 'd2', 'd2/f3'])
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('/f1')],
+                         expected_paths=['.', 'd2', 'd2/f1', 'd2/f3'])
+
+    DoEnumeratePathsTest(test_dir, filters=[lib.FilterRuleExclude('*')],
+                         expected_paths=['.'])
+    DoEnumeratePathsTest(test_dir,
+                         filters=[lib.FilterRuleInclude('d2/'),
+                                  lib.FilterRuleExclude('*')],
+                         expected_paths=['.', 'd2'])
+    DoEnumeratePathsTest(test_dir,
+                         filters=[lib.FilterRuleInclude('d2/'),
+                                  lib.FilterRuleInclude('d2/**'),
+                                  lib.FilterRuleExclude('*')],
+                         expected_paths=['.', 'd2', 'd2/f1', 'd2/f3'])
+
+    CreateFile(test_dir, 'SKIP1')
+    CreateFile(test_dir, '1.skp')
+    CreateFile(dir2, '2.skp')
+
+    DoEnumeratePathsTest(test_dir,
+                         expected_paths=[
+                           '.',
+                           '1.skp',
+                           'SKIP1',
+                           'd2',
+                           'd2/2.skp',
+                           'd2/f1',
+                           'd2/f3',
+                           'f1'])
+
+    DoEnumeratePathsTest(test_dir,
+                         filters=[lib.FilterRuleExclude('/d2/'),
+                                  lib.FilterRuleInclude('/**'),
+                                  lib.FilterRuleExclude('*')],
+                         expected_paths=[
+                           '.',
+                           '1.skp',
+                           'SKIP1',
+                           'f1'])
+
+    CreateFile(test_dir, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['exclude /SKIP1',
+                         'exclude *.skp'])
+
+    DoEnumeratePathsTest(test_dir,
+                         expected_paths=[
+                           '.',
+                           '.staged_backup_filter',
+                           '1.skp',
+                           'SKIP1',
+                           'd2',
+                           'd2/2.skp',
+                           'd2/f1',
+                           'd2/f3',
+                           'f1'])
+    DoEnumeratePathsTest(test_dir, filters=lib.STAGED_BACKUP_DEFAULT_FILTERS,
+                         expected_paths=[
+                           '.',
+                           '.staged_backup_filter',
+                           'd2',
+                           'd2/f1',
+                           'd2/f3',
+                           'f1'])
+
+    dir3 = CreateDir(dir2, 'd3')
+    CreateFile(dir2, 'mayskip')
+    CreateFile(dir3, 'mayskip')
+    CreateFile(test_dir, '1.skp')
+    CreateFile(dir2, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['exclude /mayskip'])
+
+    DoEnumeratePathsTest(test_dir, filters=lib.STAGED_BACKUP_DEFAULT_FILTERS,
+                         expected_paths=[
+                           '.',
+                           '.staged_backup_filter',
+                           'd2',
+                           'd2/.staged_backup_filter',
+                           'd2/d3',
+                           'd2/d3/mayskip',
+                           'd2/f1',
+                           'd2/f3',
+                           'f1'])
+
+  with TempDir() as test_dir2:
+    with TempDir() as test_dir:
+      file1 = CreateFile(test_dir, 'f1')
+      ln1 = CreateSymlink(test_dir, 'ln1', 'INVALID')
+
+      dir1 = CreateDir(test_dir2, 'd1')
+      file2 = CreateFile(dir1, 'f2')
+      ln2 = CreateSymlink(test_dir, 'ln2', test_dir2)
+
+      ln3 = CreateSymlink(test_dir2, 'ln3', 'd1/f2')
+      ln4 = CreateSymlink(test_dir2, 'ln4', 'd1/f2')
+      ln5 = CreateSymlink(test_dir2, 'ln5', 'd1')
+
+      CreateFile(test_dir, lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                 contents=['follow-symlinks /ln2/',
+                           'follow-symlinks /ln2/ln3',
+                           'follow-symlinks /ln2/ln5'])
+
+      DoEnumeratePathsTest(test_dir,
+                           expected_paths=[
+                             '.',
+                             '.staged_backup_filter',
+                             'f1',
+                             'ln1',
+                             'ln2'])
+      DoEnumeratePathsTest(test_dir, filters=lib.STAGED_BACKUP_DEFAULT_FILTERS,
+                           verify_rsync=False,
+                           expected_paths=[
+                             '.',
+                             '.staged_backup_filter',
+                             'f1',
+                             'ln1',
+                             'ln2;follow-symlinks',
+                             'ln2/d1',
+                             'ln2/d1/f2',
+                             'ln2/ln3;follow-symlinks',
+                             'ln2/ln4',
+                             'ln2/ln5;follow-symlinks',
+                             'ln2/ln5/f2'])
+
+
+def FilterRuleTest():
+  def DoFilterRuleTest(expected_match, matcher, path, is_dir=False, expect_matcher_exception=False):
+    class FakeStat:
+      def __init__(self, is_dir=False):
+        self.st_mode = is_dir and 16877 or 33188
+
+    try:
+      regex = lib.FilterRule.CompileRegex(matcher)
+    except lib.UnsupportedMatcherError as e:
+      AssertEquals(True, expect_matcher_exception)
+    else:
+      AssertEquals(False, expect_matcher_exception)
+      AssertEquals(expected_match, lib.FilterRule.MatchesPath(
+        regex, path, path_stat=FakeStat(is_dir=is_dir)))
+
+  DoFilterRuleTest(True, 'a', 'a')
+  DoFilterRuleTest(True, '/a', 'a')
+  DoFilterRuleTest(False, 'a', 'b')
+  DoFilterRuleTest(True, 'a', 'b/a')
+  DoFilterRuleTest(False, '/a', 'b/a')
+  DoFilterRuleTest(True, 'a', 'a', is_dir=True)
+  DoFilterRuleTest(True, 'a/', 'a', is_dir=True)
+  DoFilterRuleTest(False, 'a/', 'a')
+  DoFilterRuleTest(True, '/a/b', 'a/b')
+
+  DoFilterRuleTest(True, '*', 'a')
+  DoFilterRuleTest(True, '*', 'b/a')
+  DoFilterRuleTest(False, 'a/*', 'b/a')
+  DoFilterRuleTest(True, 'b/*', 'b/a')
+  DoFilterRuleTest(False, 'a/*/', 'a/b')
+  DoFilterRuleTest(True, 'a/*/', 'a/b', is_dir=True)
+  DoFilterRuleTest(True, 'b/*', 'c/b/a')
+  DoFilterRuleTest(False, 'c/*', 'c/b/a')
+  DoFilterRuleTest(True, 'c/**', 'c/b/a')
+  DoFilterRuleTest(True, '/c/**', 'c/b/a')
+  DoFilterRuleTest(False, '/b/*', 'c/b/a')
+  DoFilterRuleTest(True, '*/b/*', 'c/b/a')
+  DoFilterRuleTest(True, '/*/b/*', 'c/b/a')
+  DoFilterRuleTest(False, 'c/**/', 'c/b/a')
+  DoFilterRuleTest(True, 'c/**/', 'c/b/a', is_dir=True)
+
+  DoFilterRuleTest(True, 'c?', 'a',  expect_matcher_exception=True)
+  DoFilterRuleTest(True, 'c\\', 'a',  expect_matcher_exception=True)
+  DoFilterRuleTest(True, '[a-b]', 'a',  expect_matcher_exception=True)
+
+
 def Test(tests=[]):
   if not tests or 'PathInfoTest' in tests:
     PathInfoTest()
@@ -1487,6 +1780,8 @@ def Test(tests=[]):
     CreateWithFilterMergeTest()
   if not tests or 'CreateFromGoogleDriveTest' in tests:
     CreateFromGoogleDriveTest()
+  if not tests or 'CreateWithFollowSymlinksTest' in tests:
+    CreateWithFollowSymlinksTest()
   if not tests or 'ApplyDryRunTest' in tests:
     ApplyDryRunTest()
   if not tests or 'ApplyTest' in tests:
@@ -1509,6 +1804,10 @@ def Test(tests=[]):
     PathsAndPrefixMatcherTest()
   if not tests or 'PathsFromArgsTest' in tests:
     PathsFromArgsTest()
+  if not tests or 'PathEnumeratorTest' in tests:
+    PathEnumeratorTest()
+  if not tests or 'FilterRuleTest' in tests:
+    FilterRuleTest()
 
 
 if __name__ == '__main__':

@@ -19,9 +19,9 @@ COMMANDS = [
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
 
-CHECKSUM_FILTERS = [lib.RsyncExclude('/.metadata'),
-                    lib.RsyncExclude('.DS_Store'),
-                    lib.RsyncFilterDirMerge(FILTER_DIR_MERGE_FILENAME)]
+CHECKSUM_FILTERS = [lib.FilterRuleExclude('/.metadata'),
+                    lib.FilterRuleExclude('.DS_Store'),
+                    lib.FilterRuleDirMerge(FILTER_DIR_MERGE_FILENAME)]
 
 MIN_RENAME_DETECTION_FILE_SIZE = 1
 
@@ -194,7 +194,7 @@ class ChecksumsSyncer(object):
     self.basis_manifest = None
     self.manifest = None
     self.scan_manifest = None
-    self.file_enumerator = lib.FileEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
+    self.path_enumerator = lib.PathEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
     self.escape_key_detector = None
     self.sha256_to_basis_pathinfos = None
     self.size_to_pathinfos = None
@@ -252,7 +252,8 @@ class ChecksumsSyncer(object):
   def _SyncInternal(self):
     existing_paths = self.basis_manifest.GetPaths()
 
-    for path in self.file_enumerator.Scan():
+    for enumerated_path in self.path_enumerator.Scan():
+      path = enumerated_path.GetPath()
       if not self.path_matcher.Matches(path):
         self.total_skipped_paths += 1
         continue

@@ -602,11 +602,11 @@ class BackupsConfig(object):
         f.write('%s %s\n' % (BackupsConfig.FILTER_MERGE_PATH, self.filter_merge_path))
 
   def GetFilters(self):
-    filters = list(lib.RSYNC_FILTERS)
+    filters = list(lib.STAGED_BACKUP_DEFAULT_FILTERS)
     if self.filter_merge_path is not None:
       if not os.path.exists(self.filter_merge_path):
         raise Exception('Expected filter merge path %r to exist' % self.filter_merge_path)
-      filters.append(lib.RsyncFilterMerge(self.filter_merge_path))
+      filters.append(lib.FilterRuleMerge(self.filter_merge_path))
     return filters
 
 
@@ -1093,8 +1093,9 @@ class BackupsVerifier(object):
     total_checksummed_size = 0
 
     new_manifest = lib.Manifest()
-    file_enumerator = lib.FileEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
-    for path in file_enumerator.Scan():
+    path_enumerator = lib.PathEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
+    for enumerated_path in path_enumerator.Scan():
+      path = enumerated_path.GetPath()
       num_paths += 1
       full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)
@@ -1366,8 +1367,9 @@ class MissingManifestsToBackupsAdder(object):
     num_inode_hits = 0
     total_checksummed_size = 0
 
-    file_enumerator = lib.FileEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
-    for path in file_enumerator.Scan():
+    path_enumerator = lib.PathEnumerator(backup.GetContentRootPath(), self.output, verbose=self.verbose)
+    for enumerated_path in path_enumerator.Scan():
+      path = enumerated_path.GetPath()
       num_paths += 1
       full_path = os.path.join(backup.GetContentRootPath(), path)
       path_info = lib.PathInfo.FromPath(path, full_path)

@@ -217,41 +217,125 @@ def DeEscapePath(path):
   return DeEscapeString(path)
 
 
-class RsyncInclude(object):
+class UnsupportedMatcherError(Exception):
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+
+class FilterRule(object):
+  @staticmethod
+  def MatchesPath(matcher, path, path_stat):
+    if stat.S_ISDIR(path_stat.st_mode):
+      path += '/'
+    return not not matcher.match(path)
+
+  @staticmethod
+  def CompileRegex(matcher):
+    regex_pieces = []
+    if matcher.startswith('/'):
+      regex_pieces.append('^')
+      matcher_i = 1
+    else:
+      regex_pieces.append('^(?:.*/)?')
+      matcher_i = 0
+    matcher_len = len(matcher)
+    while matcher_i < matcher_len:
+      c = matcher[matcher_i]
+      if c == '*':
+        if matcher_i + 1 < matcher_len and matcher[matcher_i + 1] == '*':
+          regex_pieces.append('.*')
+          matcher_i += 2
+          continue
+        regex_pieces.append('[^/]*')
+        matcher_i += 1
+        continue
+      if c in '?[\\':
+        raise UnsupportedMatcherError('Matcher %r not yet supported' % matcher)
+      regex_pieces.append(re.escape(c))
+      matcher_i += 1
+    if matcher[matcher_len - 1] != '/':
+      regex_pieces.append('/?')
+    regex_pieces.append('$')
+
+    return re.compile(''.join(regex_pieces))
+
+  def GetRsyncArg(self):
+    raise Exception('Not implemented')
+
+
+class FilterRuleInclude(FilterRule):
   def __init__(self, path):
     self.path = path
+    self.regex = FilterRule.CompileRegex(self.path)
 
-  def GetArg(self):
+  def MatchesPath(self, test_path, test_path_stat):
+    return FilterRule.MatchesPath(self.regex, test_path, test_path_stat)
+
+  def GetRsyncArg(self):
     return '--include=%s' % self.path
 
+  def __str__(self):
+    return '<FilterRuleInclude %r>' % self.path
 
-class RsyncExclude(object):
+
+class FilterRuleExclude(FilterRule):
   def __init__(self, path):
     self.path = path
+    self.regex = FilterRule.CompileRegex(self.path)
 
-  def GetArg(self):
+  def MatchesPath(self, test_path, test_path_stat):
+    return FilterRule.MatchesPath(self.regex, test_path, test_path_stat)
+
+  def GetRsyncArg(self):
     return '--exclude=%s' % self.path
 
+  def __str__(self):
+    return '<FilterRuleExclude %r>' % self.path
 
-class RsyncFilterDirMerge(object):
+
+class FilterRuleFollowSymlink(FilterRule):
+  def __init__(self, path):
+    self.path = path
+    self.regex = FilterRule.CompileRegex(self.path)
+
+  def MatchesPath(self, test_path, test_path_stat):
+    return FilterRule.MatchesPath(self.regex, test_path, test_path_stat)
+
+  def __str__(self):
+    return '<FilterRuleFollowSymlink %r>' % self.path
+
+
+class FilterRuleDirMerge(FilterRule):
   def __init__(self, filename):
     self.filename = filename
 
-  def GetArg(self):
+  def GetFilename(self):
+    return self.filename
+
+  def GetRsyncArg(self):
     return '--filter=dir-merge /%s' % self.filename
 
+  def __str__(self):
+    return '<FilterRuleDirMerge %r>' % self.filename
 
-class RsyncFilterMerge(object):
+
+class FilterRuleMerge(object):
   def __init__(self, path):
     self.path = path
 
-  def GetArg(self):
+  def GetPath(self):
+    return self.path
+
+  def GetRsyncArg(self):
     return '--filter=merge %s' % self.path
 
+  def __str__(self):
+    return '<FilterRuleMerge %r>' % self.path
 
-RSYNC_DIR_MERGE_FILENAME = '.staged_backup_filter'
 
-RSYNC_FILTERS = [RsyncFilterDirMerge(RSYNC_DIR_MERGE_FILENAME)]
+STAGED_BACKUP_DIR_MERGE_FILENAME = '.staged_backup_filter'
+
+STAGED_BACKUP_DEFAULT_FILTERS = [FilterRuleDirMerge(STAGED_BACKUP_DIR_MERGE_FILENAME)]
 
 IGNORED_XATTR_KEYS = [
   'com.apple.avkit.thumbnailCacheEncryptionKey',
@@ -446,16 +530,26 @@ def Sha256WithProgress(full_path, path_info, output):
   return hasher.digest()
 
 
-def Xattr(path):
-  return xattr.xattr(path, options=xattr.XATTR_NOFOLLOW)
+def Stat(path, follow_symlinks=False):
+  if follow_symlinks:
+    return os.stat(path)
+  else:
+    return os.lstat(path)
 
 
-def ParseXattrData(path, path_type, ignored_keys=[]):
+def Xattr(path, follow_symlinks=False):
+  options = 0
+  if not follow_symlinks:
+    options = xattr.XATTR_NOFOLLOW
+  return xattr.xattr(path, options=options)
+
+
+def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
   xattr_hash = None
   xattr_keys = []
   google_drive_remote_file = False
 
-  xattr_data = Xattr(path)
+  xattr_data = Xattr(path, follow_symlinks=follow_symlinks)
   xattr_list = []
   for key in sorted(xattr_data.keys()):
     if key in ignored_keys:
@@ -1012,16 +1106,16 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
     RsyncDirectoryOnly(src_root_path, dest_root_path, output, dry_run=dry_run, verbose=verbose)
 
 
-def RsyncList(src_path, output, rsync_filters=None, verbose=False):
+def RsyncList(src_path, output, filters=None, verbose=False):
   cmd = [GetRsyncBin(),
          '-a',
          '--list-only',
          '--no-specials',
          '--no-devices']
 
-  if rsync_filters is not None:
-    for rsync_filter in rsync_filters:
-      cmd.append(rsync_filter.GetArg())
+  if filters is not None:
+    for a_filter in filters:
+      cmd.append(a_filter.GetRsyncArg())
 
   cmd.append(MakeRsyncDirname(src_path))
 
@@ -1082,8 +1176,22 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
 
 
 class PathSyncer(object):
-  def __init__(self, paths, src_root_path, dest_root_path, output, dry_run=False, verbose=False):
-    self.paths = paths
+  class PathData(object):
+    def __init__(self, path, follow_symlinks=False):
+      self.path = path
+      self.follow_symlinks = follow_symlinks
+
+    def GetPath(self):
+      return self.path
+
+    def GetFollowSymlinks(self):
+      return self.follow_symlinks
+
+    def __lt__(self, other):
+      return self.path < other.path
+
+  def __init__(self, path_datas, src_root_path, dest_root_path, output, dry_run=False, verbose=False):
+    self.path_datas = path_datas
     self.src_root_path = src_root_path
     self.dest_root_path = dest_root_path
     self.output = output
@@ -1093,15 +1201,16 @@ class PathSyncer(object):
 
   def Sync(self):
     with self.mtime_preserver:
-      for path in sorted(self.paths):
-        self._SyncPath(path)
+      for path_data in sorted(self.path_datas):
+        self._SyncPath(path_data)
 
-  def _SyncPath(self, path):
-    src_path = os.path.join(self.src_root_path, path)
-    path_info = PathInfo.FromPath(path, src_path)
-    dest_path = os.path.join(self.dest_root_path, path)
+  def _SyncPath(self, path_data):
+    src_path = os.path.join(self.src_root_path, path_data.GetPath())
+    path_info = PathInfo.FromPath(
+      path_data.GetPath(), src_path, follow_symlinks=path_data.GetFollowSymlinks())
+    dest_path = os.path.join(self.dest_root_path, path_data.GetPath())
     if os.path.lexists(dest_path):
-      dest_path_info = PathInfo.FromPath(path, dest_path)
+      dest_path_info = PathInfo.FromPath(path_data.GetPath(), dest_path)
     else:
       dest_path_info = None
     itemized = PathInfo.GetItemizedDiff(path_info, dest_path_info)
@@ -1113,12 +1222,14 @@ class PathSyncer(object):
       return
 
     if not dest_path_info:
-      self._EnsureParentDirsSynced(path)
+      self._EnsureParentDirsSynced(path_data.GetPath())
 
     if path_info.path_type == PathInfo.TYPE_DIR:
-      self._SyncDir(path_info, dest_path_info, src_path, dest_path)
+      self._SyncDir(path_info, dest_path_info, src_path, dest_path,
+                    follow_symlinks=path_data.GetFollowSymlinks())
     else:
-      self._SyncFileOrSymlink(path_info, dest_path_info, src_path, dest_path)
+      self._SyncFileOrSymlink(path_info, dest_path_info, src_path, dest_path,
+                              follow_symlinks=path_data.GetFollowSymlinks())
 
   def _EnsureParentDirsSynced(self, path):
     parent_dir = os.path.dirname(path)
@@ -1135,17 +1246,18 @@ class PathSyncer(object):
       parent_src_path_info = PathInfo.FromPath(parent_dir, parent_src_dir)
       self._SyncDir(parent_src_path_info, None, parent_src_dir, parent_dest_dir)
 
-  def _SyncDir(self, path_info, dest_path_info, src_path, dest_path):
+  def _SyncDir(self, path_info, dest_path_info, src_path, dest_path, follow_symlinks=False):
     if dest_path_info:
       assert dest_path_info.path_type == PathInfo.TYPE_DIR
     else:
       self.mtime_preserver.PreserveParentMtime(dest_path)
       os.mkdir(dest_path)
     self.mtime_preserver.RemovePreservationForPath(dest_path)
-    self._SyncXattrs(src_path, dest_path)
-    self._SyncMeta(path_info, src_path, dest_path)
+    self._SyncXattrs(src_path, dest_path, follow_symlinks=follow_symlinks)
+    self._SyncMeta(path_info, src_path, dest_path, follow_symlinks=follow_symlinks)
 
-  def _SyncFileOrSymlink(self, path_info, dest_path_info, src_path, dest_path):
+  def _SyncFileOrSymlink(self, path_info, dest_path_info, src_path, dest_path,
+                         follow_symlinks=False):
     assert dest_path_info is None or dest_path_info.path_type == path_info.path_type
     self.mtime_preserver.PreserveParentMtime(dest_path)
     if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(src_path):
@@ -1153,19 +1265,19 @@ class PathSyncer(object):
       with open(dest_path, 'wb') as f:
         f.write(GetGoogleDriveRemoteFileStubContents(src_path))
     else:
-      dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=False)
+      dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=follow_symlinks)
       assert dest_path == dest_path_result
-    self._SyncXattrs(src_path, dest_path)
-    self._SyncMeta(path_info, src_path, dest_path)
+    self._SyncXattrs(src_path, dest_path, follow_symlinks=follow_symlinks)
+    self._SyncMeta(path_info, src_path, dest_path, follow_symlinks=follow_symlinks)
 
-  def _SyncMeta(self, path_info, src_path, dest_path):
-    os.utime(dest_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
-    shutil.copymode(src_path, dest_path, follow_symlinks=False)
-    os.chown(dest_path, path_info.uid, path_info.gid, follow_symlinks=False)
+  def _SyncMeta(self, path_info, src_path, dest_path, follow_symlinks=False):
+    os.utime(dest_path, (path_info.mtime, path_info.mtime), follow_symlinks=follow_symlinks)
+    shutil.copymode(src_path, dest_path, follow_symlinks=follow_symlinks)
+    os.chown(dest_path, path_info.uid, path_info.gid, follow_symlinks=follow_symlinks)
 
-  def _SyncXattrs(self, src_path, dest_path):
-    src_xattr = Xattr(src_path)
-    dest_xattr = Xattr(dest_path)
+  def _SyncXattrs(self, src_path, dest_path, follow_symlinks=False):
+    src_xattr = Xattr(src_path, follow_symlinks=follow_symlinks)
+    dest_xattr = Xattr(dest_path, follow_symlinks=follow_symlinks)
     src_xattr_keys = src_xattr.keys()
     for key in dest_xattr:
       if key not in src_xattr_keys:
@@ -1537,10 +1649,10 @@ class PathInfo(object):
                     xattr_keys=xattr_keys, google_drive_remote_file=google_drive_remote_file)
 
   @staticmethod
-  def FromPath(path, full_path, ignored_xattr_keys=None):
+  def FromPath(path, full_path, ignored_xattr_keys=None, follow_symlinks=False):
     if ignored_xattr_keys is None:
       ignored_xattr_keys = IGNORED_XATTR_KEYS
-    stat_result = os.lstat(full_path)
+    stat_result = Stat(full_path, follow_symlinks=follow_symlinks)
     size = None
     sha256 = None
     link_dest = None
@@ -1550,12 +1662,12 @@ class PathInfo(object):
     if stat.S_ISDIR(stat_result.st_mode):
       path_type = PathInfo.TYPE_DIR
       xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
-        full_path, path_type, ignored_keys=ignored_xattr_keys)
+        full_path, path_type, ignored_keys=ignored_xattr_keys, follow_symlinks=follow_symlinks)
       assert not google_drive_remote_file
     elif stat.S_ISREG(stat_result.st_mode):
       path_type = PathInfo.TYPE_FILE
       xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
-        full_path, path_type, ignored_keys=ignored_xattr_keys)
+        full_path, path_type, ignored_keys=ignored_xattr_keys, follow_symlinks=follow_symlinks)
       if google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
         size = len(GetGoogleDriveRemoteFileStubContents(full_path))
       if size is None:
@@ -1564,7 +1676,7 @@ class PathInfo(object):
       path_type = PathInfo.TYPE_SYMLINK
       link_dest = os.readlink(full_path)
     else:
-      raise Exeption('Unexpected file mode for %r: %d' % (full_path, stat_result.st_mode))
+      raise Exception('Unexpected file mode for %r: %d' % (full_path, stat_result.st_mode))
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
                     gid=stat_result.st_gid, mtime=int(stat_result.st_mtime), size=size,
                     link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash, xattr_keys=xattr_keys,
@@ -1721,17 +1833,126 @@ class PathInfo(object):
     return pb
 
 
-class FileEnumerator(object):
-  def __init__(self, root_dir, output, filters=[], verbose=False):
+class PathEnumerator(object):
+  class PathData(object):
+    def __init__(self, path, path_stat=None, follow_symlinks=False):
+      self.path = path
+      self.path_stat = path_stat
+      self.follow_symlinks = follow_symlinks
+
+    def GetPath(self):
+      return self.path
+
+    def GetFollowSymlinks(self):
+      return self.follow_symlinks
+
+  def __init__(self, root_dir, output, filters=[], verbose=False, use_rsync=False):
     self.root_dir = os.path.normpath(root_dir)
     self.output = output
     self.filters = filters
     self.verbose = verbose
+    self.use_rsync = use_rsync
 
   def Scan(self):
-    for path in sorted(RsyncList(self.root_dir, self.output, rsync_filters=self.filters,
+    if self.use_rsync:
+      return self._ScanWithRsync()
+    else:
+      return sorted(self._ScanInternal(self.root_dir, '.', self.filters), key=lambda p: p.GetPath())
+
+  def _ScanWithRsync(self):
+    for path in sorted(RsyncList(self.root_dir, self.output, filters=self.filters,
                                  verbose=self.verbose)):
-      yield path
+      yield PathEnumerator.PathData(path)
+
+  def _ScanInternal(self, root_dir, path, filters, path_stat=None, follow_symlinks=False):
+    if path != '.':
+      abs_path = os.path.join(root_dir, path)
+    else:
+      abs_path = root_dir
+      path_stat = os.lstat(abs_path)
+
+    if (stat.S_ISSOCK(path_stat.st_mode) or stat.S_ISCHR(path_stat.st_mode)
+        or stat.S_ISBLK(path_stat.st_mode) or stat.S_ISFIFO(path_stat.st_mode)):
+      return
+
+    yield PathEnumerator.PathData(path, path_stat, follow_symlinks=follow_symlinks)
+
+    if stat.S_ISDIR(path_stat.st_mode) and not stat.S_ISLNK(path_stat.st_mode):
+      child_entries = list(os.scandir(abs_path))
+      current_filters = self._UpdateFilters(root_dir, path, child_entries, filters)
+      for child_entry in sorted(child_entries, key=lambda p: p.name):
+        if path != '.':
+          child_path = os.path.join(path, child_entry.name)
+        else:
+          child_path = child_entry.name
+        matches, follow_symlinks = self._FiltersMatch(child_path, child_entry, current_filters)
+        if not matches:
+          continue
+        for result in self._ScanInternal(
+            root_dir, child_path, current_filters,
+            path_stat=Stat(child_entry.path, follow_symlinks=follow_symlinks), follow_symlinks=follow_symlinks):
+          yield result
+
+  def _FiltersMatch(self, path, path_entry, filters):
+    path_stat = os.lstat(path_entry.path)
+    follow_symlinks = False
+    for a_filter in filters:
+      if isinstance(a_filter, FilterRuleInclude):
+        if a_filter.MatchesPath(path, path_stat):
+          return True, follow_symlinks
+      elif isinstance(a_filter, FilterRuleExclude):
+        if a_filter.MatchesPath(path, path_stat):
+          return False, follow_symlinks
+      elif isinstance(a_filter, FilterRuleFollowSymlink):
+        if stat.S_ISLNK(path_stat.st_mode):
+          try:
+            path_stat_follow = os.stat(path_entry.path)
+          except FileNotFoundError:
+            continue
+          if a_filter.MatchesPath(path, path_stat_follow):
+            follow_symlinks=True
+            path_stat = path_stat_follow
+    return True, follow_symlinks
+
+  def _UpdateFilters(self, root_dir, path, child_entries, filters):
+    new_filters = []
+    for a_filter in filters:
+      if isinstance(a_filter, FilterRuleMerge):
+        merge_file_path = os.path.join(root_dir, path, a_filter.GetPath())
+        new_filters.extend(self._ParseFilterMergeFile(merge_file_path, path))
+      elif isinstance(a_filter, FilterRuleDirMerge):
+        for child_entry in child_entries:
+          if a_filter.filename == child_entry.name:
+            new_filters.extend(self._ParseFilterMergeFile(child_entry.path, path))
+        new_filters.append(a_filter)
+      else:
+        new_filters.append(a_filter)
+    return new_filters
+
+  def _ParseFilterMergeFile(self, merge_file_path, path):
+    filters = []
+    with open(merge_file_path, 'r') as f:
+      for line in f:
+        if line.startswith('#'):
+          continue
+        elif line.startswith('include '):
+          matcher = line[len('include '):].strip()
+          if matcher.startswith('/') and path != '.':
+            matcher = '/%s%s' % (path, matcher)
+          filters.append(FilterRuleInclude(matcher))
+        elif line.startswith('exclude '):
+          matcher = line[len('exclude '):].strip()
+          if matcher.startswith('/') and path != '.':
+            matcher = '/%s%s' % (path, matcher)
+          filters.append(FilterRuleExclude(matcher))
+        elif line.startswith('follow-symlinks '):
+          matcher = line[len('follow-symlinks '):].strip()
+          if matcher.startswith('/') and path != '.':
+            matcher = '/%s%s' % (path, matcher)
+          filters.append(FilterRuleFollowSymlink(matcher))
+        elif line.rstrip():
+          raise Exception('Unknown filter rule %r' % line.rstrip())
+    return filters
 
 
 class ManifestError(Exception):
@@ -2027,7 +2248,7 @@ class CheckpointCreator(object):
 
   def __init__(self, src_root_dir, checkpoints_root_dir, name, output, basis_path=None, basis_manifest=None,
                dry_run=False, verbose=False, checksum_all=False, manifest_only=False, encrypt=True,
-               encryption_manager=None, filters=RSYNC_FILTERS):
+               encryption_manager=None, filters=STAGED_BACKUP_DEFAULT_FILTERS):
     if src_root_dir is None:
       raise Exception('src_root_dir cannot be None')
     self.src_root_dir = src_root_dir
@@ -2045,7 +2266,8 @@ class CheckpointCreator(object):
     self.checkpoint = None
     self.manifest = None
     self.path_infos_to_sync = []
-    self.file_enumerator = FileEnumerator(src_root_dir, output, filters=filters, verbose=verbose)
+    self.path_enumerator = PathEnumerator(src_root_dir, output, filters=filters, verbose=verbose)
+    self.enumerated_path_map = {}
     self.total_paths = 0
     self.total_checkpoint_paths = 0
     self.total_size = 0
@@ -2086,9 +2308,11 @@ class CheckpointCreator(object):
     if self.basis_manifest is not None:
       existing_paths = self.basis_manifest.GetPaths()
 
-    for path in self.file_enumerator.Scan():
+    for enumerated_path in self.path_enumerator.Scan():
+      path = enumerated_path.GetPath()
+      self.enumerated_path_map[path] = enumerated_path
       self._HandleExistingPaths(existing_paths, next_new_path=path)
-      self._AddPathIfChanged(path)
+      self._AddPathIfChanged(enumerated_path)
 
     self._HandleExistingPaths(existing_paths, next_new_path=None)
 
@@ -2124,9 +2348,10 @@ class CheckpointCreator(object):
         print(itemized, file=self.output)
       del existing_paths[0]
 
-  def _AddPathIfChanged(self, path, allow_replace=False):
+  def _AddPathIfChanged(self, enumerated_path, allow_replace=False):
+    path = enumerated_path.GetPath()
     full_path = os.path.join(self.src_root_dir, path)
-    path_info = PathInfo.FromPath(path, full_path)
+    path_info = PathInfo.FromPath(path, full_path, follow_symlinks=enumerated_path.GetFollowSymlinks())
     self.total_paths += 1
     if path_info.size is not None:
       self.total_size += path_info.size
@@ -2202,8 +2427,14 @@ class CheckpointCreator(object):
         if parent_dir:
           paths_to_sync_set.add(parent_dir)
 
+      path_datas_to_sync = []
+      for path in paths_to_sync_set:
+        enumerated_path = self.enumerated_path_map[path]
+        path_datas_to_sync.append(PathSyncer.PathData(
+          enumerated_path.GetPath(), follow_symlinks=enumerated_path.GetFollowSymlinks()))
+
       path_syncer = PathSyncer(
-        paths_to_sync_set,
+        path_datas_to_sync,
         self.src_root_dir, self.checkpoint.GetContentRootPath(),
         output=self.output, dry_run=self.dry_run, verbose=self.verbose)
       path_syncer.Sync()
@@ -2213,16 +2444,18 @@ class CheckpointCreator(object):
 
       first_requeued = True
       for path in sorted(paths_just_synced_set):
-        if self._ReQueuePathsModifiedSinceManifest(path, first_requeued):
+        enumerated_path = self.enumerated_path_map[path]
+        if self._ReQueuePathsModifiedSinceManifest(enumerated_path, first_requeued):
           first_requeued = False
     return True
 
-  def _ReQueuePathsModifiedSinceManifest(self, path, first_requeued):
+  def _ReQueuePathsModifiedSinceManifest(self, enumerated_path, first_requeued):
+    path = enumerated_path.GetPath()
     expected_path_info = self.manifest.GetPathInfo(path)
     if expected_path_info.HasFileContents():
       assert expected_path_info.sha256
     full_path = os.path.join(self.checkpoint.GetContentRootPath(), path)
-    checkpoint_path_info = PathInfo.FromPath(path, full_path)
+    checkpoint_path_info = PathInfo.FromPath(path, full_path, follow_symlinks=enumerated_path.GetFollowSymlinks())
     if checkpoint_path_info.HasFileContents():
       checkpoint_path_info.sha256 = expected_path_info.sha256
     itemized = PathInfo.GetItemizedDiff(checkpoint_path_info, expected_path_info)
@@ -2236,7 +2469,7 @@ class CheckpointCreator(object):
         return False
     if first_requeued:
       print("*** Warning: Paths changed since syncing, checking...", file=self.output)
-    self._AddPathIfChanged(path, allow_replace=True)
+    self._AddPathIfChanged(enumerated_path, allow_replace=True)
     return True
 
   def _WriteBasisInfo(self):
@@ -2265,7 +2498,7 @@ class CheckpointApplier(object):
     self.paths_to_sync = []
     self.existing_files_to_sync = []
     self.paths_to_delete = []
-    self.file_enumerator = FileEnumerator(dest_root, output, verbose=verbose)
+    self.path_enumerator = PathEnumerator(dest_root, output, verbose=verbose)
     self.errors_encountered = False
 
   def Apply(self):
@@ -2284,7 +2517,8 @@ class CheckpointApplier(object):
 
     new_paths = self.src_manifest.GetPaths()
 
-    for path in self.file_enumerator.Scan():
+    for enumerated_path in self.path_enumerator.Scan():
+      path = enumerated_path.GetPath()
       self._HandleNewPaths(new_paths, next_existing_path=path)
 
       full_path = os.path.join(self.dest_root, path)
@@ -2563,7 +2797,7 @@ class ManifestVerifier(object):
     self.path_matcher = path_matcher
     self.verbose = verbose
     self.manifest_on_top = manifest_on_top
-    self.file_enumerator = FileEnumerator(src_root, output, filters=filters, verbose=verbose)
+    self.path_enumerator = PathEnumerator(src_root, output, filters=filters, verbose=verbose)
     self.has_diffs = False
     self.stats = ManifestVerifierStats()
 
@@ -2573,7 +2807,8 @@ class ManifestVerifier(object):
       if self.path_matcher.Matches(path):
         missing_paths.append(path)
 
-    for path in self.file_enumerator.Scan():
+    for enumerated_path in self.path_enumerator.Scan():
+      path = enumerated_path.GetPath()
       if not self.path_matcher.Matches(path):
         self.stats.total_skipped_paths += 1
         continue
@@ -2688,13 +2923,13 @@ def DoCreateCheckpoint(args, output):
   if cmd_args.last_manifest is not None and cmd_args.last_checkpoint is not None:
     raise Exception('Cannot use both --last-manifest and --last-checkpoint')
 
-  filters = list(RSYNC_FILTERS)
+  filters = list(STAGED_BACKUP_DEFAULT_FILTERS)
   if cmd_args.no_filters:
     filters = []
   if cmd_args.filter_merge_path is not None:
     if not os.path.exists(cmd_args.filter_merge_path):
       raise Exception('Expected filter merge path %r to exist' % cmd_args.filter_merge_path)
-    filters.append(RsyncFilterMerge(cmd_args.filter_merge_path))
+    filters.append(FilterRuleMerge(cmd_args.filter_merge_path))
 
   encryption_manager = EncryptionManager()
 
