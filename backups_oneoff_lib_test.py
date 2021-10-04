@@ -159,13 +159,15 @@ def OneoffUpdateIgnoredXattrsTest():
                          '>f+++++++ par!/f4',
                          'Copying paths: 6 to copy, 6 total in source, 6 total in result...',
                          'Verifying 2020-01-02-120000...',
+                         'Paths: 6 total (0b), 4 checksummed (0b)',
                          'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                          '.f......x fT',
                          '.f......x fX',
                          '.f......x par!/f3',
                          '.f......x par!/f4',
                          'Copying paths: 6 to copy, 6 total in source, 6 total in result...',
-                         'Verifying 2020-01-03-120000...'])
+                         'Verifying 2020-01-03-120000...',
+                         'Paths: 6 total (0b), 4 checksummed (0b)'])
 
       DoVerifyBackups(
         config,
@@ -291,7 +293,8 @@ def OneoffAddXattrKeysTest():
                        '>f+++++++ par!/f3',
                        '>f+++++++ par!/f4',
                        'Copying paths: 6 to copy, 6 total in source, 6 total in result...',
-                       'Verifying 2020-01-02-120000...'])
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 6 total (0b), 4 checksummed (0b)'])
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=False, browseable=False)

@@ -87,7 +87,8 @@ def VerifyBackupManifest(backup, path=None):
     manifest = lib.ReadManifestFromCheckpointOrPath(path)
 
   output = io.StringIO()
-  verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), output, checksum_all=True)
+  verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), output,
+                                  checksum_path_matcher=lib.PathMatcherAll())
   success = verifier.Verify()
   output_lines = [ line for line in output.getvalue().strip().split('\n') if line ]
   output.close()
@@ -153,10 +154,15 @@ def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[]):
 
 
 def DoApplyToBackups(config, dry_run=False, deduplicate_min_file_size=1024,
-                     expected_success=True, expected_output=[]):
+                     checksum_all=True, checksum_hardlinks=True, expected_success=True,
+                     expected_output=[]):
   cmd_args = ['apply-to-backups',
               '--backups-config', config.path,
               '--deduplicate-min-file-size', str(deduplicate_min_file_size)]
+  if not checksum_all:
+    cmd_args.append('--no-checksum-all')
+  if not checksum_hardlinks:
+    cmd_args.append('--no-checksum-hardlinks')
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                 expected_output=expected_output)
 

@@ -1489,13 +1489,13 @@ def MtimePreserverTest():
     AssertEquals(1500000000.0, os.lstat(file3).st_mtime)
 
 
-def PathsAndPrefixMatcherTest():
-  matcher = lib.PathsAndPrefixMatcher([])
+def PathMatcherPathsAndPrefixTest():
+  matcher = lib.PathMatcherPathsAndPrefix([])
   AssertEquals(False, matcher.Matches('a'))
   AssertEquals(False, matcher.Matches('a/b'))
   AssertEquals(False, matcher.Matches(''))
 
-  matcher = lib.PathsAndPrefixMatcher(['a'])
+  matcher = lib.PathMatcherPathsAndPrefix(['a'])
   AssertEquals(True, matcher.Matches('a'))
   AssertEquals(True, matcher.Matches('a/b'))
   AssertEquals(False, matcher.Matches('/a'))
@@ -1504,14 +1504,14 @@ def PathsAndPrefixMatcherTest():
   AssertEquals(False, matcher.Matches('b'))
   AssertEquals(False, matcher.Matches('b/a'))
 
-  matcher = lib.PathsAndPrefixMatcher(['a/b'])
+  matcher = lib.PathMatcherPathsAndPrefix(['a/b'])
   AssertEquals(False, matcher.Matches('a'))
   AssertEquals(True, matcher.Matches('a/b'))
   AssertEquals(True, matcher.Matches('a/b/c'))
   AssertEquals(False, matcher.Matches('a/bc'))
   AssertEquals(False, matcher.Matches('a/bc/d'))
 
-  matcher = lib.PathsAndPrefixMatcher(['a/b', 'a'])
+  matcher = lib.PathMatcherPathsAndPrefix(['a/b', 'a'])
   AssertEquals(True, matcher.Matches('a'))
   AssertEquals(False, matcher.Matches('ab'))
   AssertEquals(True, matcher.Matches('a/b'))
@@ -1800,8 +1800,8 @@ def Test(tests=[]):
     EscapeKeyDetectorTest()
   if not tests or 'MtimePreserverTest' in tests:
     MtimePreserverTest()
-  if not tests or 'PathsAndPrefixMatcherTest' in tests:
-    PathsAndPrefixMatcherTest()
+  if not tests or 'PathMatcherPathsAndPrefixTest' in tests:
+    PathMatcherPathsAndPrefixTest()
   if not tests or 'PathsFromArgsTest' in tests:
     PathsFromArgsTest()
   if not tests or 'PathEnumeratorTest' in tests:

@@ -293,7 +293,8 @@ class OneoffSomeFilesUpdater(object):
 
       if self.verify:
         print('Verifying %s...' % backup.GetName(), file=self.output)
-        verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
+        verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output,
+                                        checksum_path_matcher=lib.PathMatcherNone(),
                                         verbose=self.verbose)
         if not verifier.Verify():
           raise Exception('*** Error: Failed to verify %s' % backup.GetName())

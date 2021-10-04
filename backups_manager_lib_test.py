@@ -147,6 +147,7 @@ def ApplyToBackupsTest():
         '>L+++++++ par!/ln2 -> ../fT',
         'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
         'Verifying 2020-01-02-120000...',
+        'Paths: 8 total (0b), 3 checksummed (0b)',
         'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
         '>f+++++++ f3_original',
         '.f..t.... fT',
@@ -155,6 +156,7 @@ def ApplyToBackupsTest():
         '>f+++++++ par!/f2',
         'Copying paths: 10 to copy, 1 to hard link, 10 total in source, 10 total in result...',
         'Verifying 2020-01-03-120000...',
+        'Paths: 10 total (1kb), 5 checksummed (1kb)',
         'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
         '*deleting f3_original',
         '>f+++++++ f3_renamed',
@@ -162,7 +164,8 @@ def ApplyToBackupsTest():
         '.Lc...... ln1_dir -> .',
         '.Lc...... ln3 -> fX',
         'Copying paths: 10 to copy, 5 to hard link, 1 to duplicate, 10 total in source, 10 total in result...',
-        'Verifying 2020-01-04-120000...'])
+        'Verifying 2020-01-04-120000...',
+        'Paths: 10 total (1kb), 5 checksummed (1kb)'])
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
@@ -225,6 +228,70 @@ def ApplyToBackupsTest():
         'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
         'Skipped 2 backups: Backup<2020-01-03-120000,DONE> to Backup<2020-01-04-120000,DONE>'])
 
+    file4 = CreateFile(config.src_path, 'f4', contents='1' * 1025)
+    file5 = CreateFile(config.src_path, 'f5', contents='2' * 1025)
+
+    checkpoint_path3 = DoCreateBackup(
+      config, backup_name='2020-01-05-120000',
+      expected_output=['>f+++++++ f4',
+                       '>f+++++++ f5',
+                       'Transferring 2 of 12 paths (2kb of 3kb)'])
+    DoApplyToBackups(
+      config, checksum_all=False,
+      expected_output=['Applying 2020-01-05-120000 onto 2020-01-04-120000...',
+                       '>f+++++++ f4',
+                       '  duplicate to f3_renamed (size=1kb)',
+                       '>f+++++++ f5',
+                       'Copying paths: 12 to copy, 6 to hard link, 1 to duplicate, 12 total in source, 12 total in result...',
+                       'Verifying 2020-01-05-120000...',
+                       'Paths: 12 total (3kb), 7 checksums skipped (3kb)'])
+
+    DoVerifyBackups(
+      config,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)',
+                       'Verifying 2020-01-05-120000...',
+                       'Paths: 12 total, 6 inode hits, 1 checksummed (1kb)'])
+
+    file6 = CreateFile(config.src_path, 'f6', contents='1' * 1025)
+    file7 = CreateFile(config.src_path, 'f7', contents='3' * 1025)
+
+    checkpoint_path3 = DoCreateBackup(
+      config, backup_name='2020-01-06-120000',
+      expected_output=['>f+++++++ f6',
+                       '>f+++++++ f7',
+                       'Transferring 2 of 14 paths (2kb of 5kb)'])
+    DoApplyToBackups(
+      config, checksum_hardlinks=False,
+      expected_output=['Applying 2020-01-06-120000 onto 2020-01-05-120000...',
+                       '>f+++++++ f6',
+                       '  duplicate to f4 (size=1kb)',
+                       '>f+++++++ f7',
+                       'Copying paths: 14 to copy, 8 to hard link, 1 to duplicate, 14 total in source, 14 total in result...',
+                       'Verifying 2020-01-06-120000...',
+                       'Paths: 14 total (5kb), 1 checksummed (1kb), 8 checksums skipped (4kb)'])
+
+    DoVerifyBackups(
+      config,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)',
+                       'Verifying 2020-01-05-120000...',
+                       'Paths: 12 total, 6 inode hits, 1 checksummed (1kb)',
+                       'Verifying 2020-01-06-120000...',
+                       'Paths: 14 total, 8 inode hits, 1 checksummed (1kb)'])
+
 
 def ApplyToBackupsWithFilterMergeTest():
   with TempDir() as test_dir:
@@ -273,10 +340,12 @@ def ApplyToBackupsWithFilterMergeTest():
                        '>f+++++++ paryes/f1',
                        'Copying paths: 3 to copy, 3 total in source, 3 total in result...',
                        'Verifying 2020-01-02-120000...',
+                       'Paths: 3 total (0b), 1 checksummed (0b)',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ paryes/f3',
                        'Copying paths: 4 to copy, 1 to hard link, 4 total in source, 4 total in result...',
-                       'Verifying 2020-01-03-120000...'])
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 4 total (0b), 2 checksummed (0b)'])
 
     DoVerifyBackups(
       config,
@@ -344,6 +413,7 @@ def VerifyBackupsTest():
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
                        'Copying paths: 6 to copy, 2 to hard link, 6 total in source, 6 total in result...',
                        'Verifying 2020-01-02-120000...',
+                       'Paths: 6 total (1kb), 4 checksummed (1kb)',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '*deleting f3_original',
                        '>f+++++++ f3_renamed',
@@ -352,7 +422,8 @@ def VerifyBackupsTest():
                        '.d..t.... par!',
                        '>f+++++++ par!/f2',
                        'Copying paths: 7 to copy, 1 to hard link, 7 total in source, 7 total in result...',
-                       'Verifying 2020-01-03-120000...'])
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 7 total (1kb), 5 checksummed (1kb)'])
 
     DoVerifyBackups(
       config,
@@ -496,14 +567,17 @@ def AddMissingManifestsToBackupsTest():
                        '*deleting fX',
                        'Copying paths: 4 to copy, 1 to hard link, 4 total in source, 4 total in result...',
                        'Verifying 2020-01-02-120000...',
+                       'Paths: 4 total (6b), 3 checksummed (6b)',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ f3',
                        'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
                        'Verifying 2020-01-03-120000...',
+                       'Paths: 5 total (9b), 4 checksummed (9b)',
                        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
                        '>fc...... f3',
                        'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
-                       'Verifying 2020-01-04-120000...'])
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 5 total (9b), 4 checksummed (9b)'])
 
     DoAddMissingManifestsToBackups(
       config,
@@ -613,19 +687,23 @@ def DeDuplicateBackupsTest():
         '*deleting fX',
         'Copying paths: 4 to copy, 4 total in source, 4 total in result...',
         'Verifying 2020-01-02-120000...',
+        'Paths: 4 total (3kb), 3 checksummed (3kb)',
         'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
         '>f+++++++ f3',
         'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
         'Verifying 2020-01-03-120000...',
+        'Paths: 5 total (4kb), 4 checksummed (4kb)',
         'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
         '.f..t.... f3',
         '>f+++++++ f3a',
         'Copying paths: 6 to copy, 3 to hard link, 6 total in source, 6 total in result...',
         'Verifying 2020-01-04-120000...',
+        'Paths: 6 total (5kb), 5 checksummed (5kb)',
         'Applying 2020-01-05-120000 onto 2020-01-04-120000...',
         '>f+++++++ f3b',
         'Copying paths: 7 to copy, 5 to hard link, 7 total in source, 7 total in result...',
-        'Verifying 2020-01-05-120000...'])
+        'Verifying 2020-01-05-120000...',
+        'Paths: 7 total (6kb), 6 checksummed (6kb)'])
 
     DoVerifyBackups(
       config,
@@ -862,7 +940,8 @@ def CloneBackupTest():
                        '>d+++++++ par!',
                        '>f+++++++ par!/f_\\r \\xc2\\xa9',
                        'Copying paths: 5 to copy, 2 to hard link, 5 total in source, 5 total in result...',
-                       'Verifying 2020-01-02-120000...'])
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 5 total (0b), 3 checksummed (0b)'])
 
     DoCloneBackup(
       config, backup_name='DOES_NOT_EXIST',
@@ -935,14 +1014,17 @@ def DeleteBackupsTest():
                        '*deleting fT',
                        'Copying paths: 2 to copy, 1 to hard link, 2 total in source, 2 total in result...',
                        'Verifying 2020-01-02-120000...',
+                       'Paths: 2 total (0b), 1 checksummed (0b)',
                        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
                        '>f+++++++ f3',
                        'Copying paths: 3 to copy, 1 to hard link, 3 total in source, 3 total in result...',
                        'Verifying 2020-01-03-120000...',
+                       'Paths: 3 total (0b), 2 checksummed (0b)',
                        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
                        '>f+++++++ f4',
                        'Copying paths: 4 to copy, 2 to hard link, 4 total in source, 4 total in result...',
-                       'Verifying 2020-01-04-120000...'])
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 4 total (0b), 3 checksummed (0b)'])
 
     DoListBackups(config, expected_backups=['2020-01-01-120000',
                                             '2020-01-02-120000',
@@ -1099,6 +1181,7 @@ def DumpUniqueFilesInBackupsTest():
         '>f+++++++ par!/f_\\r \\xc2\\xa9',
         'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
         'Verifying 2020-01-02-120000...',
+        'Paths: 8 total (0b), 4 checksummed (0b)',
         'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
         '>f+++++++ f3',
         '>f+++++++ f6',
@@ -1112,7 +1195,8 @@ def DumpUniqueFilesInBackupsTest():
         '>f+++++++ par2/f5',
         '>f+++++++ par2/f8',
         'Copying paths: 13 to copy, 1 to hard link, 13 total in source, 13 total in result...',
-        'Verifying 2020-01-03-120000...'])
+        'Verifying 2020-01-03-120000...',
+        'Paths: 13 total (3kb), 8 checksummed (3kb)'])
 
     DoDumpUniqueFilesInBackups(
       config, backup_names=['NAME'], min_backup='MIN', max_backup='MAX',
@@ -1325,7 +1409,8 @@ def DumpUniqueFilesInBackupsTest():
         '.d..t.... par2',
         '*deleting par2/f8',
         'Copying paths: 13 to copy, 6 to hard link, 1 to duplicate, 13 total in source, 13 total in result...',
-        'Verifying 2020-01-04-120000...'])
+        'Verifying 2020-01-04-120000...',
+        'Paths: 13 total (3kb), 8 checksummed (3kb)'])
 
     DoDumpUniqueFilesInBackups(
       config, backup_names=['2020-01-03-120000'],
@@ -1607,6 +1692,7 @@ def ExtractFromBackupsTest():
           '>f+++++++ fX',
           'Copying paths: 3 to copy, 4 total in source, 3 total in result...',
           'Verifying 2020-01-01-120000...',
+          'Paths: 3 total (0b), 2 checksums skipped (0b)',
           'Extracting from 2020-01-02-120000...',
           '*deleting f1',
           '.f....... fX',
@@ -1616,6 +1702,7 @@ def ExtractFromBackupsTest():
           '>f+++++++ par!/f_\\r \\xc2\\xa9',
           'Copying paths: 6 to copy, 1 to hard link, 7 total in source, 6 total in result...',
           'Verifying 2020-01-02-120000...',
+          'Paths: 6 total (0b), 2 checksums skipped (0b)',
           'Extracting from 2020-01-03-120000...',
           'Extracting from 2020-01-04-120000...',
           '>f+++++++ f7',
@@ -1628,6 +1715,7 @@ def ExtractFromBackupsTest():
           '>f+++++++ par2/f5',
           'Copying paths: 9 to copy, 1 to hard link, 13 total in source, 9 total in result...',
           'Verifying 2020-01-04-120000...',
+          'Paths: 9 total (2kb), 5 checksums skipped (2kb)',
           'Extracting from 2020-01-05-120000...',
           '>fc...... f7',
           '.f....... fX',
@@ -1643,7 +1731,8 @@ def ExtractFromBackupsTest():
           '3/5 hard links remaining (40%)...',
           '2/5 hard links remaining (60%)...',
           '1/5 hard links remaining (80%)...',
-          'Verifying 2020-01-05-120000...'])
+          'Verifying 2020-01-05-120000...',
+          'Paths: 10 total (3kb), 6 checksums skipped (3kb)'])
 
       extracted_manager = backups_manager_lib.BackupsManager.Open(
         extracted_config, readonly=True, browseable=False)
@@ -1823,6 +1912,7 @@ def MergeIntoBackupsTest():
           'Copying paths: 7 to copy, 2 to hard link, 7 total in source, 7 total in result...',
           '1/2 hard links remaining (50%)...',
           'Verifying 2020-01-03-120000...',
+          'Paths: 7 total (1kb), 3 checksums skipped (1kb)',
           'Backup 2020-01-04-120000: existing retained.',
           'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
           'Duplicate path par/f9_to (size=1kb) to:',
@@ -1838,7 +1928,8 @@ def MergeIntoBackupsTest():
           '  duplicate to par/f3_to (size=1kb)',
           'Copying paths: 3 to copy, 2 to hard link, 2 to duplicate, 10 total in source, 14 total in result...',
           '1/2 hard links remaining (50%)...',
-          'Verifying 2020-01-05-120000...'])
+          'Verifying 2020-01-05-120000...',
+          'Paths: 14 total (7kb), 10 checksums skipped (7kb)'])
       DoMergeIntoBackups(
         config,
         from_image_path=config2.image_path,

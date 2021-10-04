@@ -90,12 +90,32 @@ class PathMatcher(object):
     raise Exception('Must be implemented by subclass')
 
 
-class MatchAllPathMatcher(PathMatcher):
+class PathMatcherAllOrNone(PathMatcher):
+  def __init__(self, match_all):
+    self.match_all = match_all
+
   def Matches(self, path):
-    return True
+    return self.match_all
 
 
-class PathsAndPrefixMatcher(PathMatcher):
+def PathMatcherAll():
+  return PathMatcherAllOrNone(True)
+
+
+def PathMatcherNone():
+  return PathMatcherAllOrNone(False)
+
+
+class PathMatcherSet(PathMatcher):
+  def __init__(self, paths, include=True):
+    self.paths = set(paths)
+    self.include = include
+
+  def Matches(self, path):
+    return self.include == (path in self.paths)
+
+
+class PathMatcherPathsAndPrefix(PathMatcher):
   def __init__(self, paths):
     self.match_paths = set()
     for path in paths:
@@ -136,10 +156,10 @@ def GetPathsFromArgs(args, required=True):
 def GetPathMatcherFromArgs(args, match_all_by_default=True):
   paths = GetPathsFromArgs(args, required=not match_all_by_default)
   if paths:
-    return PathsAndPrefixMatcher(paths)
+    return PathMatcherPathsAndPrefix(paths)
   else:
     assert match_all_by_default
-    return MatchAllPathMatcher()
+    return PathMatcherAll()
 
 
 def EnsureRunningAsRoot():
@@ -2783,16 +2803,19 @@ class ManifestVerifierStats(object):
     self.total_mismatched_size = 0
     self.total_checksummed_paths = 0
     self.total_checksummed_size = 0
+    self.total_checksum_skipped_paths = 0
+    self.total_checksum_skipped_size = 0
     self.total_skipped_paths = 0
 
 
 class ManifestVerifier(object):
-  def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True, checksum_all=False,
-               escape_key_detector=None, path_matcher=MatchAllPathMatcher(), verbose=False):
+  def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True,
+               checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
+               verbose=False):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
-    self.checksum_all = checksum_all
+    self.checksum_path_matcher = checksum_path_matcher
     self.escape_key_detector = escape_key_detector
     self.path_matcher = path_matcher
     self.verbose = verbose
@@ -2856,7 +2879,10 @@ class ManifestVerifier(object):
 
     itemized = PathInfo.GetItemizedDiff(src_path_info, manifest_path_info)
     matches = not itemized.HasDiffs()
-    if matches and not self.checksum_all:
+    if matches and not self.checksum_path_matcher.Matches(path):
+      if src_path_info.HasFileContents():
+        self.stats.total_checksum_skipped_paths += 1
+        self.stats.total_checksum_skipped_size += src_path_info.size
       if self.verbose:
         print(itemized, file=self.output)
       return
@@ -3042,7 +3068,8 @@ def DoVerifyManifest(args, output):
     cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
 
   manifest_verifier = ManifestVerifier(
-    manifest, cmd_args.src_root, output, checksum_all=cmd_args.checksum_all, verbose=args.verbose)
+    manifest, cmd_args.src_root, output,
+    checksum_path_matcher=PathMatcherAllOrNone(cmd_args.checksum_all), verbose=args.verbose)
   return manifest_verifier.Verify()
 
 

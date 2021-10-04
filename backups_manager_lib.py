@@ -150,7 +150,8 @@ class PathsIntoBackupCopier(object):
 
   def __init__(self, from_backup_or_checkpoint, from_manifest, to_backup_manager, to_backup,
                last_to_backup, last_to_manifest, path_matcher, output, verify_with_checksums=False,
-               deduplicate=True, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False,
+               verify_hardlinks_with_checksums=True, deduplicate=True,
+               deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False,
                verbose=False):
     """
     Args:
@@ -167,6 +168,7 @@ class PathsIntoBackupCopier(object):
     self.path_matcher = path_matcher
     self.output = output
     self.verify_with_checksums = verify_with_checksums
+    self.verify_hardlinks_with_checksums = verify_hardlinks_with_checksums
     self.deduplicate = deduplicate
     self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
@@ -355,12 +357,21 @@ class PathsIntoBackupCopier(object):
         result.to_manifest.SetPath(result.to_backup.GetManifestPath())
         result.to_manifest.Write()
 
+        if self.verify_with_checksums:
+          if self.verify_hardlinks_with_checksums:
+            checksum_path_matcher = lib.PathMatcherAll()
+          else:
+            checksum_path_matcher = lib.PathMatcherSet(paths_to_link_map.keys(), include=False)
+        else:
+          checksum_path_matcher = lib.PathMatcherNone()
+
         print('Verifying %s...' % result.to_backup.GetName(), file=self.output)
         verifier = lib.ManifestVerifier(
           result.to_manifest, result.to_backup.GetContentRootPath(), self.output,
-          checksum_all=self.verify_with_checksums, verbose=self.verbose)
+          checksum_path_matcher=checksum_path_matcher, verbose=self.verbose)
         if not verifier.Verify():
           raise Exception('Failed to verify %s' % result.to_backup.GetName())
+        self._OutputVerifyStats(verifier.GetStats())
         if to_backup_is_new:
           result.to_backup.SetDoneState(dry_run=self.dry_run)
       except:
@@ -369,6 +380,21 @@ class PathsIntoBackupCopier(object):
         raise
 
     return result
+
+  def _OutputVerifyStats(self, stats):
+    out_pieces = ['%d total (%s)' % (stats.total_paths, lib.FileSizeToString(stats.total_size))]
+    if stats.total_mismatched_paths:
+      out_pieces.append('%d mismatched (%s)' % (
+        stats.total_mismatched_paths, lib.FileSizeToString(stats.total_mismatched_size)))
+    if stats.total_checksummed_paths:
+      out_pieces.append('%d checksummed (%s)' % (
+        stats.total_checksummed_paths, lib.FileSizeToString(stats.total_checksummed_size)))
+    if stats.total_checksum_skipped_paths:
+      out_pieces.append('%d checksums skipped (%s)' % (
+        stats.total_checksum_skipped_paths, lib.FileSizeToString(stats.total_checksum_skipped_size)))
+    if stats.total_skipped_paths:
+      out_pieces.append('%d skipped' % stats.total_skipped_paths)
+    print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
 
 class DeDuplicateBackupsResult(object):
@@ -889,11 +915,13 @@ class BackupCreator:
 
 class CheckpointsToBackupsApplier:
   def __init__(self, config, output, encryption_manager=None, checksum_all=True,
-               deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False, verbose=False):
+               checksum_hardlinks=True, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
+               dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.encryption_manager = encryption_manager
     self.checksum_all = checksum_all
+    self.checksum_hardlinks = checksum_hardlinks
     self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
     self.verbose = verbose
@@ -947,8 +975,10 @@ class CheckpointsToBackupsApplier:
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=checkpoint, from_manifest=None, to_backup_manager=self.manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
-      output=self.output, verify_with_checksums=self.checksum_all, dry_run=self.dry_run, verbose=self.verbose)
+      path_matcher=lib.PathMatcherAll(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      output=self.output, verify_with_checksums=self.checksum_all,
+      verify_hardlinks_with_checksums=self.checksum_hardlinks,
+      dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
     if not result.success:
       print(('*** Error: Failed to apply %s onto %s'
@@ -1722,7 +1752,7 @@ class PathsFromBackupsExtractor(object):
   def _ExtractPathsFromBackup(self, backup, last_extracted_backup, last_extracted_manifest):
     print('Extracting from %s...' % backup.GetName(), file=self.output)
 
-    path_matcher = lib.PathsAndPrefixMatcher(self.paths)
+    path_matcher = lib.PathMatcherPathsAndPrefix(self.paths)
 
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=backup, from_manifest=None, to_backup_manager=self.extracted_manager,
@@ -1848,7 +1878,7 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      path_matcher=lib.PathMatcherAll(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
@@ -1878,7 +1908,7 @@ class IntoBackupsMerger(object):
     copier = PathsIntoBackupCopier(
       from_backup_or_checkpoint=from_backup, from_manifest=None, to_backup_manager=self.backups_manager,
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
-      path_matcher=lib.MatchAllPathMatcher(), deduplicate_min_file_size=self.deduplicate_min_file_size,
+      path_matcher=lib.PathMatcherAll(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose)
     result = copier.Copy()
 
@@ -1942,7 +1972,7 @@ class PathsInBackupsDeleter(object):
 
     paths_to_delete = []
 
-    path_matcher = lib.PathsAndPrefixMatcher(self.paths)
+    path_matcher = lib.PathMatcherPathsAndPrefix(self.paths)
     for path in manifest.GetPaths():
       if path_matcher.Matches(path):
         path_info = manifest.RemovePathInfo(path)
@@ -1975,7 +2005,8 @@ class PathsInBackupsDeleter(object):
       manifest.Write()
 
       print('Verifying %s...' % backup.GetName(), file=self.output)
-      verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output, checksum_all=False,
+      verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output,
+                                      checksum_path_matcher=lib.PathMatcherNone(),
                                       verbose=self.verbose)
       if not verifier.Verify():
         raise Exception('*** Error: Failed to verify %s' % backup.GetName())
@@ -2006,6 +2037,7 @@ def DoApplyToBackups(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
   parser.add_argument('--no-checksum-all', dest='checksum_all', action='store_false')
+  parser.add_argument('--no-checksum-hardlinks', dest='checksum_hardlinks', action='store_false')
   parser.add_argument('--deduplicate-min-file-size', default=DEDUP_MIN_FILE_SIZE, type=int)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -2013,7 +2045,8 @@ def DoApplyToBackups(args, output):
 
   applier = CheckpointsToBackupsApplier(
     config, output=output, encryption_manager=lib.EncryptionManager(),
-    checksum_all=cmd_args.checksum_all, deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
+    checksum_all=cmd_args.checksum_all, checksum_hardlinks=cmd_args.checksum_hardlinks,
+    deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
     dry_run=args.dry_run, verbose=args.verbose)
   return applier.Apply()
 

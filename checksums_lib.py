@@ -129,7 +129,7 @@ class ChecksumsCreator(object):
 
 class ChecksumsVerifier(object):
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False,
-               path_matcher=lib.MatchAllPathMatcher(), dry_run=False, verbose=False):
+               path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -153,7 +153,7 @@ class ChecksumsVerifier(object):
     try:
       verifier = lib.ManifestVerifier(
         self.checksums.GetManifest(), self.root_path, output=self.output,
-        filters=self.filters, manifest_on_top=False, checksum_all=self.checksum_all,
+        filters=self.filters, manifest_on_top=False, checksum_path_matcher=lib.PathMatcherAllOrNone(self.checksum_all),
         escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
@@ -178,7 +178,7 @@ class ChecksumsSyncer(object):
   INTERACTIVE_CHECKER = InteractiveChecker()
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
-               detect_renames=True, path_matcher=lib.MatchAllPathMatcher(), dry_run=False, verbose=False):
+               detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
