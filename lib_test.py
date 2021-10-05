@@ -121,6 +121,37 @@ def GetCheckpointData(checkpoint_path, readonly=True, manifest_only=False):
     raise
 
 
+def VerifyCheckpointContents(manifest, root_dir, prev_manifest=None):
+  expected_paths = set()
+  for path in manifest.GetPaths():
+    manifest_path_info = manifest.GetPathInfo(path)
+    prev_path_info = None
+    if prev_manifest:
+      prev_path_info = prev_manifest.GetPathInfo(path)
+
+    itemized = lib.PathInfo.GetItemizedDiff(prev_path_info, manifest_path_info)
+    if itemized.HasDiffs():
+      expected_paths.add(path)
+
+  for path in list(expected_paths):
+    parent_dir = os.path.dirname(path)
+    while parent_dir:
+      expected_paths.add(parent_dir)
+      parent_dir = os.path.dirname(parent_dir)
+
+  for path in expected_paths:
+    manifest_path_info = manifest.GetPathInfo(path)
+
+    full_path = os.path.join(root_dir, path)
+    src_path_info = lib.PathInfo.FromPath(path, full_path)
+    if src_path_info.HasFileContents():
+      src_path_info.sha256 = lib.Sha256(full_path)
+
+    itemized = lib.PathInfo.GetItemizedDiff(src_path_info, manifest_path_info)
+    if itemized.HasDiffs():
+      raise Exception('Mismatched checkpoint contents: %s' % itemized)
+
+
 def GetManifestDiffItemized(manifest1, manifest2):
   itemized_outputs = []
   for itemized in manifest2.GetDiffItemized(manifest1):
@@ -451,6 +482,7 @@ def CreateDryRunTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 5 paths (14b)'])
     try:
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
                         '.d....... par!',
@@ -520,6 +552,7 @@ def CreateTest():
                        '>f+++++++ par!/f_\\r',
                        'Transferring 6 paths (29b)'])
     try:
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
                         '.f....... .staged_backup_filter',
@@ -536,6 +569,7 @@ def CreateTest():
                                       last_checkpoint_path=checkpoint1.GetImagePath(),
                                       readonly=False)
     try:
+      VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
       AssertLinesEqual(GetManifestDiffItemized(manifest1, manifest2), [])
       AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
                        ['.d..t....... ./',
@@ -567,6 +601,7 @@ def CreateTest():
                        'Transferring 3 of 6 paths (3b of 32b)'],
       readonly=False)
     try:
+      VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
       AssertLinesEqual(GetManifestItemized(manifest3),
                        GetManifestItemized(manifest1))
       AssertLinesEqual(GetManifestDiffItemized(manifest2, manifest3),
@@ -621,6 +656,7 @@ def CreateTest():
                          '>f+++++++ par2/f2b',
                          'Transferring 8 of 12 paths (12b of 41b)'])
       try:
+        VerifyCheckpointContents(manifest4, checkpoint4.GetContentRootPath(), prev_manifest=manifest3)
         AssertLinesEqual(GetManifestDiffItemized(manifest3, manifest4),
                          ['.d..t...x par!',
                           '>fc...... par!/f2',
@@ -664,6 +700,7 @@ def CreateTest():
                          '>f+++++++ par!/f4',
                          'Transferring 5 of 12 paths (0b of 35b)'])
       try:
+        VerifyCheckpointContents(manifest5, checkpoint5.GetContentRootPath(), prev_manifest=manifest4)
         AssertLinesEqual(GetManifestDiffItemized(manifest4, manifest5),
                          ['.d..t.... par!',
                           '>f+++++++ par!/f4'])
@@ -718,6 +755,7 @@ def CreateWithFilterMergeTest():
                        '>f+++++++ par/f2',
                        'Transferring 5 paths (15b)'])
     try:
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
                         '.d....... par',
@@ -833,6 +871,7 @@ def CreateWithFollowSymlinksTest():
                           '.f....... ln2/ln6/f2',
                           '.L....... ln2/ln7 -> d1',
                           '.L....... ln3 -> %s' % test_dir2])
+        VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
         f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
         f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/d1/f2')
         AssertEquals('abc', open(f2_checkpoint, 'r').read())
@@ -842,6 +881,40 @@ def CreateWithFollowSymlinksTest():
         AssertEquals('abc', open(ln6_f2_checkpoint, 'r').read())
       finally:
         checkpoint1.Close()
+
+      SetXattr(test_dir2, 'example', b'example_value')
+      ref_dir2 = CreateDir(test_dir2, 'd2')
+      ref_file3 = CreateFile(ref_dir2, 'f3', contents='def')
+
+      checkpoint2, manifest2 = DoCreate(
+        src_root, checkpoints_dir, '2',
+        last_checkpoint_path=checkpoint1.GetImagePath(),
+        expected_output=['.d......x ln2',
+                         '>d+++++++ ln2/d2',
+                         '>f+++++++ ln2/d2/f3',
+                         'Transferring 3 of 15 paths (3b of 84b)'])
+      try:
+        VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
+        ln2_checkpoint = os.path.join(checkpoint2.GetContentRootPath(), 'ln2')
+        AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+      finally:
+        checkpoint2.Close()
+
+      ref_file3 = CreateFile(ref_dir2, 'f3', contents='ghi')
+
+      checkpoint3, manifest3 = DoCreate(
+        src_root, checkpoints_dir, '3',
+        last_checkpoint_path=checkpoint2.GetImagePath(),
+        expected_output=['>fc...... ln2/d2/f3',
+                         'Transferring 1 of 15 paths (3b of 84b)'])
+      try:
+        VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
+        ref_file3_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2/d2/f3')
+        AssertEquals('ghi', open(ref_file3_checkpoint, 'r').read())
+        ln2_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2')
+        AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+      finally:
+        checkpoint3.Close()
 
 
 def ApplyDryRunTest():
