@@ -2233,6 +2233,14 @@ class Checkpoint(object):
         os.unlink(image_path)
     self.state = Checkpoint.STATE_DELETED
 
+  def MoveToDir(self, new_base_path):
+    if not self.dry_run:
+      assert self.state == Checkpoint.STATE_DONE and not self.mounted
+      new_path = os.path.join(new_base_path, os.path.basename(self.GetImagePath()))
+      assert not os.path.lexists(new_path)
+      shutil.move(self.GetImagePath(), new_path)
+      self.base_path = new_base_path
+
   def _CreateImage(self):
     CreateDiskImage(self.GetImagePath(), volume_name=self.name, encrypt=self.encrypt,
                     encryption_manager=self.encryption_manager, dry_run=self.dry_run)
@@ -2294,13 +2302,22 @@ class CheckpointCreator(object):
     self.total_checkpoint_size = 0
 
   def Create(self):
+    checkpoint_temp_dir = tempfile.mkdtemp()
+    try:
+      return self._CreateInternalOuter(checkpoint_temp_dir)
+    finally:
+      shutil.rmtree(checkpoint_temp_dir)
+
+  def _CreateInternalOuter(self, checkpoint_temp_dir):
     success = False
     try:
       self.checkpoint = Checkpoint.New(
-        self.checkpoints_root_dir, self.name, encryption_manager=self.encryption_manager,
+        checkpoint_temp_dir, self.name, encryption_manager=self.encryption_manager,
         manifest_only=self.manifest_only, encrypt=self.encrypt, dry_run=self.dry_run)
       try:
-        if self._CreateInternal():
+        if self._CreateInternalInner():
+          self.checkpoint.Close()
+          self.checkpoint.MoveToDir(self.checkpoints_root_dir)
           self._PrintResults()
           success = True
       finally:
@@ -2318,7 +2335,7 @@ class CheckpointCreator(object):
         self.checkpoint = None
     return success
 
-  def _CreateInternal(self):
+  def _CreateInternalInner(self):
     if not self.dry_run:
       self.manifest = Manifest(self.checkpoint.GetManifestPath())
     else:
