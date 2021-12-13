@@ -778,10 +778,11 @@ class BackupsManager(object):
                           browseable=browseable, dry_run=dry_run)
 
   @staticmethod
-  def Create(config, volume_name=None, encrypt=True, encryption_manager=None, browseable=True, dry_run=False):
+  def Create(config, volume_name=None, encrypt=True, encryption_manager=None, browseable=True,
+             size=lib.DISK_IMAGE_DEFAULT_CAPACITY, dry_run=False):
     if os.path.lexists(config.image_path):
       raise Exception('Expected %s to not exist' % config.image_path)
-    lib.CreateDiskImage(config.image_path, volume_name=volume_name, encrypt=encrypt,
+    lib.CreateDiskImage(config.image_path, volume_name=volume_name, encrypt=encrypt, size=size,
                         encryption_manager=encryption_manager, dry_run=dry_run)
     if not dry_run:
       return BackupsManager(config, encryption_manager=encryption_manager, readonly=False,
@@ -995,20 +996,21 @@ class CheckpointsToBackupsApplier:
 
 
 class BackupsImageCreator(object):
-  def __init__(self, config, output, volume_name=None, encrypt=True, encryption_manager=None, dry_run=False,
-               verbose=False):
+  def __init__(self, config, output, volume_name=None, encrypt=True, encryption_manager=None,
+               size=lib.DISK_IMAGE_DEFAULT_CAPACITY, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.volume_name = volume_name
     self.encrypt = encrypt
     self.encryption_manager = encryption_manager
+    self.size = size
     self.dry_run = dry_run
     self.verbose = verbose
 
   def CreateImage(self):
     print('Creating image %s...' % self.config.image_path, file=self.output)
     manager = BackupsManager.Create(
-      self.config, volume_name=self.volume_name, encrypt=self.encrypt,
+      self.config, volume_name=self.volume_name, encrypt=self.encrypt, size=self.size,
       encryption_manager=self.encryption_manager, browseable=False, dry_run=self.dry_run)
     if manager is not None:
       manager.Close()
@@ -2055,6 +2057,7 @@ def DoCreateBackupsImage(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-image-path', required=True)
   parser.add_argument('--volume-name')
+  parser.add_argument('--size', default=lib.DISK_IMAGE_DEFAULT_CAPACITY)
   parser.add_argument('--no-encrypt', dest='encrypt', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -2062,7 +2065,7 @@ def DoCreateBackupsImage(args, output):
   config.image_path = os.path.normpath(cmd_args.backups_image_path)
 
   creator = BackupsImageCreator(
-    config, output=output, volume_name=cmd_args.volume_name,
+    config, output=output, volume_name=cmd_args.volume_name, size=cmd_args.size,
     encrypt=cmd_args.encrypt, encryption_manager=lib.EncryptionManager(),
     dry_run=args.dry_run, verbose=args.verbose)
   return creator.CreateImage()

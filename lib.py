@@ -84,6 +84,8 @@ GOOGLE_DRIVE_STUB_CONTENTS_XATTR_KEYS = set([
 
 OPEN_CONTENT_FUNCTION = open
 
+DISK_IMAGE_DEFAULT_CAPACITY = '1T'
+
 
 class PathMatcher(object):
   def Matches(self, path):
@@ -653,8 +655,9 @@ def GetDriveAvailableSpace(path):
   return available_kbs * 1024
 
 
-def CreateDiskImage(image_path, volume_name=None, size='1T', filesystem='APFS',
-                    image_type=None, encrypt=False, encryption_manager=None, dry_run=False):
+def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACITY,
+                    filesystem='APFS', image_type=None, encrypt=False, encryption_manager=None,
+                    dry_run=False):
   password = None
   if encrypt:
     password = encryption_manager.CreatePassword(image_path)
