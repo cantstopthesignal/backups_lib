@@ -2058,9 +2058,10 @@ class Manifest(object):
       clone.path_map[path] = path_info.Clone()
     return clone
 
-  def Dump(self, output):
+  def Dump(self, output, shorten_sha256=True, shorten_xattr_hash=True):
     for path in sorted(self.path_map.keys()):
-      print(self.path_map[path].ToString(shorten_sha256=True, shorten_xattr_hash=True), file=output)
+      print(self.path_map[path].ToString(
+        shorten_sha256=shorten_sha256, shorten_xattr_hash=shorten_xattr_hash), file=output)
 
   def GetItemized(self):
     itemizeds = []
@@ -3041,11 +3042,14 @@ def DoCompactImage(args, output):
 def DoDumpManifest(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('path', metavar='manifest_or_checkpoint_path')
+  parser.add_argument('--no-shorten-sha256', dest='shorten_sha256', action='store_false')
+  parser.add_argument('--no-shorten-xattr-hash', dest='shorten_xattr_hash', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
   manifest = ReadManifestFromCheckpointOrPath(
     cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
-  manifest.Dump(output)
+  manifest.Dump(output, shorten_sha256=cmd_args.shorten_sha256,
+                shorten_xattr_hash=cmd_args.shorten_xattr_hash)
   return True
 
 
