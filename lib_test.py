@@ -1321,7 +1321,7 @@ def StripTest():
                 'Checkpoint stripped',
                 'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
                 '<... snip APFS operation ...>',
-                'Iteration 2, new apfs min size 1.2gb...',
+                re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
                 '<... snip APFS operation ...>',
                 'Starting to compact…',
                 'Reclaiming free space…',
@@ -1418,7 +1418,7 @@ def CompactTest():
                 expected_output=[
                   'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
                   '<... snip APFS operation ...>',
-                  'Iteration 2, new apfs min size 1.2gb...',
+                  re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
                   '<... snip APFS operation ...>',
                   'Iteration 3, new apfs min size 1gb...',
                   '<... snip APFS operation ...>',
@@ -1433,8 +1433,8 @@ def CompactTest():
                   'Reclaiming free space…',
                   'Finishing compaction…',
                   'Reclaimed 0 bytes out of 1023.6 GB possible.',
-                  re.compile('^Image size 225[.]5mb -> 42[.][67]mb$')])
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '42.6mb', '42.7mb')
+                  re.compile('^Image size 225[.]5mb -> (42[.][67]|34[.]8)mb$')])
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '34.7mb', '42.7mb')
 
 
 def DiffManifestsTest():
