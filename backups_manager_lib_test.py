@@ -105,7 +105,9 @@ def ApplyToBackupsTest():
     checkpoint_path3 = DoCreateBackup(
       config, backup_name='2020-01-04-120000',
       expected_output=['*deleting f3_original',
+                       '  replaced by duplicate: .f....... f3_renamed',
                        '>f+++++++ f3_renamed',
+                       '  replacing duplicate: .f....... f3_original',
                        '.Lc...... ln1_dir -> .',
                        '.Lc...... ln3 -> fX',
                        'Transferring 3 of 10 paths (1kb of 1kb)'])
@@ -234,6 +236,7 @@ def ApplyToBackupsTest():
     checkpoint_path3 = DoCreateBackup(
       config, backup_name='2020-01-05-120000',
       expected_output=['>f+++++++ f4',
+                       '  replacing duplicate: .f....... f3_renamed',
                        '>f+++++++ f5',
                        'Transferring 2 of 12 paths (2kb of 3kb)'])
     DoApplyToBackups(
@@ -265,6 +268,8 @@ def ApplyToBackupsTest():
     checkpoint_path3 = DoCreateBackup(
       config, backup_name='2020-01-06-120000',
       expected_output=['>f+++++++ f6',
+                       '  replacing duplicate: .f....... f4',
+                       '  replacing duplicate: .f....... f3_renamed',
                        '>f+++++++ f7',
                        'Transferring 2 of 14 paths (2kb of 5kb)'])
     DoApplyToBackups(
@@ -396,7 +401,9 @@ def VerifyBackupsTest():
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-03-120000',
       expected_output=['*deleting f3_original',
+                       '  replaced by duplicate: .f....... f3_renamed',
                        '>f+++++++ f3_renamed',
+                       '  replacing duplicate: .f....... f3_original',
                        '.f..t.... fT',
                        '.f......x fX',
                        '.d..t.... par!',
@@ -550,6 +557,8 @@ def AddMissingManifestsToBackupsTest():
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-03-120000',
       expected_output=['>f+++++++ f3',
+                       '  replacing duplicate: .f....... f1',
+                       '  replacing duplicate: .f....... f2',
                        'Transferring 1 of 5 paths (3b of 9b)'])
 
     file3 = CreateFile(config.src_path, 'f3', contents='def')
@@ -656,6 +665,8 @@ def DeDuplicateBackupsTest():
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-03-120000',
       expected_output=['>f+++++++ f3',
+                       '  replacing duplicate: .f....... f1',
+                       '  replacing duplicate: .f....... f2',
                        'Transferring 1 of 5 paths (1kb of 4kb)'])
 
     file3 = CreateFile(config.src_path, 'f3', contents='1' * 1025)
@@ -667,6 +678,9 @@ def DeDuplicateBackupsTest():
       config, backup_name='2020-01-04-120000',
       expected_output=['.f..t.... f3',
                        '>f+++++++ f3a',
+                       '  replacing duplicate: .f....... f3',
+                       '  replacing duplicate: .f....... f1',
+                       '  replacing duplicate: .f....... f2',
                        'Transferring 2 of 6 paths (2kb of 5kb)'])
 
     file3b = CreateFile(config.src_path, 'f3b', contents='1' * 1025)
@@ -674,6 +688,10 @@ def DeDuplicateBackupsTest():
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-05-120000',
       expected_output=['>f+++++++ f3b',
+                       '  replacing duplicate: .f....... f3a',
+                       '  replacing duplicate: .f....... f1',
+                       '  replacing duplicate: .f....... f2',
+                       '  replacing similar: .f..t.... f3',
                        'Transferring 1 of 7 paths (1kb of 6kb)'])
 
     DoApplyToBackups(
@@ -1387,12 +1405,18 @@ def DumpUniqueFilesInBackupsTest():
       config, backup_name='2020-01-04-120000',
       expected_output=['*deleting f6',
                        '>f+++++++ f6_new_dup',
+                       '  replacing similar: .f..t.... f7',
                        '*deleting f7',
+                       '  replaced by similar: .f..t.... f7_renamed',
+                       '  replaced by similar: .f..t.... f6_new_dup',
                        '>f+++++++ f7_renamed',
+                       '  replacing similar: .f..t.... f7',
                        '.Lc...... ln1 -> f3',
                        '>f+++++++ par!/f8',
+                       '  replacing duplicate: .f....... par2/f8',
                        '.d..t.... par2',
                        '*deleting par2/f8',
+                       '  replaced by duplicate: .f....... par!/f8',
                        'Transferring 5 of 13 paths (3kb of 3kb)'])
 
     DoApplyToBackups(
@@ -1631,6 +1655,7 @@ def ExtractFromBackupsTest():
         expected_output=['>fc...... f7',
                          '.d......x par2',
                          '>f+++++++ par2/f9',
+                         '  replacing duplicate: .f....... f7',
                          'Transferring 3 of 14 paths (2kb of 5kb)'])
 
       DoApplyToBackups(config, expected_output=None)

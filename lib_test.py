@@ -514,6 +514,7 @@ def CreateTest():
     file1 = CreateFile(parent1, 'f_\r')
     file2 = CreateFile(parent1, 'f2')
     file3 = CreateFile(parent1, 'f3')
+    file6_from = CreateFile(parent1, 'file6_from', contents='file6_contents')
 
     file_skip1 = CreateFile(src_root, 'SKIP1')
     file_skip1 = CreateFile(parent1, '2.skp')
@@ -530,7 +531,8 @@ def CreateTest():
                        '>f+++++++ par!/f2',
                        '>f+++++++ par!/f3',
                        '>f+++++++ par!/f_\\r',
-                       'Transferring 6 paths (29b)'])
+                       '>f+++++++ par!/file6_from',
+                       'Transferring 7 paths (43b)'])
     try:
       AssertLinesEqual(GetManifestItemized(manifest_only),
                        ['.d....... .',
@@ -538,7 +540,8 @@ def CreateTest():
                         '.d....... par!',
                         '.f....... par!/f2',
                         '.f....... par!/f3',
-                        '.f....... par!/f_\\r'])
+                        '.f....... par!/f_\\r',
+                        '.f....... par!/file6_from'])
     finally:
       checkpoint_manifest_only.Close()
 
@@ -550,7 +553,8 @@ def CreateTest():
                        '>f+++++++ par!/f2',
                        '>f+++++++ par!/f3',
                        '>f+++++++ par!/f_\\r',
-                       'Transferring 6 paths (29b)'])
+                       '>f+++++++ par!/file6_from',
+                       'Transferring 7 paths (43b)'])
     try:
       VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
       AssertLinesEqual(GetManifestItemized(manifest1),
@@ -559,7 +563,8 @@ def CreateTest():
                         '.d....... par!',
                         '.f....... par!/f2',
                         '.f....... par!/f3',
-                        '.f....... par!/f_\\r'])
+                        '.f....... par!/f_\\r',
+                        '.f....... par!/file6_from'])
       AssertEmptyRsync(src_root, checkpoint1.GetContentRootPath())
       AssertBasisInfoFileEquals(checkpoint1.GetMetadataPath(), None)
     finally:
@@ -577,7 +582,8 @@ def CreateTest():
                         'cd++++++++++ par!/',
                         '>f++++++++++ par!/f2',
                         '>f++++++++++ par!/f3',
-                        '>f++++++++++ par!/f_\r'])
+                        '>f++++++++++ par!/f_\r',
+                        '>f++++++++++ par!/file6_from'])
       AssertBasisInfoFileEquals(checkpoint2.GetMetadataPath(), checkpoint1.GetImagePath())
       DoVerify(manifest2.GetPath(), src_root,
                expected_success=False,
@@ -598,7 +604,7 @@ def CreateTest():
       expected_output=['.d......x .',
                        '>fcs..... par!/f2',
                        '.f..t.... par!/f_\\r',
-                       'Transferring 3 of 6 paths (3b of 32b)'],
+                       'Transferring 3 of 7 paths (3b of 46b)'],
       readonly=False)
     try:
       VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
@@ -612,7 +618,8 @@ def CreateTest():
       DoVerify(manifest3.GetPath(), checkpoint3.GetContentRootPath(),
                expected_success=False,
                expected_output=['>f+++++++ .staged_backup_filter',
-                                '>f+++++++ par!/f3'])
+                                '>f+++++++ par!/f3',
+                                '>f+++++++ par!/file6_from'])
       checkpoint2 = lib.Checkpoint.Open(checkpoint2.GetImagePath(), readonly=False)
       try:
         AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
@@ -623,7 +630,8 @@ def CreateTest():
         checkpoint2.Close()
       AssertLinesEqual(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
                        ['>f++++++++++ .staged_backup_filter',
-                        '>f++++++++++ par!/f3'])
+                        '>f++++++++++ par!/f3',
+                        '>f++++++++++ par!/file6_from'])
     finally:
       checkpoint3.Close()
 
@@ -631,6 +639,10 @@ def CreateTest():
     SetMTime(parent1, 1510000000)
     parent2 = CreateDir(src_root, 'par2')
     file2b = CreateFile(parent2, 'f2b', contents='def')
+    DeleteFileOrDir(file6_from)
+    file6_to = CreateFile(parent1, 'file6_to', contents='file6_contents')
+    file6_to2 = CreateFile(parent1, 'file6_to2', contents='file6_contents')
+    file6_to3 = CreateFile(parent1, 'file6_to3', contents='file6_contents_notmatch')
 
     def PreSyncContentsTestHook(checkpoint_creator):
       CreateFile(parent1, 'f2', contents='ghi')
@@ -638,6 +650,8 @@ def CreateTest():
       SetMTime(parent1, 1520000000)
       CreateFile(parent2, 'f2b', contents='jkl')
       SetMTime(parent2, 1520000000)
+      SetMTime(file6_to2, 1520000000)
+      file6_to3 = CreateFile(parent1, 'file6_to3', contents='file6_contents')
 
     lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = PreSyncContentsTestHook
     try:
@@ -647,19 +661,35 @@ def CreateTest():
         readonly=False,
         expected_output=['.d..t.... par!',
                          '>fc...... par!/f2',
+                         '*deleting par!/file6_from',
+                         '  replaced by duplicate: .f....... par!/file6_to',
+                         '  replaced by duplicate: .f....... par!/file6_to2',
+                         '>f+++++++ par!/file6_to',
+                         '  replacing duplicate: .f....... par!/file6_from',
+                         '>f+++++++ par!/file6_to2',
+                         '  replacing duplicate: .f....... par!/file6_from',
+                         '>f+++++++ par!/file6_to3',
                          '>d+++++++ par2',
                          '>f+++++++ par2/f2b',
                          '*** Warning: Paths changed since syncing, checking...',
                          '.d..t...x par!',
                          '>fc...... par!/f2',
+                         '>f+++++++ par!/file6_to2',
+                         '  replacing similar: .f..t.... par!/file6_from',
+                         '>f+++++++ par!/file6_to3',
+                         '  replacing duplicate: .f....... par!/file6_from',
                          '>d+++++++ par2',
                          '>f+++++++ par2/f2b',
-                         'Transferring 8 of 12 paths (12b of 41b)'])
+                         'Transferring 13 of 17 paths (91b of 120b)'])
       try:
         VerifyCheckpointContents(manifest4, checkpoint4.GetContentRootPath(), prev_manifest=manifest3)
         AssertLinesEqual(GetManifestDiffItemized(manifest3, manifest4),
                          ['.d..t...x par!',
                           '>fc...... par!/f2',
+                          '*deleting par!/file6_from',
+                          '>f+++++++ par!/file6_to',
+                          '>f+++++++ par!/file6_to2',
+                          '>f+++++++ par!/file6_to3',
                           '>d+++++++ par2',
                           '>f+++++++ par2/f2b'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
@@ -676,6 +706,8 @@ def CreateTest():
 
     file4 = CreateFile(parent1, 'f4')
     SetMTime(parent1, 1510000000)
+    DeleteFileOrDir(file6_to2)
+    DeleteFileOrDir(file6_to3)
 
     def PreSyncContentsTestHook(checkpoint_creator):
       file4_stat = os.lstat(os.path.join(parent1, 'f4'))
@@ -693,23 +725,30 @@ def CreateTest():
         readonly=False,
         expected_output=['.d..t.... par!',
                          '>f+++++++ par!/f4',
+                         '*deleting par!/file6_to2',
+                         '  replaced by similar: .f..t.... par!/file6_to',
+                         '*deleting par!/file6_to3',
+                         '  replaced by duplicate: .f....... par!/file6_to',
                          '*** Warning: Paths changed since syncing, checking...',
                          '>f+++++++ par!/f4',
                          '*** Warning: Paths changed since syncing, checking...',
                          '.d..t.... par!',
                          '>f+++++++ par!/f4',
-                         'Transferring 5 of 12 paths (0b of 35b)'])
+                         'Transferring 5 of 13 paths (0b of 49b)'])
       try:
         VerifyCheckpointContents(manifest5, checkpoint5.GetContentRootPath(), prev_manifest=manifest4)
         AssertLinesEqual(GetManifestDiffItemized(manifest4, manifest5),
                          ['.d..t.... par!',
-                          '>f+++++++ par!/f4'])
+                          '>f+++++++ par!/f4',
+                          '*deleting par!/file6_to2',
+                          '*deleting par!/file6_to3'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
                          ['.d..t.....x. ./',
                           '>f++++++++++ .staged_backup_filter',
                           '>f++++++++++ par!/f2',
                           '>f++++++++++ par!/f3',
                           '>f++++++++++ par!/f_\r',
+                          '>f++++++++++ par!/file6_to',
                           'cd++++++++++ par2/',
                           '>f++++++++++ par2/f2b'])
         AssertBasisInfoFileEquals(checkpoint5.GetMetadataPath(), checkpoint4.GetImagePath())
