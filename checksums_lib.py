@@ -223,10 +223,10 @@ class ChecksumsSyncer(object):
     self.scan_manifest = lib.Manifest()
 
     self.escape_key_detector = lib.EscapeKeyDetector()
+    escape_key_pressed = False
     try:
       self._SyncInternal()
-      if not self.interactive and self.escape_key_detector.WasEscapePressed():
-        return False
+      escape_key_pressed = self.escape_key_detector.WasEscapePressed()
     finally:
       self.escape_key_detector.Shutdown()
       self.escape_key_detector = None
@@ -237,7 +237,7 @@ class ChecksumsSyncer(object):
       if not self.dry_run:
         self.manifest.Write()
 
-      if self.interactive:
+      if self.interactive or escape_key_pressed:
         if not ChecksumsSyncer.INTERACTIVE_CHECKER.Confirm('Apply update?', self.output):
           print('*** Cancelled ***', file=self.output)
           if not self.dry_run:

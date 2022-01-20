@@ -135,7 +135,6 @@ def VerifyTest():
                        'Paths: 5 total (1kb), 5 mismatched (1kb)'])
 
 
-
 def SyncTest():
   with TempDir() as test_dir:
     root_dir = CreateDir(test_dir, 'root')
@@ -213,13 +212,19 @@ def SyncTest():
     CreateFile(root_dir, '.DS_Store')
     CreateFile(parent1, '.DS_Store')
 
-    with SetEscapeKeyDetectorCancelAtInvocation(14):
-      DoSync(
-        root_dir, dry_run=True,
-        expected_success=False,
-        expected_output=['.Lc...... ln1 -> f1',
-                         '.f..t.... par! \\r/f2',
-                         '*** Cancelled at path par! \\r/f3'])
+    with InteractiveCheckerReadyResults(
+        checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      with SetEscapeKeyDetectorCancelAtInvocation(14):
+        DoSync(
+          root_dir, dry_run=True,
+          expected_success=False,
+          expected_output=['.Lc...... ln1 -> f1',
+                           '.f..t.... par! \\r/f2',
+                           '*** Cancelled at path par! \\r/f3',
+                           'Paths: 8 total (2kb), 2 synced (1kb), 1 checksummed (1kb)',
+                           'Apply update? (y/N): n',
+                           '*** Cancelled ***'])
     DoSync(
       root_dir, dry_run=True,
       expected_output=['.Lc...... ln1 -> f1',
@@ -382,15 +387,21 @@ def SyncTest():
                               '*deleting par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
                               'Paths: 7 total (3kb), 7 mismatched (4kb), 3 checksummed (2kb)'])
-    with SetEscapeKeyDetectorCancelAtInvocation(15):
-      DoSync(
-        root_dir, dry_run=True,
-        expected_success=False,
-        expected_output=['.d......x .',
-                         '.f..t.... f1',
-                         '.d......x par! \\r',
-                         '>fc.t.... par! \\r/f2',
-                         '*** Cancelled at path par! \\r/f4'])
+    with InteractiveCheckerReadyResults(
+        checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      with SetEscapeKeyDetectorCancelAtInvocation(15):
+        DoSync(
+          root_dir, dry_run=True,
+          expected_success=False,
+          expected_output=['.d......x .',
+                           '.f..t.... f1',
+                           '.d......x par! \\r',
+                           '>fc.t.... par! \\r/f2',
+                           '*** Cancelled at path par! \\r/f4',
+                           'Paths: 7 total (3kb), 4 synced (1kb), 2 checksummed (1kb)',
+                           'Apply update? (y/N): n',
+                           '*** Cancelled ***'])
     with InteractiveCheckerReadyResults(
         checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(False)
