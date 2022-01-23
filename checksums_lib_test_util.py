@@ -22,6 +22,16 @@ def InteractiveCheckerReadyResults(interactive_checker):
     interactive_checker.ClearReadyResults()
 
 
+@contextlib.contextmanager
+def SetMaxRenameDetectionMatchingSizeFileCount(new_file_count):
+  old_value = checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT
+  checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT = new_file_count
+  try:
+    yield
+  finally:
+    checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT = old_value
+
+
 def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
   args = []
   if dry_run:

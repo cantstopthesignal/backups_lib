@@ -24,6 +24,7 @@ CHECKSUM_FILTERS = [lib.FilterRuleExclude('/.metadata'),
                     lib.FilterRuleDirMerge(FILTER_DIR_MERGE_FILENAME)]
 
 MIN_RENAME_DETECTION_FILE_SIZE = 1
+MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT = 10
 
 
 def GetManifestNewPath(manifest_path):
@@ -384,6 +385,8 @@ class ChecksumsSyncer(object):
 
     self.total_synced_paths += 1
 
+    rename_detected = False
+
     if (self.detect_renames and basis_path_info.HasFileContents()
         and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.size_to_pathinfos is None:
@@ -392,33 +395,39 @@ class ChecksumsSyncer(object):
 
       matching_size_path_infos = self.size_to_pathinfos.get(basis_path_info.size, [])
 
-      dup_path_infos = []
-      for path_info in matching_size_path_infos:
-        if path_info.sha256 is None:
-          if self.escape_key_detector.WasEscapePressed():
-            print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
-            return
-
-          full_path = os.path.join(self.root_path, path_info.path)
-          path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
-          self.total_checksummed_paths += 1
-          self.total_checksummed_size += path_info.size
-        assert basis_path_info.sha256 is not None
-        if path_info.sha256 == basis_path_info.sha256:
-          dup_path_infos.append(path_info)
-
-      analyze_result = lib.AnalyzePathInfoDups(
-        basis_path_info, dup_path_infos, replacing_previous=False, verbose=self.verbose)
-      for dup_output_line in analyze_result.dup_output_lines:
-        print(dup_output_line, file=self.output)
-      if analyze_result.found_matching_rename:
-        self.total_renamed_paths += 1
-        self.total_renamed_size += basis_path_info.size
+      if len(matching_size_path_infos) > MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT:
+        print('  too many potential renames to check: %d > %d'
+              % (len(matching_size_path_infos), MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT),
+              file=self.output)
       else:
-        self.total_deleted_paths += 1
-        self.total_deleted_size += basis_path_info.size
+        dup_path_infos = []
+        for path_info in matching_size_path_infos:
+          if path_info.sha256 is None:
+            if self.escape_key_detector.WasEscapePressed():
+              print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
+              return
+
+            full_path = os.path.join(self.root_path, path_info.path)
+            path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
+            self.total_checksummed_paths += 1
+            self.total_checksummed_size += path_info.size
+          assert basis_path_info.sha256 is not None
+          if path_info.sha256 == basis_path_info.sha256:
+            dup_path_infos.append(path_info)
+
+        analyze_result = lib.AnalyzePathInfoDups(
+          basis_path_info, dup_path_infos, replacing_previous=False, verbose=self.verbose)
+        for dup_output_line in analyze_result.dup_output_lines:
+          print(dup_output_line, file=self.output)
+        rename_detected = analyze_result.found_matching_rename
+
+    if rename_detected:
+      self.total_renamed_paths += 1
+      self.total_renamed_size += basis_path_info.size
     else:
       self.total_deleted_paths += 1
+      if basis_path_info.HasFileContents():
+        self.total_deleted_size += basis_path_info.size
 
   def _AddStatsForSyncedPath(self, path_info):
     self.total_synced_paths += 1
