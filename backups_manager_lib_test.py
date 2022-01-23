@@ -651,7 +651,7 @@ def DeDuplicateBackupsTest():
     file2 = CreateFile(config.src_path, 'f2', contents='1' * 1025)
     fileT = CreateFile(config.src_path, 'fT', contents='2' * 1025)
 
-    checkpoint_path1 = DoCreateCheckpoint(
+    DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
       last_checkpoint_path=latest_checkpoint_path,
       expected_output=['>fcs..... f1',
@@ -662,37 +662,53 @@ def DeDuplicateBackupsTest():
 
     file3 = CreateFile(config.src_path, 'f3', contents='1' * 1025)
 
-    checkpoint_path2 = DoCreateBackup(
+    DoCreateBackup(
       config, backup_name='2020-01-03-120000',
       expected_output=['>f+++++++ f3',
                        '  replacing duplicate: .f....... f1',
                        '  replacing duplicate: .f....... f2',
                        'Transferring 1 of 5 paths (1kb of 4kb)'])
 
-    file3 = CreateFile(config.src_path, 'f3', contents='1' * 1025)
-    SetMTime(file3, None)
+    SetXattr(file3, 'example', b'example_value')
 
     file3a = CreateFile(config.src_path, 'f3a', contents='1' * 1025)
 
-    checkpoint_path2 = DoCreateBackup(
+    file4_old = CreateFile(config.src_path, 'f4_old', contents='3' * 1025, mtime=1500000000)
+    file5_new = CreateFile(config.src_path, 'f5_new', contents='4' * 1025, mtime=1600000000)
+
+    DoCreateBackup(
       config, backup_name='2020-01-04-120000',
-      expected_output=['.f..t.... f3',
+      expected_output=['.f......x f3',
                        '>f+++++++ f3a',
                        '  replacing duplicate: .f....... f3',
                        '  replacing duplicate: .f....... f1',
                        '  replacing duplicate: .f....... f2',
-                       'Transferring 2 of 6 paths (2kb of 5kb)'])
+                       '>f+++++++ f4_old',
+                       '>f+++++++ f5_new',
+                       'Transferring 4 of 8 paths (4kb of 7kb)'])
 
     file3b = CreateFile(config.src_path, 'f3b', contents='1' * 1025)
+    DeleteFileOrDir(file4_old)
+    DeleteFileOrDir(file5_new)
+    file4_new = CreateFile(config.src_path, 'f4_new', contents='3' * 1025, mtime=1600000000)
+    file5_old = CreateFile(config.src_path, 'f5_old', contents='4' * 1025, mtime=1500000000)
 
-    checkpoint_path2 = DoCreateBackup(
+    DoCreateBackup(
       config, backup_name='2020-01-05-120000',
       expected_output=['>f+++++++ f3b',
                        '  replacing duplicate: .f....... f3a',
                        '  replacing duplicate: .f....... f1',
                        '  replacing duplicate: .f....... f2',
-                       '  replacing similar: .f..t.... f3',
-                       'Transferring 1 of 7 paths (1kb of 6kb)'])
+                       '  replacing similar: .f......x f3',
+                       '>f+++++++ f4_new',
+                       '  replacing similar: .f..t.... f4_old',
+                       '*deleting f4_old',
+                       '  replaced by similar: .f..t.... f4_new',
+                       '*deleting f5_new',
+                       '  replaced by similar: .f..t.... f5_old',
+                       '>f+++++++ f5_old',
+                       '  replacing similar: .f..t.... f5_new',
+                       'Transferring 3 of 9 paths (3kb of 8kb)'])
 
     DoApplyToBackups(
       config,
@@ -712,16 +728,22 @@ def DeDuplicateBackupsTest():
         'Verifying 2020-01-03-120000...',
         'Paths: 5 total (4kb), 4 checksummed (4kb)',
         'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
-        '.f..t.... f3',
+        '.f......x f3',
         '>f+++++++ f3a',
-        'Copying paths: 6 to copy, 3 to hard link, 6 total in source, 6 total in result...',
+        '>f+++++++ f4_old',
+        '>f+++++++ f5_new',
+        'Copying paths: 8 to copy, 3 to hard link, 8 total in source, 8 total in result...',
         'Verifying 2020-01-04-120000...',
-        'Paths: 6 total (5kb), 5 checksummed (5kb)',
+        'Paths: 8 total (7kb), 7 checksummed (7kb)',
         'Applying 2020-01-05-120000 onto 2020-01-04-120000...',
         '>f+++++++ f3b',
-        'Copying paths: 7 to copy, 5 to hard link, 7 total in source, 7 total in result...',
+        '>f+++++++ f4_new',
+        '*deleting f4_old',
+        '*deleting f5_new',
+        '>f+++++++ f5_old',
+        'Copying paths: 9 to copy, 5 to hard link, 9 total in source, 9 total in result...',
         'Verifying 2020-01-05-120000...',
-        'Paths: 7 total (6kb), 6 checksummed (6kb)'])
+        'Paths: 9 total (8kb), 8 checksummed (8kb)'])
 
     DoVerifyBackups(
       config,
@@ -732,9 +754,9 @@ def DeDuplicateBackupsTest():
                        'Verifying 2020-01-03-120000...',
                        'Paths: 5 total, 3 inode hits, 1 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 6 total, 3 inode hits, 2 checksummed (2kb)',
+                       'Paths: 8 total, 3 inode hits, 4 checksummed (4kb)',
                        'Verifying 2020-01-05-120000...',
-                       'Paths: 7 total, 5 inode hits, 1 checksummed (1kb)'])
+                       'Paths: 9 total, 5 inode hits, 3 checksummed (3kb)'])
 
     DoDeduplicateBackups(
       config, dry_run=True, verbose=True, min_backup='2020-01-02-120000', max_backup='2020-01-04-120000',
@@ -747,14 +769,14 @@ def DeDuplicateBackupsTest():
         'Duplicates: 1 new (size=1kb); 3 existing; 4 large files',
         'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
         'Similar path f3 (size=1kb) to:',
-        '  .f..t.... f3',
-        '  .f..t.... f1',
-        '  .f..t.... f2',
+        '  .f......x f3',
+        '  .f......x f1',
+        '  .f......x f2',
         'Duplicate path f3a (size=1kb) to:',
         '  f3',
         '  f1',
         '  f2',
-        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 5 large files',
+        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 7 large files',
         'Skipped backup Backup<2020-01-05-120000,DONE>'])
 
     DoDeduplicateBackups(
@@ -772,13 +794,13 @@ def DeDuplicateBackupsTest():
         '  f3',
         '  f1',
         '  f2',
-        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 5 large files',
+        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 7 large files',
         'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
         'Duplicate path f3b (size=1kb) to:',
         '  f3a',
         '  f1',
         '  f2',
-        'Duplicates: 1 new (size=1kb); 5 existing; 6 large files'])
+        'Duplicates: 1 new (size=1kb); 5 existing; 2 similar (size=2kb); 8 large files'])
 
     DoDeduplicateBackups(
       config,
@@ -795,7 +817,7 @@ def DeDuplicateBackupsTest():
         '  f3',
         '  f1',
         '  f2',
-        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 5 large files',
+        'Duplicates: 1 new (size=1kb); 3 existing; 1 similar (size=1kb); 7 large files',
         'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
         'Duplicate path f3a (size=1kb) to:',
         '  f3a',
@@ -805,7 +827,7 @@ def DeDuplicateBackupsTest():
         '  f3a',
         '  f1',
         '  f2',
-        'Duplicates: 2 new (size=2kb); 4 existing; 6 large files'])
+        'Duplicates: 2 new (size=2kb); 4 existing; 2 similar (size=2kb); 8 large files'])
 
     DoDeduplicateBackups(
       config, dry_run=True,
@@ -815,9 +837,37 @@ def DeDuplicateBackupsTest():
         'De-duplicate Backup<2020-01-03-120000,DONE> onto Backup<2020-01-02-120000,DONE>...',
         'Duplicates: 4 existing; 4 large files',
         'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
-        'Duplicates: 4 existing; 1 similar (size=1kb); 5 large files',
+        'Duplicates: 4 existing; 1 similar (size=1kb); 7 large files',
         'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
-        'Duplicates: 6 existing; 6 large files'])
+        'Duplicates: 6 existing; 2 similar (size=2kb); 8 large files'])
+
+    DoDeduplicateBackups(
+      config, dry_run=True, match_older_mtimes=True,
+      expected_output=[
+        'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
+        'Duplicates: 3 large files',
+        'De-duplicate Backup<2020-01-03-120000,DONE> onto Backup<2020-01-02-120000,DONE>...',
+        'Duplicates: 4 existing; 4 large files',
+        'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
+        'Duplicates: 4 existing; 1 similar (size=1kb); 7 large files',
+        'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
+        'Duplicate path f4_new (size=1kb) to:',
+        '  f4_old',
+        'Duplicates: 1 new (size=1kb); 6 existing; 1 similar (size=1kb); 8 large files; 1 older mtime files matched'])
+
+    DoDeduplicateBackups(
+      config, match_older_mtimes=True,
+      expected_output=[
+        'De-duplicate Backup<2020-01-02-120000,DONE> onto Backup<2020-01-01-120000,DONE>...',
+        'Duplicates: 3 large files',
+        'De-duplicate Backup<2020-01-03-120000,DONE> onto Backup<2020-01-02-120000,DONE>...',
+        'Duplicates: 4 existing; 4 large files',
+        'De-duplicate Backup<2020-01-04-120000,DONE> onto Backup<2020-01-03-120000,DONE>...',
+        'Duplicates: 4 existing; 1 similar (size=1kb); 7 large files',
+        'De-duplicate Backup<2020-01-05-120000,DONE> onto Backup<2020-01-04-120000,DONE>...',
+        'Duplicate path f4_new (size=1kb) to:',
+        '  f4_old',
+        'Duplicates: 1 new (size=1kb); 6 existing; 1 similar (size=1kb); 8 large files; 1 older mtime files matched'])
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
@@ -836,9 +886,9 @@ def DeDuplicateBackupsTest():
                        'Verifying 2020-01-03-120000...',
                        'Paths: 5 total, 4 inode hits, 0 checksummed (0b)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 6 total, 4 inode hits, 1 checksummed (1kb)',
+                       'Paths: 8 total, 4 inode hits, 3 checksummed (3kb)',
                        'Verifying 2020-01-05-120000...',
-                       'Paths: 7 total, 6 inode hits, 0 checksummed (0b)'])
+                       'Paths: 9 total, 7 inode hits, 1 checksummed (1kb)'])
 
 
 def PruneBackupsTest():

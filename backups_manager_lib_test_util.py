@@ -197,7 +197,8 @@ def DoAddMissingManifestsToBackups(config, expected_output=[]):
 
 
 def DoDeduplicateBackups(
-    config, min_backup=None, max_backup=None, dry_run=False, verbose=False, expected_output=[]):
+    config, min_backup=None, max_backup=None, match_older_mtimes=False, dry_run=False, verbose=False,
+    expected_output=[]):
   cmd_args = ['deduplicate-backups',
               '--min-file-size', '1024',
               '--backups-config', config.path]
@@ -205,6 +206,8 @@ def DoDeduplicateBackups(
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
     cmd_args.extend(['--max-backup', max_backup])
+  if match_older_mtimes:
+    cmd_args.append('--match-older-mtimes')
   DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_output=expected_output)
 
 

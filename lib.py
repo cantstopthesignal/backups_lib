@@ -1584,7 +1584,6 @@ class ItemizedPathChange:
     self.xattr_diff = xattr_diff
     self.link_dest = link_dest
 
-
   def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS):
     if not ignore_uid_diffs and self.uid_diff:
       return True

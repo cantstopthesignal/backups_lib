@@ -403,7 +403,7 @@ class DeDuplicateBackupsResult(object):
 
 
 def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min_file_size=DEDUP_MIN_FILE_SIZE,
-                       escape_key_detector=None, dry_run=False, verbose=False):
+                       match_older_mtimes=False, escape_key_detector=None, dry_run=False, verbose=False):
   print('De-duplicate %s onto %s...' % (backup, last_backup), file=output)
 
   result = DeDuplicateBackupsResult()
@@ -425,25 +425,28 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
   num_existing_dup_files = 0
   num_similar_files = 0
   num_similar_files_total_size = 0
+  num_older_mtime_files_matched = 0
+  manifest_modified = False
 
   for path in manifest.GetPaths():
     if escape_key_detector is not None and escape_key_detector.WasEscapePressed():
       print('*** Cancelled at path %s' % lib.EscapePath(path), file=output)
       break
-    path_info = manifest.GetPathInfo(path)
-    if not path_info.HasFileContents() or path_info.size < min_file_size:
+    manifest_path_info = manifest.GetPathInfo(path)
+    if not manifest_path_info.HasFileContents() or manifest_path_info.size < min_file_size:
       continue
-    assert path_info.sha256 is not None
+    assert manifest_path_info.sha256 is not None
 
     num_large_files += 1
     dup_path_infos = lib.PathInfo.SortedByPathSimilarity(
-      path, sha256_to_last_pathinfos.get(path_info.sha256, []))
+      path, sha256_to_last_pathinfos.get(manifest_path_info.sha256, []))
     if not dup_path_infos:
       continue
 
     full_path = os.path.join(backup.GetContentRootPath(), path)
     path_info = lib.PathInfo.FromPath(path, full_path)
     assert path_info.dev_inode is not None
+    assert not lib.PathInfo.GetItemizedDiff(manifest_path_info, path_info).HasDiffs()
 
     already_dupped = False
 
@@ -456,6 +459,8 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
         already_dupped = True
         break
       itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
+      if itemized.time_diff and match_older_mtimes and dup_path_info.mtime < path_info.mtime:
+        itemized.time_diff = False
       if itemized.HasDiffs():
         similar_path_infos.append(dup_path_info)
         continue
@@ -495,6 +500,14 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
       os.link(matching_dup_full_path, full_path)
       os.utime(parent_dir, (parent_stat.st_mtime, parent_stat.st_mtime), follow_symlinks=False)
 
+    if match_older_mtimes and matching_dup_path_info.mtime < path_info.mtime:
+      manifest_path_info.mtime = matching_dup_path_info.mtime
+      num_older_mtime_files_matched += 1
+      manifest_modified = True
+
+  if manifest_modified and not dry_run:
+    manifest.Write()
+
   output_messages = []
   if result.num_new_dup_files:
     output_messages.append(
@@ -506,6 +519,8 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
       '%d similar (size=%s)' % (num_similar_files, lib.FileSizeToString(num_similar_files_total_size)))
   if num_large_files:
     output_messages.append('%d large files' % num_large_files)
+  if num_older_mtime_files_matched:
+    output_messages.append('%d older mtime files matched' % num_older_mtime_files_matched)
 
   if output_messages:
     print('Duplicates: %s' % '; '.join(output_messages), file=output)
@@ -1235,12 +1250,13 @@ class BackupsVerifier(object):
 
 class BackupsDeDuplicator(object):
   def __init__(self, config, output, min_file_size=DEDUP_MIN_FILE_SIZE, min_backup=None, max_backup=None,
-               encryption_manager=None, dry_run=False, verbose=False):
+               match_older_mtimes=False, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.min_file_size = min_file_size
     self.min_backup = min_backup
     self.max_backup = max_backup
+    self.match_older_mtimes = match_older_mtimes
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1278,7 +1294,8 @@ class BackupsDeDuplicator(object):
           if last_manifest is not None:
             DeDuplicateBackups(
               backup, manifest, last_backup, last_manifest, self.output, min_file_size=self.min_file_size,
-              escape_key_detector=escape_key_detector, dry_run=self.dry_run, verbose=self.verbose)
+              match_older_mtimes=self.match_older_mtimes, escape_key_detector=escape_key_detector,
+              dry_run=self.dry_run, verbose=self.verbose)
 
           last_manifest = manifest
           last_backup = backup
@@ -2106,6 +2123,7 @@ def DoDeDuplicateBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
   parser.add_argument('--min-file-size', default=DEDUP_MIN_FILE_SIZE, type=int)
+  parser.add_argument('--match-older-mtimes', action='store_true')
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   cmd_args = parser.parse_args(args.cmd_args)
@@ -2114,8 +2132,8 @@ def DoDeDuplicateBackups(args, output):
 
   deduplicator = BackupsDeDuplicator(
     config, output=output, min_file_size=cmd_args.min_file_size, min_backup=cmd_args.min_backup,
-    max_backup=cmd_args.max_backup, encryption_manager=lib.EncryptionManager(),
-    dry_run=args.dry_run, verbose=args.verbose)
+    max_backup=cmd_args.max_backup, match_older_mtimes=cmd_args.match_older_mtimes,
+    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
   return deduplicator.DeDuplicate()
 
 
