@@ -1534,12 +1534,14 @@ class BackupsDeleter(object):
 
 class UniqueFilesInBackupsDumper(object):
   def __init__(self, config, output, backups_matcher=BackupsMatcher(), ignore_matching_renames=False,
-               match_previous_only=False, encryption_manager=None, dry_run=False, verbose=False):
+               match_previous_only=False, match_next_only=False, encryption_manager=None,
+               dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.backups_matcher = backups_matcher
     self.ignore_matching_renames = ignore_matching_renames
     self.match_previous_only = match_previous_only
+    self.match_next_only = match_next_only
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1559,7 +1561,10 @@ class UniqueFilesInBackupsDumper(object):
           if not self.backups_matcher.Matches(backup.GetName()):
             continue
 
-          previous_backup = i > 0 and backups[i - 1] or None
+          if not self.match_next_only:
+            previous_backup = i > 0 and backups[i - 1] or None
+          else:
+            previous_backup = None
           if not self.match_previous_only:
             next_backup = i + 1 < len(backups) and backups[i + 1] or None
           else:
@@ -2205,7 +2210,11 @@ def DoDumpUniqueFilesInBackups(args, output):
   AddBackupsMatcherArgs(parser)
   parser.add_argument('--ignore-matching-renames', action='store_true')
   parser.add_argument('--match-previous-only', action='store_true')
+  parser.add_argument('--match-next-only', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
+
+  if cmd_args.match_previous_only and cmd_args.match_next_only:
+    raise Exception('Cannot use both --match-previous-only and --match-next-only')
 
   config = GetBackupsConfigFromArgs(cmd_args)
   try:
@@ -2217,7 +2226,7 @@ def DoDumpUniqueFilesInBackups(args, output):
   dumper = UniqueFilesInBackupsDumper(
     config, output=output, backups_matcher=backups_matcher,
     ignore_matching_renames=cmd_args.ignore_matching_renames,
-    match_previous_only=cmd_args.match_previous_only,
+    match_previous_only=cmd_args.match_previous_only, match_next_only=cmd_args.match_next_only,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
   return dumper.DumpUniqueFiles()
 

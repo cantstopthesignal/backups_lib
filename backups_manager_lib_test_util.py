@@ -241,8 +241,8 @@ def DoDeleteBackups(config, backup_names, dry_run=False, expected_success=True, 
 
 
 def DoDumpUniqueFilesInBackups(config, backup_names=[], min_backup=None, max_backup=None,
-                               ignore_matching_renames=False,
-                               match_previous_only=False, dry_run=False, verbose=False,
+                               ignore_matching_renames=False, match_previous_only=False,
+                               match_next_only=False, dry_run=False, verbose=False,
                                expected_success=True, expected_output=[]):
   cmd_args = ['dump-unique-files-in-backups',
               '--backups-config', config.path]
@@ -256,6 +256,8 @@ def DoDumpUniqueFilesInBackups(config, backup_names=[], min_backup=None, max_bac
     cmd_args.append('--ignore-matching-renames')
   if match_previous_only:
     cmd_args.append('--match-previous-only')
+  if match_next_only:
+    cmd_args.append('--match-next-only')
   DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
                 expected_output=expected_output)
 
