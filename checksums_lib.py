@@ -1,6 +1,9 @@
 import argparse
+import io
 import os
 import re
+import subprocess
+import tempfile
 
 from . import lib
 
@@ -9,12 +12,14 @@ COMMAND_CREATE = 'create'
 COMMAND_VERIFY = 'verify'
 COMMAND_SYNC = 'sync'
 COMMAND_RENAME_PATHS = 'rename-paths'
+COMMAND_IMAGE_FROM_FOLDER = 'image-from-folder'
 
 COMMANDS = [
   COMMAND_CREATE,
   COMMAND_VERIFY,
   COMMAND_SYNC,
-  COMMAND_RENAME_PATHS
+  COMMAND_RENAME_PATHS,
+  COMMAND_IMAGE_FROM_FOLDER,
 ]
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
@@ -99,7 +104,7 @@ class Checksums(object):
     return self.root_path
 
   def GetMetadataPath(self):
-    return os.path.join(self.GetRootPath(), METADATA_DIR_NAME)
+    return os.path.join(self.GetRootPath(), lib.METADATA_DIR_NAME)
 
   def GetManifest(self):
     return self.manifest
@@ -129,11 +134,11 @@ class ChecksumsCreator(object):
 
 
 class ChecksumsVerifier(object):
-  def __init__(self, root_path, output, manifest_path=None, checksum_all=False,
+  def __init__(self, root_or_image_path, output, manifest_path=None, checksum_all=False,
                path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
-    if root_path is None:
-      raise Exception('root_path cannot be None')
-    self.root_path = root_path
+    if root_or_image_path is None:
+      raise Exception('root_or_image_path cannot be None')
+    self.root_or_image_path = root_or_image_path
     self.manifest_path = manifest_path
     self.output = output
     self.checksum_all = checksum_all
@@ -144,8 +149,15 @@ class ChecksumsVerifier(object):
     self.filters = CHECKSUM_FILTERS
 
   def Verify(self):
+    if lib.IsLikelyPathToDiskImage(self.root_or_image_path):
+      with lib.ImageAttacher(self.root_or_image_path, readonly=True) as attacher:
+        return self._VerifyRootPath(attacher.GetMountPoint())
+    else:
+      return self._VerifyRootPath(self.root_or_image_path)
+
+  def _VerifyRootPath(self, root_path):
     try:
-      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
+      self.checksums = Checksums.Open(root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
     except (ChecksumsError, lib.ManifestError) as e:
       print('*** Error: %s' % e.args[0], file=self.output)
       return False
@@ -153,7 +165,7 @@ class ChecksumsVerifier(object):
     escape_key_detector = lib.EscapeKeyDetector()
     try:
       verifier = lib.ManifestVerifier(
-        self.checksums.GetManifest(), self.root_path, output=self.output,
+        self.checksums.GetManifest(), root_path, output=self.output,
         filters=self.filters, manifest_on_top=False, checksum_path_matcher=lib.PathMatcherAllOrNone(self.checksum_all),
         escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose)
       verify_result = verifier.Verify()
@@ -486,6 +498,131 @@ class ChecksumsPathRenamer(object):
     return True
 
 
+class ImageFromFolderCreator(object):
+  def __init__(self, root_path, output_path, output, volume_name=None, compressed=True, dry_run=False, verbose=False):
+    if root_path is None:
+      raise Exception('root_path cannot be None')
+    self.root_path = root_path
+    self.output_path = output_path
+    self.volume_name = volume_name
+    self.compressed = compressed
+    self.output = output
+    self.dry_run = dry_run
+    self.verbose = verbose
+
+  def CreateImage(self):
+    if not os.path.isdir(self.root_path):
+      print('*** Error: Root path %s is not a directory' % lib.EscapePath(self.root_path), file=self.output)
+      return False
+    if os.path.lexists(self.output_path):
+      print('*** Error: Output path %s already exists' % lib.EscapePath(self.output_path), file=self.output)
+      return False
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(self.output_path)[1])
+    try:
+      tmp.close()
+      return self._CreateImageInner(rw_image_path=tmp.name)
+    except:
+      os.unlink(tmp.name)
+      raise
+    return True
+
+  def _CreateImageInner(self, rw_image_path):
+    self._CreateRwImageFromFolder(rw_image_path=rw_image_path)
+    if self.dry_run:
+      return True
+
+    with lib.ImageAttacher(rw_image_path, readonly=False) as attacher:
+      has_existing_manifest = os.path.exists(os.path.join(
+        attacher.GetMountPoint(), lib.METADATA_DIR_NAME, lib.MANIFEST_FILENAME))
+      if has_existing_manifest:
+        print('Using existing manifest from source path', file=self.output)
+      else:
+        create_output = io.StringIO()
+        checksums_creator = ChecksumsCreator(
+          attacher.GetMountPoint(), output=create_output, dry_run=False,
+          verbose=self.verbose)
+        if not checksums_creator.Create():
+          print(create_output.getvalue(), file=self.output)
+          return False
+      self._ReSyncSymlinkTimesAndRootDirectoryTime(attacher.GetMountPoint())
+      if not has_existing_manifest:
+        checksums_syncer = ChecksumsSyncer(
+          attacher.GetMountPoint(), output=self.output, dry_run=False,
+          checksum_all=True, verbose=self.verbose)
+        if not checksums_syncer.Sync():
+          return False
+
+    self._CreateRoImage(source_path=rw_image_path, output_path=self.output_path)
+    try:
+      if not self._VerifyAndComplete():
+        os.unlink(self.output_path)
+        return False
+      return True
+    except:
+      if os.path.lexists(self.output_path):
+        os.unlink(self.output_path)
+      raise
+
+  def _ReSyncSymlinkTimesAndRootDirectoryTime(self, dest_root):
+    path_enumerator = lib.PathEnumerator(self.root_path, self.output, filters=[], verbose=self.verbose)
+    for enumerated_path in path_enumerator.Scan():
+      path = enumerated_path.GetPath()
+      full_path = os.path.join(self.root_path, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+      if (path_info.path_type == lib.PathInfo.TYPE_SYMLINK or path_info.path == '.'):
+        dest_full_path = os.path.join(dest_root, path)
+        os.utime(dest_full_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
+
+  def _VerifyAndComplete(self):
+    image_manifest = None
+    with lib.ImageAttacher(self.output_path, readonly=True) as attacher:
+      print('Verifying checksums in %s...' % lib.EscapePath(self.output_path), file=self.output)
+      verify_output = io.StringIO()
+      checksums_verifier = ChecksumsVerifier(
+        attacher.GetMountPoint(), output=verify_output,
+        checksum_all=True, dry_run=False, verbose=self.verbose)
+      if not checksums_verifier.Verify():
+        print(verify_output.getvalue(), file=self.output)
+        return False
+      image_manifest = Checksums.Open(attacher.GetMountPoint()).GetManifest()
+
+    print('Verifying source tree matches...', file=self.output)
+    source_verifier = lib.ManifestVerifier(
+      image_manifest, self.root_path, output=self.output,
+      filters=CHECKSUM_FILTERS, checksum_path_matcher=lib.PathMatcherAll(),
+      verbose=self.verbose)
+    if not source_verifier.Verify():
+      return False
+    source_total_size = source_verifier.GetStats().total_size
+
+    output_stat = os.lstat(self.output_path)
+    print('Created image %s (%s); Source size %s'
+          % (lib.EscapePath(self.output_path), lib.FileSizeToString(output_stat.st_size),
+             lib.FileSizeToString(source_total_size)), file=self.output)
+    return True
+
+  def _CreateRwImageFromFolder(self, rw_image_path):
+    if not self.dry_run:
+      print('Creating temporary image from folder %s...'
+            % lib.EscapePath(self.root_path), file=self.output)
+      cmd = ['hdiutil', 'create', '-fs', 'APFS', '-format', 'UDRW', '-ov', '-quiet', '-atomic',
+             '-srcfolder', self.root_path]
+      if self.volume_name is not None:
+        cmd.extend(['-volname', self.volume_name])
+      cmd.append(rw_image_path)
+      if not self.dry_run:
+        subprocess.check_call(cmd)
+
+  def _CreateRoImage(self, source_path, output_path):
+    assert not self.dry_run
+    assert not os.path.lexists(output_path)
+    image_format = 'UDRO'
+    if self.compressed:
+      image_format = 'UDZO'
+    cmd = ['hdiutil', 'convert', '-format', image_format, '-quiet', '-o', output_path, source_path]
+    subprocess.check_call(cmd)
+
+
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
@@ -500,7 +637,7 @@ def DoCreate(args, output):
 
 def DoVerify(args, output):
   parser = argparse.ArgumentParser()
-  parser.add_argument('root_path')
+  parser.add_argument('root_or_image_path')
   parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
   lib.AddPathsArgs(parser)
@@ -509,7 +646,7 @@ def DoVerify(args, output):
   path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
 
   checksums_verifier = ChecksumsVerifier(
-    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
     verbose=args.verbose)
   return checksums_verifier.Verify()
@@ -550,6 +687,20 @@ def DoRenamePaths(args, output):
   return checksums_path_renamer.RenamePaths()
 
 
+def DoImageFromFolder(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('root_path')
+  parser.add_argument('--output-path', required=True)
+  parser.add_argument('--volume-name')
+  parser.add_argument('--no-compressed', dest='compressed', action='store_false')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  image_from_folder_creator = ImageFromFolderCreator(
+    cmd_args.root_path, output_path=cmd_args.output_path, volume_name=cmd_args.volume_name,
+    compressed=cmd_args.compressed, output=output, dry_run=args.dry_run, verbose=args.verbose)
+  return image_from_folder_creator.CreateImage()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
@@ -559,6 +710,8 @@ def DoCommand(args, output):
     return DoSync(args, output=output)
   elif args.command == COMMAND_RENAME_PATHS:
     return DoRenamePaths(args, output=output)
+  elif args.command == COMMAND_IMAGE_FROM_FOLDER:
+    return DoImageFromFolder(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False

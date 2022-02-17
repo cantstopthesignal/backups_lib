@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import plistlib
 import shutil
 import subprocess
 import tempfile
@@ -52,6 +53,12 @@ def AssertLinesEqual(a_lines, b_lines):
         RaiseNotEqual('line %r != line %r' % (a_line, b_line))
     elif not b_line.match(a_line):
       RaiseNotEqual('line %r does not match %r' % (a_line, b_line.pattern))
+
+
+def AssertDiskImageFormat(image_format, image_path):
+  output = subprocess.check_output(['hdiutil', 'imageinfo', '-plist', image_path])
+  plist_data = plistlib.loads(output)
+  AssertEquals(image_format, plist_data['Format'])
 
 
 def SetMTime(path, mtime=1500000000):

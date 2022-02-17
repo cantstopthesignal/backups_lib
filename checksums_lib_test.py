@@ -16,6 +16,7 @@ __package__ = backups_lib.__package__
 
 from . import checksums_lib
 
+from .test_util import AssertDiskImageFormat
 from .test_util import AssertEquals
 from .test_util import AssertLinesEqual
 from .test_util import AssertNotEquals
@@ -33,9 +34,10 @@ from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 
 from .checksums_lib_test_util import DoCreate
-from .checksums_lib_test_util import DoVerify
-from .checksums_lib_test_util import DoSync
+from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
+from .checksums_lib_test_util import DoSync
+from .checksums_lib_test_util import DoVerify
 from .checksums_lib_test_util import InteractiveCheckerReadyResults
 from .checksums_lib_test_util import SetMaxRenameDetectionMatchingSizeFileCount
 
@@ -603,6 +605,82 @@ def RenamePathsTest():
              expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
 
 
+def ImageFromFolderTest():
+  with TempDir() as test_dir:
+    root_dir = CreateDir(test_dir, 'root')
+    image_path = os.path.join(test_dir, '1.dmg')
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='1'*1025)
+    SetXattr(file2, 'example', b'example_value')
+    ln1 = CreateSymlink(root_dir, 'ln1', 'f1')
+    ln2 = CreateSymlink(root_dir, 'ln2', 'INVALID')
+
+    DoImageFromFolder(root_dir, output_path=image_path, dry_run=True,
+                      expected_output=[])
+    DoImageFromFolder(
+      root_dir, output_path=image_path,
+      expected_output=[
+        'Creating temporary image from folder %s...' % root_dir,
+        '>d+++++++ .',
+        '>f+++++++ f1',
+        '>L+++++++ ln1 -> f1',
+        '>L+++++++ ln2 -> INVALID',
+        '>d+++++++ par! \\r',
+        '>f+++++++ par! \\r/f2',
+        'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
+        'Verifying checksums in %s...' % image_path,
+        'Verifying source tree matches...',
+        re.compile('^Created image %s [(]1[67][.][0-9]kb[)]; Source size 1kb$'
+                   % re.escape(image_path))])
+    AssertDiskImageFormat('UDZO', image_path)
+
+    DoVerify(image_path,
+             expected_output=['Paths: 6 total (1kb)'])
+    DoVerify(image_path, checksum_all=True,
+             expected_output=['Paths: 6 total (1kb), 2 checksummed (1kb)'])
+    DoImageFromFolder(
+      root_dir, output_path=image_path, dry_run=True, expected_success=False,
+      expected_output=['*** Error: Output path %s already exists' % image_path])
+    DeleteFileOrDir(image_path)
+
+    DoCreate(root_dir, expected_output=None)
+    DoSync(
+      root_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>L+++++++ ln1 -> f1',
+                       '>L+++++++ ln2 -> INVALID',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)'])
+
+    DoImageFromFolder(root_dir, output_path=image_path, dry_run=True,
+                      expected_output=[])
+    DoImageFromFolder(
+      root_dir, output_path=image_path,
+      expected_output=[
+        'Creating temporary image from folder %s...' % root_dir,
+        'Using existing manifest from source path',
+        'Verifying checksums in %s...' % image_path,
+        'Verifying source tree matches...',
+        re.compile('^Created image %s [(]1[67][.][0-9]kb[)]; Source size 1kb$'
+                   % re.escape(image_path))])
+    AssertDiskImageFormat('UDZO', image_path)
+    DeleteFileOrDir(image_path)
+    DoImageFromFolder(
+      root_dir, output_path=image_path, compressed=False,
+      expected_output=[
+        'Creating temporary image from folder %s...' % root_dir,
+        'Using existing manifest from source path',
+        'Verifying checksums in %s...' % image_path,
+        'Verifying source tree matches...',
+        re.compile('^Created image %s [(]50[0-9][.][0-9]kb[)]; Source size 1kb$'
+                   % re.escape(image_path))])
+    AssertDiskImageFormat('UDRO', image_path)
+
+
 def Test(tests=[]):
   if not tests or 'CreateTest' in tests:
     CreateTest()
@@ -612,6 +690,8 @@ def Test(tests=[]):
     SyncTest()
   if not tests or 'RenamePathsTest' in tests:
     RenamePathsTest()
+  if not tests or 'ImageFromFolderTest' in tests:
+    ImageFromFolderTest()
 
 
 if __name__ == '__main__':

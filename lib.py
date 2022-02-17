@@ -734,6 +734,15 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
+def IsLikelyPathToDiskImage(path):
+  ext = os.path.splitext(path)[1]
+  if os.path.isfile(path) and ext in ['.dmg', '.sparseimage']:
+    return True
+  if os.path.isdir(path) and ext in ['.sparsebundle']:
+    return True
+  return False
+
+
 class DiskPartitionInfo(object):
   def __init__(self):
     self.name = None
@@ -1497,7 +1506,7 @@ class ImageAttacher(object):
     else:
       assert not os.path.exists(self.mount_point)
     (self.encrypted, self.image_uuid) = GetImageEncryptionDetails(self.GetImagePath())
-    cmd = ['hdiutil', 'attach', self.GetImagePath(), '-owners', 'on']
+    cmd = ['hdiutil', 'attach', self.GetImagePath(), '-owners', 'on', '-plist']
     if self.encrypted:
       cmd.append('-stdinpass')
     if self.mount:
@@ -1536,31 +1545,34 @@ class ImageAttacher(object):
       password = self.encryption_manager.GetPassword(
         self.GetImagePath(), self.image_uuid, try_last_password=try_last_password)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, text=True)
+                         stderr=subprocess.STDOUT)
     if self.encrypted:
       p.stdin.write(password)
     p.stdin.close()
     output = p.stdout.read()
-    lines = output.strip().split('\n')
     if p.wait():
+      lines = output.decode('utf8').strip().split('\n')
       if len(lines) == 1 and lines[0].endswith('- Authentication error'):
         self.encryption_manager.ClearPassword(self.image_uuid)
         return False
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+    plist_data = plistlib.loads(output)
     self.device = None
-    for line in lines:
-      pieces = line.split(None, 2)
-      if self.device is None:
-        assert pieces[0].startswith('/dev/')
-        self.device = pieces[0]
-        if not self.mount:
-          break
-      if len(pieces) == 3 and os.path.isdir(pieces[2]):
+    found_mount_point = False
+    for entry in plist_data['system-entities']:
+      if entry['content-hint'] == 'GUID_partition_scheme':
+        assert self.device is None
+        self.device = entry['dev-entry']
+        assert self.device.startswith('/dev/')
+      if 'mount-point' in entry:
+        assert not found_mount_point
+        found_mount_point = True
+        assert os.path.isdir(entry['mount-point'])
         if self.random_mount_point:
-          self.mount_point = pieces[2]
-        break
-    else:
-      raise Exception('Unexpected output from hdiutil attach:\n%s' % output)
+          self.mount_point = entry['mount-point']
+    if self.device is None or (self.mount and not found_mount_point):
+      raise Exception('Unexpected output from hdiutil attach:\n%s' % output.decode('utf8'))
     return True
 
 
