@@ -680,6 +680,10 @@ def ImageFromFolderTest():
         re.compile('^Created image %s [(]50[0-9]([.][0-9])?kb[)]; Source size 1kb$'
                    % re.escape(image_path))])
     AssertDiskImageFormat('UDRO', image_path)
+    DeleteFileOrDir(image_path)
+
+    DoImageFromFolder(root_dir, output_path=image_path, temp_dir='/dev/null', expected_success=False,
+                      expected_output=['*** Error: Temporary dir /dev/null is not a directory'])
 
 
 def Test(tests=[]):

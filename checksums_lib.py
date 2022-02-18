@@ -499,13 +499,15 @@ class ChecksumsPathRenamer(object):
 
 
 class ImageFromFolderCreator(object):
-  def __init__(self, root_path, output_path, output, volume_name=None, compressed=True, dry_run=False, verbose=False):
+  def __init__(self, root_path, output_path, output, volume_name=None, compressed=True, temp_dir=None,
+               dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
     self.output_path = output_path
     self.volume_name = volume_name
     self.compressed = compressed
+    self.temp_dir = temp_dir
     self.output = output
     self.dry_run = dry_run
     self.verbose = verbose
@@ -517,7 +519,11 @@ class ImageFromFolderCreator(object):
     if os.path.lexists(self.output_path):
       print('*** Error: Output path %s already exists' % lib.EscapePath(self.output_path), file=self.output)
       return False
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(self.output_path)[1])
+    if self.temp_dir is not None and not os.path.isdir(self.temp_dir):
+      print('*** Error: Temporary dir %s is not a directory' % lib.EscapePath(self.temp_dir), file=self.output)
+      return False
+    tmp = tempfile.NamedTemporaryFile(
+      delete=False, dir=self.temp_dir, suffix=os.path.splitext(self.output_path)[1])
     try:
       tmp.close()
       return self._CreateImageInner(rw_image_path=tmp.name)
@@ -699,11 +705,13 @@ def DoImageFromFolder(args, output):
   parser.add_argument('--output-path', required=True)
   parser.add_argument('--volume-name')
   parser.add_argument('--no-compressed', dest='compressed', action='store_false')
+  parser.add_argument('--temp-dir')
   cmd_args = parser.parse_args(args.cmd_args)
 
   image_from_folder_creator = ImageFromFolderCreator(
     cmd_args.root_path, output_path=cmd_args.output_path, volume_name=cmd_args.volume_name,
-    compressed=cmd_args.compressed, output=output, dry_run=args.dry_run, verbose=args.verbose)
+    compressed=cmd_args.compressed, temp_dir=cmd_args.temp_dir, output=output,
+    dry_run=args.dry_run, verbose=args.verbose)
   return image_from_folder_creator.CreateImage()
 
 

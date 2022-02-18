@@ -112,8 +112,8 @@ def DoRenamePaths(root_path, manifest_path=None, path_regex_from=None, path_rege
                   expected_output=expected_output)
 
 
-def DoImageFromFolder(root_path, output_path=None, volume_name=None, compressed=True, dry_run=False,
-                      expected_success=True, expected_output=[]):
+def DoImageFromFolder(root_path, output_path=None, volume_name=None, compressed=True, temp_dir=None,
+                      dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['image-from-folder', root_path]
   if output_path is not None:
     cmd_args.extend(['--output-path', output_path])
@@ -121,5 +121,7 @@ def DoImageFromFolder(root_path, output_path=None, volume_name=None, compressed=
     cmd_args.extend(['--volume-name', volume_name])
   if not compressed:
     cmd_args.append('--no-compressed')
+  if temp_dir is not None:
+    cmd_args.extend(['--temp-dir', temp_dir])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
