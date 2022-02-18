@@ -631,6 +631,8 @@ class ImageFromFolderCreator(object):
     image_format = 'UDRO'
     if self.compressed:
       image_format = 'UDZO'
+    print('Converting to image %s with format %s...'
+          % (lib.EscapePath(output_path), image_format), file=self.output)
     cmd = ['hdiutil', 'convert', '-format', image_format, '-quiet', '-o', output_path, source_path]
     subprocess.check_call(cmd)
 

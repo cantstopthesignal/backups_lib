@@ -631,9 +631,10 @@ def ImageFromFolderTest():
         '>d+++++++ par! \\r',
         '>f+++++++ par! \\r/f2',
         'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
+        'Converting to image %s with format UDZO...' % image_path,
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
-        re.compile('^Created image %s [(]1[67][.][0-9]kb[)]; Source size 1kb$'
+        re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                    % re.escape(image_path))])
     AssertDiskImageFormat('UDZO', image_path)
 
@@ -664,6 +665,7 @@ def ImageFromFolderTest():
       expected_output=[
         'Creating temporary image from folder %s...' % root_dir,
         'Using existing manifest from source path',
+        'Converting to image %s with format UDZO...' % image_path,
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
         re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
@@ -675,6 +677,7 @@ def ImageFromFolderTest():
       expected_output=[
         'Creating temporary image from folder %s...' % root_dir,
         'Using existing manifest from source path',
+        'Converting to image %s with format UDRO...' % image_path,
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
         re.compile('^Created image %s [(]50[0-9]([.][0-9])?kb[)]; Source size 1kb$'
