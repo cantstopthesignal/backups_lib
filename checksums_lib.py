@@ -521,9 +521,9 @@ class ImageFromFolderCreator(object):
     try:
       tmp.close()
       return self._CreateImageInner(rw_image_path=tmp.name)
-    except:
-      os.unlink(tmp.name)
-      raise
+    finally:
+      if os.path.lexists(tmp.name):
+        os.unlink(tmp.name)
     return True
 
   def _CreateImageInner(self, rw_image_path):
@@ -539,15 +539,16 @@ class ImageFromFolderCreator(object):
       else:
         create_output = io.StringIO()
         checksums_creator = ChecksumsCreator(
-          attacher.GetMountPoint(), output=create_output, dry_run=False,
+          attacher.GetMountPoint(), output=create_output, dry_run=self.dry_run,
           verbose=self.verbose)
         if not checksums_creator.Create():
           print(create_output.getvalue(), file=self.output)
           return False
-      self._ReSyncSymlinkTimesAndRootDirectoryTime(attacher.GetMountPoint())
+      self._ReSyncSymlinkTimes(attacher.GetMountPoint())
+      self._ReSyncRootDirectory(attacher.GetMountPoint())
       if not has_existing_manifest:
         checksums_syncer = ChecksumsSyncer(
-          attacher.GetMountPoint(), output=self.output, dry_run=False,
+          attacher.GetMountPoint(), output=self.output, dry_run=self.dry_run,
           checksum_all=True, verbose=self.verbose)
         if not checksums_syncer.Sync():
           return False
@@ -563,15 +564,21 @@ class ImageFromFolderCreator(object):
         os.unlink(self.output_path)
       raise
 
-  def _ReSyncSymlinkTimesAndRootDirectoryTime(self, dest_root):
+  def _ReSyncSymlinkTimes(self, dest_root):
     path_enumerator = lib.PathEnumerator(self.root_path, self.output, filters=[], verbose=self.verbose)
     for enumerated_path in path_enumerator.Scan():
       path = enumerated_path.GetPath()
       full_path = os.path.join(self.root_path, path)
       path_info = lib.PathInfo.FromPath(path, full_path)
-      if (path_info.path_type == lib.PathInfo.TYPE_SYMLINK or path_info.path == '.'):
+      if path_info.path_type == lib.PathInfo.TYPE_SYMLINK:
         dest_full_path = os.path.join(dest_root, path)
         os.utime(dest_full_path, (path_info.mtime, path_info.mtime), follow_symlinks=False)
+
+  def _ReSyncRootDirectory(self, dest_root):
+    path_datas = [lib.PathSyncer.PathData('.')]
+    path_syncer = lib.PathSyncer(path_datas, self.root_path, dest_root, output=self.output,
+                                 dry_run=self.dry_run, verbose=self.verbose)
+    path_syncer.Sync()
 
   def _VerifyAndComplete(self):
     image_manifest = None
@@ -580,7 +587,7 @@ class ImageFromFolderCreator(object):
       verify_output = io.StringIO()
       checksums_verifier = ChecksumsVerifier(
         attacher.GetMountPoint(), output=verify_output,
-        checksum_all=True, dry_run=False, verbose=self.verbose)
+        checksum_all=True, dry_run=self.dry_run, verbose=self.verbose)
       if not checksums_verifier.Verify():
         print(verify_output.getvalue(), file=self.output)
         return False
@@ -610,8 +617,7 @@ class ImageFromFolderCreator(object):
       if self.volume_name is not None:
         cmd.extend(['-volname', self.volume_name])
       cmd.append(rw_image_path)
-      if not self.dry_run:
-        subprocess.check_call(cmd)
+      subprocess.check_call(cmd)
 
   def _CreateRoImage(self, source_path, output_path):
     assert not self.dry_run

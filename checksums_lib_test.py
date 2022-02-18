@@ -616,6 +616,7 @@ def ImageFromFolderTest():
     SetXattr(file2, 'example', b'example_value')
     ln1 = CreateSymlink(root_dir, 'ln1', 'f1')
     ln2 = CreateSymlink(root_dir, 'ln2', 'INVALID')
+    SetXattr(root_dir, 'example', b'example_value')
 
     DoImageFromFolder(root_dir, output_path=image_path, dry_run=True,
                       expected_output=[])
@@ -665,7 +666,7 @@ def ImageFromFolderTest():
         'Using existing manifest from source path',
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
-        re.compile('^Created image %s [(]1[67][.][0-9]kb[)]; Source size 1kb$'
+        re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                    % re.escape(image_path))])
     AssertDiskImageFormat('UDZO', image_path)
     DeleteFileOrDir(image_path)
@@ -676,7 +677,7 @@ def ImageFromFolderTest():
         'Using existing manifest from source path',
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
-        re.compile('^Created image %s [(]50[0-9][.][0-9]kb[)]; Source size 1kb$'
+        re.compile('^Created image %s [(]50[0-9]([.][0-9])?kb[)]; Source size 1kb$'
                    % re.escape(image_path))])
     AssertDiskImageFormat('UDRO', image_path)
 
