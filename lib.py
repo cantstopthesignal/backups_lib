@@ -1547,7 +1547,7 @@ class ImageAttacher(object):
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
     if self.encrypted:
-      p.stdin.write(password)
+      p.stdin.write(password.encode('utf8'))
     p.stdin.close()
     output = p.stdout.read()
     if p.wait():
