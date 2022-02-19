@@ -1,6 +1,7 @@
 import argparse
 import io
 import os
+import pipes
 import re
 import subprocess
 import tempfile
@@ -135,7 +136,8 @@ class ChecksumsCreator(object):
 
 class ChecksumsVerifier(object):
   def __init__(self, root_or_image_path, output, manifest_path=None, checksum_all=False,
-               path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
+               path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
+               encryption_manager=None):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
@@ -147,10 +149,12 @@ class ChecksumsVerifier(object):
     self.verbose = verbose
     self.checksums = None
     self.filters = CHECKSUM_FILTERS
+    self.encryption_manager = encryption_manager
 
   def Verify(self):
     if lib.IsLikelyPathToDiskImage(self.root_or_image_path):
-      with lib.ImageAttacher(self.root_or_image_path, readonly=True) as attacher:
+      with lib.ImageAttacher(
+          self.root_or_image_path, readonly=True, encryption_manager=self.encryption_manager) as attacher:
         return self._VerifyRootPath(attacher.GetMountPoint())
     else:
       return self._VerifyRootPath(self.root_or_image_path)
@@ -500,7 +504,7 @@ class ChecksumsPathRenamer(object):
 
 class ImageFromFolderCreator(object):
   def __init__(self, root_path, output_path, output, volume_name=None, compressed=True, temp_dir=None,
-               dry_run=False, verbose=False):
+               dry_run=False, verbose=False, encryption_manager=None, encrypt=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -511,6 +515,9 @@ class ImageFromFolderCreator(object):
     self.output = output
     self.dry_run = dry_run
     self.verbose = verbose
+    self.encryption_manager = encryption_manager
+    self.encrypt = encrypt
+    self.password = None
 
   def CreateImage(self):
     if not os.path.isdir(self.root_path):
@@ -533,11 +540,15 @@ class ImageFromFolderCreator(object):
     return True
 
   def _CreateImageInner(self, rw_image_path):
-    self._CreateRwImageFromFolder(rw_image_path=rw_image_path)
     if self.dry_run:
       return True
 
-    with lib.ImageAttacher(rw_image_path, readonly=False) as attacher:
+    if self.encrypt:
+      self.password = self.encryption_manager.CreatePassword(self.output_path)
+
+    self._CreateRwImageFromFolder(rw_image_path=rw_image_path)
+    with lib.ImageAttacher(
+        rw_image_path, readonly=False, encryption_manager=self.encryption_manager) as attacher:
       has_existing_manifest = os.path.exists(os.path.join(
         attacher.GetMountPoint(), lib.METADATA_DIR_NAME, lib.MANIFEST_FILENAME))
       if has_existing_manifest:
@@ -588,7 +599,8 @@ class ImageFromFolderCreator(object):
 
   def _VerifyAndComplete(self):
     image_manifest = None
-    with lib.ImageAttacher(self.output_path, readonly=True) as attacher:
+    with lib.ImageAttacher(
+        self.output_path, readonly=True, encryption_manager=self.encryption_manager) as attacher:
       print('Verifying checksums in %s...' % lib.EscapePath(self.output_path), file=self.output)
       verify_output = io.StringIO()
       checksums_verifier = ChecksumsVerifier(
@@ -615,15 +627,26 @@ class ImageFromFolderCreator(object):
     return True
 
   def _CreateRwImageFromFolder(self, rw_image_path):
-    if not self.dry_run:
-      print('Creating temporary image from folder %s...'
-            % lib.EscapePath(self.root_path), file=self.output)
-      cmd = ['hdiutil', 'create', '-fs', 'APFS', '-format', 'UDRW', '-ov', '-quiet', '-atomic',
-             '-srcfolder', self.root_path]
-      if self.volume_name is not None:
-        cmd.extend(['-volname', self.volume_name])
-      cmd.append(rw_image_path)
-      subprocess.check_call(cmd)
+    assert not self.dry_run
+    print('Creating temporary image from folder %s...'
+          % lib.EscapePath(self.root_path), file=self.output)
+    cmd = ['hdiutil', 'create', '-fs', 'APFS', '-format', 'UDRW', '-ov', '-quiet', '-atomic',
+           '-srcfolder', self.root_path]
+    if self.volume_name is not None:
+      cmd.extend(['-volname', self.volume_name])
+    if self.encrypt:
+      cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
+    cmd.append(rw_image_path)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+    if self.encrypt:
+      p.stdin.write(self.password)
+    p.stdin.close()
+    if p.wait():
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    if self.encrypt:
+      _, image_uuid = lib.GetImageEncryptionDetails(rw_image_path)
+      assert image_uuid
+      self.encryption_manager.SavePassword(self.password, image_uuid)
 
   def _CreateRoImage(self, source_path, output_path):
     assert not self.dry_run
@@ -633,8 +656,20 @@ class ImageFromFolderCreator(object):
       image_format = 'UDZO'
     print('Converting to image %s with format %s...'
           % (lib.EscapePath(output_path), image_format), file=self.output)
-    cmd = ['hdiutil', 'convert', '-format', image_format, '-quiet', '-o', output_path, source_path]
-    subprocess.check_call(cmd)
+    cmd = ['hdiutil', 'convert', '-format', image_format, '-quiet', '-o', output_path]
+    if self.encrypt:
+      cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
+    cmd.append(source_path)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+    if self.encrypt:
+      p.stdin.write(self.password)
+    p.stdin.close()
+    if p.wait():
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    if self.encrypt:
+      _, image_uuid = lib.GetImageEncryptionDetails(output_path)
+      assert image_uuid
+      self.encryption_manager.SavePassword(self.password, image_uuid)
 
 
 def DoCreate(args, output):
@@ -662,7 +697,7 @@ def DoVerify(args, output):
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
-    verbose=args.verbose)
+    verbose=args.verbose, encryption_manager=lib.EncryptionManager())
   return checksums_verifier.Verify()
 
 
@@ -707,13 +742,15 @@ def DoImageFromFolder(args, output):
   parser.add_argument('--output-path', required=True)
   parser.add_argument('--volume-name')
   parser.add_argument('--no-compressed', dest='compressed', action='store_false')
+  parser.add_argument('--encrypt', action='store_true')
   parser.add_argument('--temp-dir')
   cmd_args = parser.parse_args(args.cmd_args)
 
   image_from_folder_creator = ImageFromFolderCreator(
     cmd_args.root_path, output_path=cmd_args.output_path, volume_name=cmd_args.volume_name,
     compressed=cmd_args.compressed, temp_dir=cmd_args.temp_dir, output=output,
-    dry_run=args.dry_run, verbose=args.verbose)
+    dry_run=args.dry_run, verbose=args.verbose, encryption_manager=lib.EncryptionManager(),
+    encrypt=cmd_args.encrypt)
   return image_from_folder_creator.CreateImage()
 
 
