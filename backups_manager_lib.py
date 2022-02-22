@@ -1057,8 +1057,8 @@ class BackupsLister(object):
 
 class BackupsVerifier(object):
   def __init__(self, config, output, min_backup=None, max_backup=None, full=True,
-               continue_on_error=False, hdiutil_verify=True, encryption_manager=None, dry_run=False,
-               verbose=False):
+               continue_on_error=False, hdiutil_verify=True, encryption_manager=None,
+               checksum_all=True, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.min_backup = min_backup
@@ -1067,6 +1067,7 @@ class BackupsVerifier(object):
     self.continue_on_error = continue_on_error
     self.hdiutil_verify = hdiutil_verify
     self.encryption_manager = encryption_manager
+    self.checksum_all = checksum_all
     self.dry_run = dry_run
     self.verbose = verbose
 
@@ -1158,15 +1159,20 @@ class BackupsVerifier(object):
             print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
             return (False, None)
 
-          path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
-          num_checksummed += 1
-          total_checksummed_size += path_info.size
+          if self.checksum_all:
+            path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
+            num_checksummed += 1
+            total_checksummed_size += path_info.size
         else:
           num_inode_hits += 1
       new_manifest.AddPathInfo(path_info)
 
-    print('Paths: %d total, %d inode hits, %d checksummed (%s)' % (
-      num_paths, num_inode_hits, num_checksummed, lib.FileSizeToString(total_checksummed_size)), file=self.output)
+    out_pieces = ['%d total' % num_paths]
+    if num_inode_hits:
+      out_pieces .append('%d inode hits' % num_inode_hits)
+    if num_checksummed:
+      out_pieces.append('%d checksummed (%s)' % (num_checksummed, lib.FileSizeToString(total_checksummed_size)))
+    print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
@@ -1223,6 +1229,8 @@ class BackupsVerifier(object):
             if not dup_itemized.HasDiffs():
               new_path_info.sha256 = path_info.sha256
               break
+        if not self.checksum_all:
+          new_path_info.sha256 = path_info.sha256
         if not new_path_info.sha256:
           if escape_key_detector.WasEscapePressed():
             print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
@@ -1233,8 +1241,10 @@ class BackupsVerifier(object):
           total_checksummed_size += new_path_info.size
       new_manifest.AddPathInfo(new_path_info)
 
-    print('Paths: %d unique, %d matching, %d checksummed (%s)' % (
-      num_unique, num_matching, num_checksummed, lib.FileSizeToString(total_checksummed_size)), file=self.output)
+    out_pieces = ['%d unique, %d matching' % (num_unique, num_matching)]
+    if num_checksummed:
+      out_pieces.append('%d checksummed (%s)' % (num_checksummed, lib.FileSizeToString(total_checksummed_size)))
+    print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
@@ -2118,6 +2128,7 @@ def DoVerifyBackups(args, output):
   parser.add_argument('--no-full', dest='full', action='store_false')
   parser.add_argument('--continue-on-error', action='store_true')
   parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
+  parser.add_argument('--no-checksum-all', dest='checksum_all', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2126,7 +2137,7 @@ def DoVerifyBackups(args, output):
     config, output=output, min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     full=cmd_args.full, continue_on_error=cmd_args.continue_on_error,
     hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(),
-    dry_run=args.dry_run, verbose=args.verbose)
+    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
   return verifier.Verify()
 
 

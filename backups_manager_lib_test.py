@@ -135,7 +135,7 @@ def ApplyToBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)'])
+                       'Paths: 4 total, 3 checksummed (0b)'])
 
     DoApplyToBackups(
       config,
@@ -201,31 +201,31 @@ def ApplyToBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)'])
+                       'Paths: 10 total, 5 inode hits'])
 
     DoVerifyBackups(
       config,
       min_backup='2020-01-02-120000',
       expected_output=['Skipped backup Backup<2020-01-01-120000,DONE>',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 8 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 8 total, 3 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)'])
+                       'Paths: 10 total, 5 inode hits'])
 
     DoVerifyBackups(
       config,
       max_backup='2020-01-02-120000',
       expected_output=[
         'Verifying 2020-01-01-120000...',
-        'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+        'Paths: 4 total, 3 checksummed (0b)',
         'Verifying 2020-01-02-120000...',
         'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
         'Skipped 2 backups: Backup<2020-01-03-120000,DONE> to Backup<2020-01-04-120000,DONE>'])
@@ -252,13 +252,13 @@ def ApplyToBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)',
+                       'Paths: 10 total, 5 inode hits',
                        'Verifying 2020-01-05-120000...',
                        'Paths: 12 total, 6 inode hits, 1 checksummed (1kb)'])
 
@@ -285,13 +285,13 @@ def ApplyToBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 8 total, 2 inode hits, 1 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 10 total, 1 inode hits, 4 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 10 total, 5 inode hits, 0 checksummed (0b)',
+                       'Paths: 10 total, 5 inode hits',
                        'Verifying 2020-01-05-120000...',
                        'Paths: 12 total, 6 inode hits, 1 checksummed (1kb)',
                        'Verifying 2020-01-06-120000...',
@@ -355,9 +355,9 @@ def ApplyToBackupsWithFilterMergeTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 3 total, 0 inode hits, 1 checksummed (0b)',
+                       'Paths: 3 total, 1 checksummed (0b)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 4 total, 1 inode hits, 1 checksummed (0b)'])
 
@@ -433,13 +433,31 @@ def VerifyBackupsTest():
                        'Paths: 7 total (1kb), 5 checksummed (1kb)'])
 
     DoVerifyBackups(
+      config, checksum_all=False,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total',
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 6 total',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 7 total'])
+
+    DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 6 total, 2 inode hits, 2 checksummed (1kb)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 7 total, 1 inode hits, 4 checksummed (1kb)'])
+
+    DoVerifyBackups(
+      config, full=False, checksum_all=False,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 unique, 0 matching',
+                       'Verifying 2020-01-02-120000...',
+                       'Paths: 3 unique, 3 matching',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 5 unique, 2 matching'])
 
     DoVerifyBackups(
       config, full=False,
@@ -462,7 +480,7 @@ def VerifyBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 6 total, 2 inode hits, 2 checksummed (1kb)',
                        'Verifying 2020-01-03-120000...',
@@ -493,7 +511,7 @@ def VerifyBackupsTest():
       config,
       expected_success=False,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 5 total, 0 inode hits, 4 checksummed (0b)',
+                       'Paths: 5 total, 4 checksummed (0b)',
                        '>f+++++++ f4',
                        '.f......x fX',
                        '*** Error: Failed to verify backup Backup<2020-01-01-120000,DONE>'])
@@ -502,7 +520,7 @@ def VerifyBackupsTest():
       expected_success=False,
       expected_output=['Skipped backup Backup<2020-01-01-120000,DONE>',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 6 total, 0 inode hits, 4 checksummed (1kb)',
+                       'Paths: 6 total, 4 checksummed (1kb)',
                        '.f......x fX',
                        '.d..t.... par!',
                        '*** Error: Failed to verify backup Backup<2020-01-02-120000,DONE>'])
@@ -510,7 +528,7 @@ def VerifyBackupsTest():
       config, min_backup='2020-01-03-120000',
       expected_output=['Skipped 2 backups: Backup<2020-01-01-120000,DONE> to Backup<2020-01-02-120000,DONE>',
                        'Verifying 2020-01-03-120000...',
-                       'Paths: 7 total, 0 inode hits, 5 checksummed (1kb)'])
+                       'Paths: 7 total, 5 checksummed (1kb)'])
 
     DoVerifyBackups(
       config, full=False,
@@ -632,7 +650,7 @@ def AddMissingManifestsToBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
                        'Paths: 4 total, 1 inode hits, 2 checksummed (6b)',
                        'Verifying 2020-01-03-120000...',
@@ -748,9 +766,9 @@ def DeDuplicateBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (3kb)',
+                       'Paths: 4 total, 3 checksummed (3kb)',
                        'Verifying 2020-01-03-120000...',
                        'Paths: 5 total, 3 inode hits, 1 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
@@ -880,11 +898,11 @@ def DeDuplicateBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (3kb)',
+                       'Paths: 4 total, 3 checksummed (3kb)',
                        'Verifying 2020-01-03-120000...',
-                       'Paths: 5 total, 4 inode hits, 0 checksummed (0b)',
+                       'Paths: 5 total, 4 inode hits',
                        'Verifying 2020-01-04-120000...',
                        'Paths: 8 total, 4 inode hits, 3 checksummed (3kb)',
                        'Verifying 2020-01-05-120000...',
@@ -2331,13 +2349,13 @@ def DeleteInBackupsTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 2 total, 0 inode hits, 1 checksummed (0b)',
+                       'Paths: 2 total, 1 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 2 total, 1 inode hits, 0 checksummed (0b)',
+                       'Paths: 2 total, 1 inode hits',
                        'Verifying 2020-01-03-120000...',
-                       'Paths: 5 total, 0 inode hits, 3 checksummed (1kb)',
+                       'Paths: 5 total, 3 checksummed (1kb)',
                        'Verifying 2020-01-04-120000...',
-                       'Paths: 5 total, 3 inode hits, 0 checksummed (0b)'])
+                       'Paths: 5 total, 3 inode hits'])
 
     DoDeleteInBackups(
       config, dry_run=True,

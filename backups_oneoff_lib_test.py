@@ -172,11 +172,11 @@ def OneoffUpdateIgnoredXattrsTest():
       DoVerifyBackups(
         config,
         expected_output=['Verifying 2020-01-01-120000...',
-                         'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                         'Paths: 4 total, 3 checksummed (0b)',
                          'Verifying 2020-01-02-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)',
+                         'Paths: 6 total, 4 checksummed (0b)',
                          'Verifying 2020-01-03-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)'])
+                         'Paths: 6 total, 4 checksummed (0b)'])
 
       do_oneoff_expected_output = [
         'Old ignored xattrs: com.apple.lastuseddate#PS',
@@ -230,14 +230,14 @@ def OneoffUpdateIgnoredXattrsTest():
         config, continue_on_error=True,
         expected_success=False,
         expected_output=['Verifying 2020-01-01-120000...',
-                         'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                         'Paths: 4 total, 3 checksummed (0b)',
                          'Verifying 2020-01-02-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)',
+                         'Paths: 6 total, 4 checksummed (0b)',
                          '.f......x fT',
                          '.f......x fX',
                          '*** Error: Failed to verify backup Backup<2020-01-02-120000,DONE>',
                          'Verifying 2020-01-03-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)',
+                         'Paths: 6 total, 4 checksummed (0b)',
                          '.f......x fX',
                          '.f......x par!/f3',
                          '*** Error: Failed to verify backup Backup<2020-01-03-120000,DONE>'])
@@ -246,11 +246,11 @@ def OneoffUpdateIgnoredXattrsTest():
       DoVerifyBackups(
         config,
         expected_output=['Verifying 2020-01-01-120000...',
-                         'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                         'Paths: 4 total, 3 checksummed (0b)',
                          'Verifying 2020-01-02-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)',
+                         'Paths: 6 total, 4 checksummed (0b)',
                          'Verifying 2020-01-03-120000...',
-                         'Paths: 6 total, 0 inode hits, 4 checksummed (0b)'])
+                         'Paths: 6 total, 4 checksummed (0b)'])
 
 
 def OneoffAddXattrKeysTest():
@@ -314,9 +314,9 @@ def OneoffAddXattrKeysTest():
       config,
       expected_success=False,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 6 total, 0 inode hits, 4 checksummed (0b)',
+                       'Paths: 6 total, 4 checksummed (0b)',
                        '.f......x fT',
                        '.f......x fX',
                        '.f......x par!/f4',
@@ -359,9 +359,9 @@ def OneoffAddXattrKeysTest():
     DoVerifyBackups(
       config,
       expected_output=['Verifying 2020-01-01-120000...',
-                       'Paths: 4 total, 0 inode hits, 3 checksummed (0b)',
+                       'Paths: 4 total, 3 checksummed (0b)',
                        'Verifying 2020-01-02-120000...',
-                       'Paths: 6 total, 0 inode hits, 4 checksummed (0b)'])
+                       'Paths: 6 total, 4 checksummed (0b)'])
 
 
 def OneoffUpdateSomeFilesTest():

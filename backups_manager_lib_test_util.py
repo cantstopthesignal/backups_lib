@@ -174,8 +174,8 @@ def DoListBackups(config, dry_run=False, expected_backups=[]):
 
 
 def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
-                    full=True, continue_on_error=False, expected_success=True,
-                    expected_output=[]):
+                    full=True, continue_on_error=False, checksum_all=True,
+                    expected_success=True, expected_output=[]):
   cmd_args = ['verify-backups',
               '--backups-config', config.path]
   if min_backup is not None:
@@ -186,6 +186,8 @@ def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
     cmd_args.append('--no-full')
   if continue_on_error:
     cmd_args.append('--continue-on-error')
+  if not checksum_all:
+    cmd_args.append('--no-checksum-all')
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                 expected_output=expected_output)
 
