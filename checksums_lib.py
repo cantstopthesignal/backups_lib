@@ -137,7 +137,7 @@ class ChecksumsCreator(object):
 class ChecksumsVerifier(object):
   def __init__(self, root_or_image_path, output, manifest_path=None, checksum_all=False,
                path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
-               encryption_manager=None):
+               encryption_manager=None, hdiutil_verify=True):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
@@ -150,11 +150,13 @@ class ChecksumsVerifier(object):
     self.checksums = None
     self.filters = CHECKSUM_FILTERS
     self.encryption_manager = encryption_manager
+    self.hdiutil_verify = hdiutil_verify
 
   def Verify(self):
     if lib.IsLikelyPathToDiskImage(self.root_or_image_path):
       with lib.ImageAttacher(
-          self.root_or_image_path, readonly=True, encryption_manager=self.encryption_manager) as attacher:
+          self.root_or_image_path, readonly=True, encryption_manager=self.encryption_manager,
+          hdiutil_verify=self.hdiutil_verify) as attacher:
         return self._VerifyRootPath(attacher.GetMountPoint())
     else:
       return self._VerifyRootPath(self.root_or_image_path)
@@ -689,6 +691,7 @@ def DoVerify(args, output):
   parser.add_argument('root_or_image_path')
   parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
+  parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -697,7 +700,8 @@ def DoVerify(args, output):
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
-    verbose=args.verbose, encryption_manager=lib.EncryptionManager())
+    verbose=args.verbose, encryption_manager=lib.EncryptionManager(),
+    hdiutil_verify=cmd_args.hdiutil_verify)
   return checksums_verifier.Verify()
 
 

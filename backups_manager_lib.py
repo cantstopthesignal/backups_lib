@@ -788,9 +788,9 @@ class Backup(object):
 
 class BackupsManager(object):
   @staticmethod
-  def Open(config, encryption_manager=None, readonly=True, browseable=True, dry_run=False):
+  def Open(config, encryption_manager=None, readonly=True, browseable=True, hdiutil_verify=True, dry_run=False):
     return BackupsManager(config, encryption_manager=encryption_manager, readonly=readonly,
-                          browseable=browseable, dry_run=dry_run)
+                          browseable=browseable, hdiutil_verify=hdiutil_verify, dry_run=dry_run)
 
   @staticmethod
   def Create(config, volume_name=None, encrypt=True, encryption_manager=None, browseable=True,
@@ -803,7 +803,8 @@ class BackupsManager(object):
       return BackupsManager(config, encryption_manager=encryption_manager, readonly=False,
                             browseable=browseable, dry_run=dry_run)
 
-  def __init__(self, config, encryption_manager=None, readonly=True, browseable=True, dry_run=False):
+  def __init__(self, config, encryption_manager=None, readonly=True, browseable=True,
+               hdiutil_verify=True, dry_run=False):
     if (not config.image_path.endswith('.sparsebundle')
         and not config.image_path.endswith('.sparseimage')
         and not config.image_path.endswith('.dmg')):
@@ -814,6 +815,7 @@ class BackupsManager(object):
     self.encryption_manager = encryption_manager
     self.readonly = readonly
     self.browseable = browseable
+    self.hdiutil_verify = hdiutil_verify
     self.dry_run = dry_run
     self.attacher = None
     self.backups = None
@@ -880,7 +882,7 @@ class BackupsManager(object):
     attacher = lib.ImageAttacher.Open(
       self.GetImagePath(), mount_point=self.config.mount_path,
       encryption_manager=self.encryption_manager, readonly=(self.readonly or self.dry_run),
-      browseable=self.browseable)
+      browseable=self.browseable, hdiutil_verify=self.hdiutil_verify)
     try:
       self.attacher = attacher
     except:
@@ -1055,7 +1057,7 @@ class BackupsLister(object):
 
 class BackupsVerifier(object):
   def __init__(self, config, output, min_backup=None, max_backup=None, full=True,
-               continue_on_error=False, encryption_manager=None, dry_run=False,
+               continue_on_error=False, hdiutil_verify=True, encryption_manager=None, dry_run=False,
                verbose=False):
     self.config = config
     self.output = output
@@ -1063,6 +1065,7 @@ class BackupsVerifier(object):
     self.max_backup = max_backup
     self.full = full
     self.continue_on_error = continue_on_error
+    self.hdiutil_verify = hdiutil_verify
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1072,7 +1075,7 @@ class BackupsVerifier(object):
 
     backups_manager = BackupsManager.Open(
       self.config, readonly=True, browseable=False, encryption_manager=self.encryption_manager,
-      dry_run=self.dry_run)
+      hdiutil_verify=self.hdiutil_verify, dry_run=self.dry_run)
     try:
       skipped_backups = []
       last_manifest = None
@@ -2114,6 +2117,7 @@ def DoVerifyBackups(args, output):
   parser.add_argument('--max-backup')
   parser.add_argument('--no-full', dest='full', action='store_false')
   parser.add_argument('--continue-on-error', action='store_true')
+  parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2121,7 +2125,8 @@ def DoVerifyBackups(args, output):
   verifier = BackupsVerifier(
     config, output=output, min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     full=cmd_args.full, continue_on_error=cmd_args.continue_on_error,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(),
+    dry_run=args.dry_run, verbose=args.verbose)
   return verifier.Verify()
 
 

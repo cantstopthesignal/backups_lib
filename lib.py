@@ -1431,15 +1431,15 @@ class EncryptionManager(object):
 class ImageAttacher(object):
   @staticmethod
   def Open(image_path, mount_point=None, readonly=True, browseable=False,
-           mount=True, encryption_manager=None):
+           mount=True, encryption_manager=None, hdiutil_verify=True):
     image_attacher = ImageAttacher(
       image_path, mount_point, readonly=readonly, browseable=browseable,
-      mount=mount, encryption_manager=encryption_manager)
+      mount=mount, encryption_manager=encryption_manager, hdiutil_verify=hdiutil_verify)
     image_attacher._Open()
     return image_attacher
 
   def __init__(self, image_path, mount_point=None, readonly=True, browseable=False,
-               mount=True, encryption_manager=None):
+               mount=True, encryption_manager=None, hdiutil_verify=True):
     self.image_path = image_path
     self.mount_point = mount_point
     self.random_mount_point = (self.mount_point is None)
@@ -1450,6 +1450,7 @@ class ImageAttacher(object):
     self.image_uuid = None
     self.encrypted = False
     self.encryption_manager = encryption_manager
+    self.hdiutil_verify = hdiutil_verify
     self.device = None
 
   def __enter__(self):
@@ -1520,6 +1521,8 @@ class ImageAttacher(object):
       cmd.append('-readonly')
     if self.mount and not self.browseable:
       cmd.append('-nobrowse')
+    if not self.hdiutil_verify:
+      cmd.append('-noverify')
     try:
       if not self._TryAttachCommand(cmd, try_last_password=True):
         if not self.encrypted or not self._TryAttachCommand(cmd, try_last_password=False):
