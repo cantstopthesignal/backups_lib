@@ -917,7 +917,7 @@ class BackupCreator:
     last_checkpoint = checkpoints[-1]
 
     basis_path = last_checkpoint.GetPath()
-    basis_manifest = lib.ReadManifestFromCheckpointOrPath(
+    basis_manifest = lib.ReadManifestFromImageOrPath(
       basis_path, encryption_manager=self.encryption_manager, dry_run=self.dry_run)
 
     filters = self.config.GetFilters()
@@ -1289,7 +1289,7 @@ class BackupsDeDuplicator(object):
           PrintSkippedBackups(skipped_backups, self.output)
           skipped_backups = []
 
-          manifest = lib.ReadManifestFromCheckpointOrPath(
+          manifest = lib.ReadManifestFromImageOrPath(
             backup.GetManifestPath(), encryption_manager=self.encryption_manager, dry_run=self.dry_run)
 
           if last_manifest is not None:

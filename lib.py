@@ -2273,17 +2273,14 @@ class Checkpoint(object):
     self.mounted = False
 
 
-def ReadManifestFromCheckpointOrPath(path, encryption_manager=None, dry_run=False):
-  if path.endswith('.sparseimage'):
-    checkpoint = Checkpoint.Open(path, encryption_manager=encryption_manager, dry_run=dry_run)
-    try:
-      return Manifest.Load(checkpoint.GetManifestPath())
-    finally:
-      checkpoint.Close()
+def ReadManifestFromImageOrPath(path, encryption_manager=None, dry_run=False):
+  if path.endswith('.sparseimage') or path.endswith('.sparsebundle') or path.endswith('.dmg'):
+    with ImageAttacher(path, encryption_manager=encryption_manager, readonly=True) as attacher:
+      return Manifest.Load(os.path.join(attacher.GetMountPoint(), METADATA_DIR_NAME, MANIFEST_FILENAME))
   elif path.endswith('.pbdata') or path.endswith('.pbdata.bak') or path.endswith('.pbdata.new'):
     return Manifest.Load(path)
   else:
-    raise Exception('Expected a .sparseimage or .pbdata file but got %r', path)
+    raise Exception('Expected a .sparseimage, .sparsebundle, .dmg or .pbdata file but got %r', path)
 
 
 class CheckpointCreator(object):
@@ -3024,7 +3021,7 @@ def DoCreateCheckpoint(args, output):
 
   basis_path = cmd_args.last_manifest or cmd_args.last_checkpoint
   if basis_path:
-    basis_manifest = ReadManifestFromCheckpointOrPath(
+    basis_manifest = ReadManifestFromImageOrPath(
       basis_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   else:
     basis_manifest = None
@@ -3087,7 +3084,7 @@ def DoDumpManifest(args, output):
   parser.add_argument('--no-shorten-xattr-hash', dest='shorten_xattr_hash', action='store_false')
   cmd_args = parser.parse_args(args.cmd_args)
 
-  manifest = ReadManifestFromCheckpointOrPath(
+  manifest = ReadManifestFromImageOrPath(
     cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
   manifest.Dump(output, shorten_sha256=cmd_args.shorten_sha256,
                 shorten_xattr_hash=cmd_args.shorten_xattr_hash)
@@ -3111,9 +3108,9 @@ def DoDiffManifests(args, output):
 
   encryption_manager = EncryptionManager()
 
-  first_manifest = ReadManifestFromCheckpointOrPath(
+  first_manifest = ReadManifestFromImageOrPath(
     cmd_args.first_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
-  second_manifest = ReadManifestFromCheckpointOrPath(
+  second_manifest = ReadManifestFromImageOrPath(
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
 
   manifest_diff_dumper = ManifestDiffDumper(
@@ -3130,7 +3127,7 @@ def DoVerifyManifest(args, output):
   parser.add_argument('--checksum-all', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
-  manifest = ReadManifestFromCheckpointOrPath(
+  manifest = ReadManifestFromImageOrPath(
     cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
 
   manifest_verifier = ManifestVerifier(

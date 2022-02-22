@@ -71,7 +71,7 @@ def CreateLatestManifestCheckpoint(config):
                       '>f+++++++ fX',
                       'Transferring 4 paths (0b)'])
 
-    manifest = lib.ReadManifestFromCheckpointOrPath(checkpoint_path)
+    manifest = lib.ReadManifestFromImageOrPath(checkpoint_path)
     manifest.SetPath(last_backup.GetManifestPath())
     manifest.Write()
 
@@ -84,7 +84,7 @@ def VerifyBackupManifest(backup, path=None):
   if path is None:
     manifest = lib.Manifest.Load(backup.GetManifestPath())
   else:
-    manifest = lib.ReadManifestFromCheckpointOrPath(path)
+    manifest = lib.ReadManifestFromImageOrPath(path)
 
   output = io.StringIO()
   verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), output,
