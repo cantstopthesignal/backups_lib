@@ -805,8 +805,9 @@ class BackupsManager(object):
 
   def __init__(self, config, encryption_manager=None, readonly=True, browseable=True, dry_run=False):
     if (not config.image_path.endswith('.sparsebundle')
-        and not config.image_path.endswith('.sparseimage')):
-      raise Exception('Expected a sparsebundle or sparseimage file')
+        and not config.image_path.endswith('.sparseimage')
+        and not config.image_path.endswith('.dmg')):
+      raise Exception('Expected a sparsebundle, sparseimage, or dmg file')
     if not os.path.exists(config.image_path):
       raise Exception('Expected %s to exist' % config.image_path)
     self.config = config
