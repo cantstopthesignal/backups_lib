@@ -8,6 +8,7 @@ import shutil
 import stat
 import sys
 
+from . import checkpoint_lib
 from . import lib
 
 
@@ -643,7 +644,7 @@ class BackupsConfig(object):
         f.write('%s %s\n' % (BackupsConfig.FILTER_MERGE_PATH, self.filter_merge_path))
 
   def GetFilters(self):
-    filters = list(lib.STAGED_BACKUP_DEFAULT_FILTERS)
+    filters = list(checkpoint_lib.STAGED_BACKUP_DEFAULT_FILTERS)
     if self.filter_merge_path is not None:
       if not os.path.exists(self.filter_merge_path):
         raise Exception('Expected filter merge path %r to exist' % self.filter_merge_path)
@@ -924,7 +925,7 @@ class BackupCreator:
 
     filters = self.config.GetFilters()
 
-    creator = lib.CheckpointCreator(
+    creator = checkpoint_lib.CheckpointCreator(
       self.config.src_path, self.config.checkpoints_dir, name=self.name, output=self.output,
       basis_path=basis_path, basis_manifest=basis_manifest, dry_run=self.dry_run,
       verbose=self.verbose, checksum_all=self.checksum_all, manifest_only=False,
@@ -965,7 +966,7 @@ class CheckpointsToBackupsApplier:
         assert Backup.IsBackupName(checkpoint.GetName())
         if checkpoint.GetName() <= last_backup.GetName():
           continue
-        test_open_checkpoint = lib.Checkpoint.Open(
+        test_open_checkpoint = checkpoint_lib.Checkpoint.Open(
           checkpoint.GetPath(), encryption_manager=self.encryption_manager, readonly=True,
           dry_run=self.dry_run)
         test_open_checkpoint.Close()
@@ -973,7 +974,7 @@ class CheckpointsToBackupsApplier:
           raise Exception('Checkpoint %s is manifest only: cannot apply to backups' % checkpoint)
         checkpoints_to_apply.append(checkpoint)
       for checkpoint in checkpoints_to_apply:
-        open_checkpoint = lib.Checkpoint.Open(
+        open_checkpoint = checkpoint_lib.Checkpoint.Open(
           checkpoint.GetPath(), encryption_manager=self.encryption_manager, readonly=True,
           dry_run=self.dry_run)
         try:

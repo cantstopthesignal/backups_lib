@@ -10,6 +10,7 @@ __package__ = backups_lib.__package__
 
 from . import backups_manager_lib_test
 from . import backups_oneoff_lib_test
+from . import checkpoint_lib_test
 from . import checksums_lib_test
 from . import lib_test
 
@@ -26,4 +27,5 @@ if __name__ == '__main__':
   lib_test.Test(tests=args.tests)
   backups_manager_lib_test.Test(tests=args.tests)
   backups_oneoff_lib_test.Test(tests=args.tests)
+  checkpoint_lib_test.Test(tests=args.tests)
   checksums_lib_test.Test(tests=args.tests)
