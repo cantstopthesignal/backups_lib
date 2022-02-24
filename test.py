@@ -12,6 +12,7 @@ from . import backups_manager_lib_test
 from . import backups_oneoff_lib_test
 from . import checkpoint_lib_test
 from . import checksums_lib_test
+from . import checksums_oneoff_lib_test
 from . import lib_test
 
 from .test_util import SetPacificTimezone
@@ -29,3 +30,4 @@ if __name__ == '__main__':
   backups_oneoff_lib_test.Test(tests=args.tests)
   checkpoint_lib_test.Test(tests=args.tests)
   checksums_lib_test.Test(tests=args.tests)
+  checksums_oneoff_lib_test.Test(tests=args.tests)
