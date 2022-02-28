@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import pty
 import re
 import shutil
 import subprocess
@@ -163,18 +164,32 @@ def PathInfoTest():
 
 
 def ItemizedPathChangeTest():
+  def ReadItemizedTty(itemized, found_matching_rename=False):
+    tty_master, tty_slave = pty.openpty()
+    try:
+      with os.fdopen(tty_slave, 'w') as tty_output:
+        itemized.Print(output=tty_output, found_matching_rename=found_matching_rename)
+        tty_output.flush()
+        return os.read(tty_master, 1024).rstrip()
+    finally:
+      os.close(tty_master)
+
   AssertEquals(
     '.f....... path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE)))
   AssertEquals(
     '>d....... path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, replace_path=True)))
   AssertEquals(
-    '*deleting path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True)))
+    '*f.delete path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True)))
+  AssertEquals(
+    '*d.delete path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, delete_path=True)))
+  AssertEquals(
+    '*L.delete path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_SYMLINK, delete_path=True)))
   AssertEquals(
     '>fc...... path',
     str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, replace_path=True, checksum_diff=True)))
   AssertEquals(
-    '.f.s..... path -> dest',
-    str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, size_diff=True, link_dest='dest')))
+    '.L.s..... path -> dest',
+    str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_SYMLINK, size_diff=True, link_dest='dest')))
   AssertEquals(
     '.L..t.... path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_SYMLINK, time_diff=True)))
   AssertEquals(
@@ -185,6 +200,29 @@ def ItemizedPathChangeTest():
     '.d.....g. path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, gid_diff=True)))
   AssertEquals(
     '.d......x path', str(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, xattr_diff=True)))
+
+  AssertEquals(b'\x1b[1;m.f.......\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE)))
+  AssertEquals(b'\x1b[1;m.f.......\x1b[1;m \x1b[1;36mpar/\x1b[1;mpath',
+               ReadItemizedTty(lib.ItemizedPathChange('par/path', lib.PathInfo.TYPE_FILE)))
+  AssertEquals(b'\x1b[1;m.d.......\x1b[1;m \x1b[1;36mpath\x1b[1;m',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR)))
+  AssertEquals(b'\x1b[1;m.L.......\x1b[1;m \x1b[1;35mpath\x1b[1;m -> dest',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_SYMLINK, link_dest='dest')))
+  AssertEquals(b'\x1b[1;31m*f.delete\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True)))
+  AssertEquals(b'\x1b[1;35m*f.delete\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True), found_matching_rename=True))
+  AssertEquals(b'\x1b[1;31m*d.delete\x1b[1;m \x1b[1;36mpath\x1b[1;m',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, delete_path=True)))
+  AssertEquals(b'\x1b[1;35m.fc......\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, checksum_diff=True)))
+  AssertEquals(b'\x1b[1;33m.f..t....\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, time_diff=True)))
+  AssertEquals(b'\x1b[1;33m.f...p...\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, permission_diff=True)))
+  AssertEquals(b'\x1b[1;35m.f......x\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, xattr_diff=True)))
 
 
 def CompactTest():
@@ -309,19 +347,19 @@ def DiffManifestsTest():
     manifest2.AddPathInfo(ln1_path_info)
     manifest2.Write()
     DoDiffManifests(manifest1.path, manifest2.path,
-                    expected_output=['*deleting file1',
+                    expected_output=['*f.delete file1',
                                      '>L+++++++ ln1 -> INVALID'])
     DoDiffManifests(manifest1.path, manifest2.path,
                     ignore_matching_renames=True,
-                    expected_output=['*deleting file1',
+                    expected_output=['*f.delete file1',
                                      '>L+++++++ ln1 -> INVALID'])
     DoDiffManifests(manifest2.path, manifest1.path,
                     expected_output=['>f+++++++ file1',
-                                     '*deleting ln1'])
+                                     '*L.delete ln1'])
     DoDiffManifests(manifest2.path, manifest1.path,
                     ignore_matching_renames=True,
                     expected_output=['>f+++++++ file1',
-                                     '*deleting ln1'])
+                                     '*L.delete ln1'])
 
     file2 = CreateFile(test_dir, 'file2', contents='1' * 1025)
     file2_path_info = lib.PathInfo.FromPath(os.path.basename(file2), file2)
@@ -330,7 +368,7 @@ def DiffManifestsTest():
     manifest2.AddPathInfo(file2_path_info)
     manifest2.Write()
     DoDiffManifests(manifest1.path, manifest2.path,
-                    expected_output=['*deleting file1',
+                    expected_output=['*f.delete file1',
                                      '  replaced by duplicate: .f....... file2',
                                      '>f+++++++ file2',
                                      '  replacing duplicate: .f....... file1',

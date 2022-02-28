@@ -348,7 +348,7 @@ class ChecksumsSyncer(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
     if path_info.HasFileContents():
       if checksum_copied:
@@ -361,10 +361,10 @@ class ChecksumsSyncer(object):
       matches = False
     if matches:
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
 
-    print(itemized, file=self.output)
+    itemized.Print(output=self.output)
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -377,7 +377,7 @@ class ChecksumsSyncer(object):
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
-    print(itemized, file=self.output)
+    itemized.Print(output=self.output)
     self.manifest.AddPathInfo(path_info)
 
     if (self.detect_renames and path_info.HasFileContents()
@@ -398,12 +398,12 @@ class ChecksumsSyncer(object):
     basis_path_info = self.basis_manifest.GetPathInfo(path)
     itemized = basis_path_info.GetItemized()
     itemized.delete_path = True
-    print(itemized, file=self.output)
     self.manifest.RemovePathInfo(path)
 
     self.total_synced_paths += 1
 
-    rename_detected = False
+    found_matching_rename = False
+    dup_output_lines = []
 
     if (self.detect_renames and basis_path_info.HasFileContents()
         and basis_path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
@@ -414,9 +414,9 @@ class ChecksumsSyncer(object):
       matching_size_path_infos = self.size_to_pathinfos.get(basis_path_info.size, [])
 
       if len(matching_size_path_infos) > MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT:
-        print('  too many potential renames to check: %d > %d'
-              % (len(matching_size_path_infos), MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT),
-              file=self.output)
+        dup_output_lines = [
+          '  too many potential renames to check: %d > %d'
+          % (len(matching_size_path_infos), MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT)]
       else:
         dup_path_infos = []
         for path_info in matching_size_path_infos:
@@ -435,11 +435,14 @@ class ChecksumsSyncer(object):
 
         analyze_result = lib.AnalyzePathInfoDups(
           basis_path_info, dup_path_infos, replacing_previous=False, verbose=self.verbose)
-        for dup_output_line in analyze_result.dup_output_lines:
-          print(dup_output_line, file=self.output)
-        rename_detected = analyze_result.found_matching_rename
+        dup_output_lines = analyze_result.dup_output_lines
+        found_matching_rename = analyze_result.found_matching_rename
 
-    if rename_detected:
+    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
+    for dup_output_line in dup_output_lines:
+      print(dup_output_line, file=self.output)
+
+    if found_matching_rename:
       self.total_renamed_paths += 1
       self.total_renamed_size += basis_path_info.size
     else:

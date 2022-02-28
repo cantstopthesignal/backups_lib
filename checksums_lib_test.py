@@ -317,12 +317,12 @@ def SyncTest():
         '>fc...... par! \\r/f2',
         '>f+++++++ par! \\r/f2_renamed',
         '>f+++++++ par! \\r/f2_renamed2',
-        '*deleting par! \\r/f3',
-        '*deleting par! \\r/f4',
+        '*f.delete par! \\r/f3',
+        '*f.delete par! \\r/f4',
         '>f+++++++ par! \\r/f4_dup1',
         '>f+++++++ par! \\r/f4_dup2',
         '>f+++++++ par! \\r/f4_renamed',
-        '*deleting par2',
+        '*d.delete par2',
         'Paths: 10 total (6kb), 12 mismatched (7kb), 2 checksummed (1kb)'])
     DoSync(
       root_dir, dry_run=True, detect_renames=False,
@@ -332,12 +332,12 @@ def SyncTest():
         '.d......x par! \\r',
         '>f+++++++ par! \\r/f2_renamed',
         '>f+++++++ par! \\r/f2_renamed2',
-        '*deleting par! \\r/f3',
-        '*deleting par! \\r/f4',
+        '*f.delete par! \\r/f3',
+        '*f.delete par! \\r/f4',
         '>f+++++++ par! \\r/f4_dup1',
         '>f+++++++ par! \\r/f4_dup2',
         '>f+++++++ par! \\r/f4_renamed',
-        '*deleting par2',
+        '*d.delete par2',
         'Paths: 10 total (6kb), 11 synced (5kb), 3 deleted (1kb), 6 checksummed (5kb)'])
     with SetMaxRenameDetectionMatchingSizeFileCount(1):
       DoSync(
@@ -350,8 +350,8 @@ def SyncTest():
           '  replacing duplicate: .f....... par! \\r/f2',
           '>f+++++++ par! \\r/f2_renamed2',
           '  replacing similar: .f..t.... par! \\r/f2',
-          '*deleting par! \\r/f3',
-          '*deleting par! \\r/f4',
+          '*f.delete par! \\r/f3',
+          '*f.delete par! \\r/f4',
           '  too many potential renames to check: 3 > 1',
           '>f+++++++ par! \\r/f4_dup1',
           '  replacing duplicate: .f....... par! \\r/f4',
@@ -359,7 +359,7 @@ def SyncTest():
           '  replacing duplicate: .f....... par! \\r/f4',
           '>f+++++++ par! \\r/f4_renamed',
           '  replacing duplicate: .f....... par! \\r/f4',
-          '*deleting par2',
+          '*d.delete par2',
           'Paths: 10 total (6kb), 11 synced (5kb), 3 deleted (1kb), 6 checksummed (5kb)'])
     DoSync(
       root_dir,
@@ -371,8 +371,8 @@ def SyncTest():
         '  replacing duplicate: .f....... par! \\r/f2',
         '>f+++++++ par! \\r/f2_renamed2',
         '  replacing similar: .f..t.... par! \\r/f2',
-        '*deleting par! \\r/f3',
-        '*deleting par! \\r/f4',
+        '*f.delete par! \\r/f3',
+        '*f.delete par! \\r/f4',
         '  replaced by duplicate: .f....... par! \\r/f4_dup1',
         '  replaced by duplicate: .f....... par! \\r/f4_dup2',
         '  replaced by duplicate: .f....... par! \\r/f4_renamed',
@@ -382,7 +382,7 @@ def SyncTest():
         '  replacing duplicate: .f....... par! \\r/f4',
         '>f+++++++ par! \\r/f4_renamed',
         '  replacing duplicate: .f....... par! \\r/f4',
-        '*deleting par2',
+        '*d.delete par2',
         'Paths: 10 total (6kb), 11 synced (5kb), 1 renamed (1kb), 2 deleted (0b), 6 checksummed (5kb)'])
     DoSync(
       root_dir, checksum_all=True,
@@ -396,7 +396,7 @@ def SyncTest():
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
              expected_output=['>f+++++++ par! \\r/f4',
-                              '*deleting par! \\r/f4_renamed',
+                              '*f.delete par! \\r/f4_renamed',
                               'Paths: 10 total (6kb), 2 mismatched (2kb), 6 checksummed (5kb)'])
     DoSync(
       root_dir,
@@ -405,7 +405,7 @@ def SyncTest():
         '  replacing duplicate: .f....... par! \\r/f4_dup1',
         '  replacing duplicate: .f....... par! \\r/f4_dup2',
         '  replacing duplicate: .f....... par! \\r/f4_renamed',
-        '*deleting par! \\r/f4_renamed',
+        '*f.delete par! \\r/f4_renamed',
         '  replaced by duplicate: .f....... par! \\r/f4_dup1',
         '  replaced by duplicate: .f....... par! \\r/f4_dup2',
         '  replaced by duplicate: .f....... par! \\r/f4',
@@ -427,8 +427,8 @@ def SyncTest():
                               '.f..t.... f1',
                               '.d......x par! \\r',
                               '>fc.t.... par! \\r/f2',
-                              '*deleting par! \\r/f2_renamed',
-                              '*deleting par! \\r/f2_renamed2',
+                              '*f.delete par! \\r/f2_renamed',
+                              '*f.delete par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
                               'Paths: 9 total (5kb), 7 mismatched (4kb), 5 checksummed (4kb)'])
     with InteractiveCheckerReadyResults(
@@ -476,14 +476,14 @@ def SyncTest():
                            'Apply update? (y/N): y'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
-             expected_output=['*deleting par! \\r/f2_renamed',
-                              '*deleting par! \\r/f2_renamed2',
+             expected_output=['*f.delete par! \\r/f2_renamed',
+                              '*f.delete par! \\r/f2_renamed2',
                               '>f+++++++ par! \\r/f5',
                               'Paths: 9 total (5kb), 3 mismatched (3kb), 5 checksummed (4kb)'])
     DoSync(
       root_dir,
-      expected_output=['*deleting par! \\r/f2_renamed',
-                       '*deleting par! \\r/f2_renamed2',
+      expected_output=['*f.delete par! \\r/f2_renamed',
+                       '*f.delete par! \\r/f2_renamed2',
                        '>f+++++++ par! \\r/f5',
                        'Paths: 9 total (5kb), 3 synced (1kb), 2 deleted (2kb), 1 checksummed (1kb)'])
     DoVerify(root_dir, checksum_all=True,
@@ -497,7 +497,7 @@ def SyncTest():
 
     DoSync(
       root_dir, dry_run=True,
-      expected_output=['*deleting f1',
+      expected_output=['*f.delete f1',
                        '>f+++++++ f6',
                        '>d+++++++ par3',
                        '>f+++++++ par3/f7',
@@ -521,7 +521,7 @@ def SyncTest():
 
     DoSync(
       root_dir, paths=['par3'],
-      expected_output=['*deleting par3/f8',
+      expected_output=['*f.delete par3/f8',
                        'Paths: 2 total (3b), 1 synced (0b), 1 deleted (0b), 9 skipped'])
     DoSync(
       root_dir, checksum_all=True, paths=['par3'],
@@ -529,13 +529,13 @@ def SyncTest():
                        'Paths: 2 total (3b), 1 synced (3b), 1 checksummed (3b), 9 skipped'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
-             expected_output=['*deleting f1',
+             expected_output=['*f.delete f1',
                               '>f+++++++ f6',
                               'Paths: 11 total (5kb), 2 mismatched (3b), 6 checksummed (5kb)'])
 
     DoSync(
       root_dir,
-      expected_output=['*deleting f1',
+      expected_output=['*f.delete f1',
                        '>f+++++++ f6',
                        'Paths: 11 total (5kb), 2 synced (0b), 1 deleted (3b), 2 checksummed (3b)'])
     DoVerify(root_dir, checksum_all=True,
@@ -592,8 +592,8 @@ def RenamePathsTest():
                                    'Paths: 5 paths, 2 renamed'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
-             expected_output=['*deleting f2',
-                              '*deleting f3',
+             expected_output=['*f.delete f2',
+                              '*f.delete f3',
                               '>f+++++++ par! \\r/f2',
                               '>f+++++++ par! \\r/f3',
                               'Paths: 5 total (2kb), 4 mismatched (4kb), 1 checksummed (3b)'])

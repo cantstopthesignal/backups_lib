@@ -80,6 +80,14 @@ GETPASS_FUNCTION = getpass.getpass
 
 DISK_IMAGE_DEFAULT_CAPACITY = '1T'
 
+TERM_COLOR_BLUE = '1;34m'
+TERM_COLOR_CYAN = '1;36m'
+TERM_COLOR_GREEN = '1;32m'
+TERM_COLOR_PURPLE = '1;35m'
+TERM_COLOR_RED = '1;31m'
+TERM_COLOR_YELLOW = '1;33m'
+TERM_COLOR_RESET = '1;m'
+
 
 class PathMatcher(object):
   def Matches(self, path):
@@ -1239,7 +1247,7 @@ class PathSyncer(object):
     itemized = PathInfo.GetItemizedDiff(path_info, dest_path_info)
 
     if self.verbose:
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
 
     if self.dry_run:
       return
@@ -1614,13 +1622,44 @@ class ItemizedPathChange:
     else:
       raise Exeption('Unexpected file type for %r' % path)
 
+  def Print(self, output, found_matching_rename=False):
+    print(self.ToString(colorize=output.isatty(),
+                        found_matching_rename=found_matching_rename), file=output)
+
   def __str__(self):
+    return self.ToString(colorize=False)
+
+  def ToString(self, colorize=False, found_matching_rename=False):
+    path_str = EscapePath(self.path)
+    if colorize:
+      if self.path_type == PathInfo.TYPE_DIR:
+        path_str = self._Colorize(path_str, color=TERM_COLOR_CYAN)
+      else:
+        path_str_parts = os.path.split(path_str)
+        if path_str_parts[0]:
+          path_str = self._Colorize(path_str_parts[0] + '/', color=TERM_COLOR_CYAN)
+        else:
+          path_str = ''
+        if self.path_type == PathInfo.TYPE_FILE:
+          path_str += path_str_parts[1]
+        else:
+          assert self.path_type == PathInfo.TYPE_SYMLINK
+          path_str += self._Colorize(path_str_parts[1], color=TERM_COLOR_PURPLE)
     if self.delete_path:
-      return '*deleting %s' % EscapePath(self.path)
+      color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
+      return '%s %s' % (
+        self._Colorize(
+          '*%s.delete' % self.GetItemizedShortCode(), color=color, colorize=colorize),
+        path_str)
     if self.error_path:
-      return '*%s.error %s' % (self.GetItemizedShortCode(), EscapePath(self.path))
+      return '%s %s' % (
+        self._Colorize(
+          '*%s.error' % self.GetItemizedShortCode(), color=TERM_COLOR_RED, colorize=colorize),
+        path_str)
     itemized_str = ['.', self.GetItemizedShortCode(), '.', '.', '.', '.', '.', '.', '.']
+    color = TERM_COLOR_RESET
     if self.new_path:
+      color = TERM_COLOR_GREEN
       itemized_str[0] = '>'
       for i in range(2, 9):
         itemized_str[i] = '+'
@@ -1629,22 +1668,36 @@ class ItemizedPathChange:
         itemized_str[0] = '>'
       if self.checksum_diff:
         itemized_str[2] = 'c'
+        color = TERM_COLOR_PURPLE
       if self.size_diff:
         itemized_str[3] = 's'
+        color = TERM_COLOR_PURPLE
       if self.time_diff:
         itemized_str[4] = 't'
+        if color == TERM_COLOR_RESET:
+          color = TERM_COLOR_YELLOW
       if self.permission_diff:
         itemized_str[5] = 'p'
+        if color == TERM_COLOR_RESET:
+          color = TERM_COLOR_YELLOW
       if self.uid_diff:
         itemized_str[6] = 'o'
       if self.gid_diff:
         itemized_str[7] = 'g'
       if self.xattr_diff:
         itemized_str[8] = 'x'
+        color = TERM_COLOR_PURPLE
     link_dest_str = ''
     if self.link_dest is not None:
       link_dest_str = ' -> %s' % EscapePath(self.link_dest)
-    return '%s %s%s' % (''.join(itemized_str), EscapePath(self.path), link_dest_str)
+    return '%s %s%s' % (
+      self._Colorize(''.join(itemized_str), color=color, colorize=colorize),
+      path_str, link_dest_str)
+
+  def _Colorize(self, s, color, colorize=True):
+    if colorize:
+      return '\033[%s%s\033[%s' % (color, s, TERM_COLOR_RESET)
+    return s
 
 
 class PathInfo(object):
@@ -2191,7 +2244,7 @@ class ManifestDiffDumper(object):
         found_matching_rename = dup_analyze_result and dup_analyze_result.found_matching_rename
 
         if not self.ignore_matching_renames or not found_matching_rename or self.verbose:
-          print(itemized, file=self.output)
+          itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
           if dup_analyze_result is not None:
             for line in dup_analyze_result.dup_output_lines:
               print(line, file=self.output)
@@ -2273,7 +2326,7 @@ class ManifestVerifier(object):
       itemized.delete_path = True
     else:
       itemized.new_path = True
-    print(itemized, file=self.output)
+    itemized.Print(output=self.output)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
@@ -2288,7 +2341,7 @@ class ManifestVerifier(object):
         self.stats.total_checksum_skipped_paths += 1
         self.stats.total_checksum_skipped_size += src_path_info.size
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
     if src_path_info.HasFileContents():
       src_path_info.sha256 = Sha256WithProgress(full_path, src_path_info, output=self.output)
@@ -2300,10 +2353,10 @@ class ManifestVerifier(object):
       matches = False
     if matches:
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
 
-    print(itemized, file=self.output)
+    itemized.Print(output=self.output)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
@@ -2329,7 +2382,7 @@ class ManifestVerifier(object):
           itemized.new_path = True
         else:
           itemized.delete_path = True
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
         self.stats.total_mismatched_paths += 1
         if path_info.size:
           self.stats.total_mismatched_size += path_info.size

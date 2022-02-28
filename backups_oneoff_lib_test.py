@@ -127,7 +127,7 @@ def OneoffUpdateIgnoredXattrsTest():
       DoCreateCheckpoint(
         config.src_path, config.checkpoints_dir, '2020-01-02-120000',
         last_checkpoint_path=latest_checkpoint_path,
-        expected_output=['*deleting f1',
+        expected_output=['*f.delete f1',
                          '.f......x fT',
                          '.f......x fX',
                          '>d+++++++ par!',
@@ -151,7 +151,7 @@ def OneoffUpdateIgnoredXattrsTest():
       DoApplyToBackups(
         config,
         expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
-                         '*deleting f1',
+                         '*f.delete f1',
                          '.f......x fT',
                          '.f......x fX',
                          '>d+++++++ par!',
@@ -275,7 +275,7 @@ def OneoffAddXattrKeysTest():
     DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
       last_checkpoint_path=latest_checkpoint_path,
-      expected_output=['*deleting f1',
+      expected_output=['*f.delete f1',
                        '.f......x fT',
                        '.f......x fX',
                        '>d+++++++ par!',
@@ -286,7 +286,7 @@ def OneoffAddXattrKeysTest():
     DoApplyToBackups(
       config,
       expected_output=['Applying 2020-01-02-120000 onto 2020-01-01-120000...',
-                       '*deleting f1',
+                       '*f.delete f1',
                        '.f......x fT',
                        '.f......x fX',
                        '>d+++++++ par!',
@@ -384,7 +384,7 @@ def OneoffUpdateSomeFilesTest():
     DoCreateCheckpoint(
       config.src_path, config.checkpoints_dir, '2020-01-02-120000',
       last_checkpoint_path=latest_checkpoint_path,
-      expected_output=['*deleting f1',
+      expected_output=['*f.delete f1',
                        '>d+++++++ par!',
                        '>f+++++++ par!/f3',
                        '>f+++++++ par!/f4',

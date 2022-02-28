@@ -441,21 +441,23 @@ class CheckpointCreator(object):
       return
     sha256_to_pathinfos = self.manifest.CreateSha256ToPathInfosMap()
     for itemized, basis_path_info, path_info in self.pending_path_printouts:
-      print(itemized, file=self.output)
-      if not itemized.HasDiffs():
-        continue
       dup_analyze_result = None
-      if (itemized.new_path or itemized.checksum_diff) and path_info.HasFileContents():
-        dup_analyze_result = lib.AnalyzePathInfoDups(
-          path_info, self.sha256_to_basis_pathinfos.get(path_info.sha256, []),
-          replacing_previous=True, verbose=self.verbose)
-      elif itemized.delete_path and basis_path_info.HasFileContents():
-        dup_analyze_result = lib.AnalyzePathInfoDups(
-          basis_path_info, sha256_to_pathinfos.get(basis_path_info.sha256, []),
-          replacing_previous=False, verbose=self.verbose)
+      if itemized.HasDiffs():
+        if (itemized.new_path or itemized.checksum_diff) and path_info.HasFileContents():
+          dup_analyze_result = lib.AnalyzePathInfoDups(
+            path_info, self.sha256_to_basis_pathinfos.get(path_info.sha256, []),
+            replacing_previous=True, verbose=self.verbose)
+        elif itemized.delete_path and basis_path_info.HasFileContents():
+          dup_analyze_result = lib.AnalyzePathInfoDups(
+            basis_path_info, sha256_to_pathinfos.get(basis_path_info.sha256, []),
+            replacing_previous=False, verbose=self.verbose)
       if dup_analyze_result is not None:
+        itemized.Print(output=self.output, found_matching_rename=dup_analyze_result.found_matching_rename)
         for line in dup_analyze_result.dup_output_lines:
           print(line, file=self.output)
+      else:
+        itemized.Print(output=self.output)
+
     self.pending_path_printouts = []
 
 
@@ -524,13 +526,13 @@ class CheckpointApplier(object):
         if self._AddPathContents(next_new_path, existing_path_info=None):
           itemized = self.src_manifest.GetPathInfo(next_new_path).GetItemized()
           itemized.new_path = True
-          print(itemized, file=self.output)
+          itemized.Print(output=self.output)
       del new_paths[0]
 
   def _AddDeleted(self, path, dest_path_info):
     itemized = dest_path_info.GetItemized()
     itemized.delete_path = True
-    print(itemized, file=self.output)
+    itemized.Print(output=self.output)
     self.paths_to_delete.append(path)
 
   def _AddIfChanged(self, path, src_path_info, dest_path_info):
@@ -540,7 +542,7 @@ class CheckpointApplier(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
     if dest_path_info.HasFileContents():
       dest_path_info.sha256 = lib.Sha256WithProgress(full_path, dest_path_info, output=self.output)
@@ -550,11 +552,11 @@ class CheckpointApplier(object):
       matches = False
     if matches:
       if self.verbose:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       return
 
     if self._AddPathContents(path, existing_path_info=dest_path_info):
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
     if self.verbose:
       if src_path_info is not None:
         print('<', src_path_info.ToString(
@@ -567,7 +569,7 @@ class CheckpointApplier(object):
     if not os.path.lexists(os.path.join(self.src_checkpoint.GetContentRootPath(), path)):
       itemized = self.src_manifest.GetPathInfo(path).GetItemized()
       itemized.error_path = True
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
       self.errors_encountered = True
       return False
 

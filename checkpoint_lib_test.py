@@ -322,8 +322,8 @@ def CreateTest():
       AssertBasisInfoFileEquals(checkpoint2.GetMetadataPath(), checkpoint1.GetImagePath())
       DoVerifyManifest(src_root, manifest2.GetPath(),
                        expected_success=False,
-                       expected_output=['*deleting SKIP1',
-                                        '*deleting par!/2.skp'])
+                       expected_output=['*f.delete SKIP1',
+                                        '*f.delete par!/2.skp'])
       DoVerifyManifest(checkpoint2.GetContentRootPath(), manifest2.GetPath())
     finally:
       checkpoint2.Close()
@@ -396,7 +396,7 @@ def CreateTest():
         readonly=False,
         expected_output=['.d..t.... par!',
                          '>fc...... par!/f2',
-                         '*deleting par!/file6_from',
+                         '*f.delete par!/file6_from',
                          '  replaced by duplicate: .f....... par!/file6_to',
                          '  replaced by duplicate: .f....... par!/file6_to2',
                          '>f+++++++ par!/file6_to',
@@ -421,7 +421,7 @@ def CreateTest():
         AssertLinesEqual(GetManifestDiffItemized(manifest3, manifest4),
                          ['.d..t...x par!',
                           '>fc...... par!/f2',
-                          '*deleting par!/file6_from',
+                          '*f.delete par!/file6_from',
                           '>f+++++++ par!/file6_to',
                           '>f+++++++ par!/file6_to2',
                           '>f+++++++ par!/file6_to3',
@@ -460,9 +460,9 @@ def CreateTest():
         readonly=False,
         expected_output=['.d..t.... par!',
                          '>f+++++++ par!/f4',
-                         '*deleting par!/file6_to2',
+                         '*f.delete par!/file6_to2',
                          '  replaced by similar: .f..t.... par!/file6_to',
-                         '*deleting par!/file6_to3',
+                         '*f.delete par!/file6_to3',
                          '  replaced by duplicate: .f....... par!/file6_to',
                          '*** Warning: Paths changed since syncing, checking...',
                          '>f+++++++ par!/f4',
@@ -475,8 +475,8 @@ def CreateTest():
         AssertLinesEqual(GetManifestDiffItemized(manifest4, manifest5),
                          ['.d..t.... par!',
                           '>f+++++++ par!/f4',
-                          '*deleting par!/file6_to2',
-                          '*deleting par!/file6_to3'])
+                          '*f.delete par!/file6_to2',
+                          '*f.delete par!/file6_to3'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
                          ['.d..t.....x. ./',
                           '>f++++++++++ .staged_backup_filter',
@@ -722,8 +722,8 @@ def ApplyDryRunTest():
       checkpoint1.Close()
 
     DoApply(checkpoint1.GetImagePath(), dest_root, dry_run=True,
-            expected_output=['*deleting del_par!',
-                             '*deleting del_par!/del',
+            expected_output=['*d.delete del_par!',
+                             '*f.delete del_par!/del',
                              '>d+++++++ par!',
                              '>f+++++++ par!/f_\\r'])
     AssertLinesEqual(RsyncPaths(src_root, dest_root),
@@ -773,8 +773,8 @@ def ApplyTest():
       checkpoint1.Close()
 
     DoApply(checkpoint1.GetImagePath(), dest_root,
-            expected_output=['*deleting del_par!',
-                             '*deleting del_par!/del',
+            expected_output=['*d.delete del_par!',
+                             '*f.delete del_par!/del',
                              '>L+++++++ ln1_dir -> par!',
                              '>L+++++++ ln3 -> INVALID',
                              '>d+++++++ par!',
@@ -875,7 +875,7 @@ def ApplyTest():
       src_root, checkpoints_dir, '5', last_checkpoint_path=checkpoint4.GetImagePath(),
       expected_output=['.f......x f3',
                        '.Lc...... ln1_dir -> par!/f2',
-                       '*deleting ln3',
+                       '*L.delete ln3',
                        '>fcs..... par!/f2',
                        '.Lc...... par!/ln2 -> INVALID',
                        'Transferring 4 of 7 paths (3b of 3b)'])
@@ -896,7 +896,7 @@ def ApplyTest():
     DoApply(checkpoint5.GetImagePath(), dest_root,
             expected_output=['.f......x f3',
                              '.Lc...... ln1_dir -> par!/f2',
-                             '*deleting ln3',
+                             '*L.delete ln3',
                              '>fcs..... par!/f2',
                              '.Lc...... par!/ln2 -> INVALID'])
     AssertEmptyRsync(src_root, dest_root)

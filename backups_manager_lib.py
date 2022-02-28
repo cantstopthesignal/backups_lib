@@ -266,13 +266,13 @@ class PathsIntoBackupCopier(object):
     if mismatched_itemizeds:
       print('*** Error: Failed to copy paths: found mismatched existing paths:', file=self.output)
       for itemized in mismatched_itemizeds:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       result.success = False
       return result
     if missing_from_itemizeds:
       print('*** Error: Failed to copy paths: found missing from paths:', file=self.output)
       for itemized in missing_from_itemizeds:
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       result.success = False
       return result
 
@@ -293,7 +293,7 @@ class PathsIntoBackupCopier(object):
       if (itemized.path_type == lib.PathInfo.TYPE_DIR
           and not self.path_matcher.Matches(itemized.path)):
         continue
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
       link_to_path = paths_to_link_map.get(itemized.path)
       if link_to_path is not None and link_to_path != itemized.path:
         path_info = self.from_manifest.GetPathInfo(itemized.path)
@@ -1177,7 +1177,7 @@ class BackupsVerifier(object):
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
       if self.verbose:
         manifest_path_info = manifest.GetPathInfo(itemized.path)
         if manifest_path_info:
@@ -1249,7 +1249,7 @@ class BackupsVerifier(object):
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
     for itemized in itemized_results:
-      print(itemized, file=self.output)
+      itemized.Print(output=self.output)
       if self.verbose:
         manifest_path_info = manifest.GetPathInfo(itemized.path)
         if manifest_path_info:
@@ -1614,7 +1614,7 @@ class UniqueFilesInBackupsDumper(object):
 
     if previous_backup is None and next_backup is None:
       for itemized in manifest.GetItemized():
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
       print('Paths: %d unique, %d total' % (num_paths, num_paths), file=self.output)
       return True
 
@@ -1649,7 +1649,7 @@ class UniqueFilesInBackupsDumper(object):
 
       if itemized.delete_path:
         if self.verbose:
-          print(itemized, file=self.output)
+          itemized.Print(output=self.output)
           if previous_path_info is not None:
             print('  <', previous_path_info.ToString(
               include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
@@ -1685,7 +1685,7 @@ class UniqueFilesInBackupsDumper(object):
         if path_info.HasFileContents():
           unique_size += path_info.size
 
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
         if self.verbose:
           if previous_path_info is not None:
             print('  <', previous_path_info.ToString(
@@ -2018,7 +2018,7 @@ class PathsInBackupsDeleter(object):
         itemized = path_info.GetItemized()
         itemized.new_path = False
         itemized.delete_path = True
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
         paths_to_delete.append(path)
 
     if not paths_to_delete:
