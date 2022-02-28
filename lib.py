@@ -247,6 +247,7 @@ class FilterRule(object):
 
   @staticmethod
   def CompileRegex(matcher):
+    matcher = DeEscapePath(matcher)
     regex_pieces = []
     if matcher.startswith('/'):
       regex_pieces.append('^')

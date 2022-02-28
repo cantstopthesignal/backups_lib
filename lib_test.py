@@ -405,7 +405,8 @@ def MtimePreserverTest():
       file4 = CreateFile(dir1, 'file4')
       preserver.PreserveMtime(file4)
 
-      AssertEquals({dir2: 1500000000.0, file3: 1500000000.0, file4: 1500000000.0}, preserver.preserved_path_mtimes)
+      AssertEquals({dir2: 1500000000.0, file3: 1500000000.0, file4: 1500000000.0},
+                   preserver.preserved_path_mtimes)
       DeleteFileOrDir(dir2)
       DeleteFileOrDir(file4)
     AssertEquals(1500000000.0, os.lstat(file3).st_mtime)
@@ -683,9 +684,10 @@ def FilterRuleTest():
   DoFilterRuleTest(True, '/*/b/*', 'c/b/a')
   DoFilterRuleTest(False, 'c/**/', 'c/b/a')
   DoFilterRuleTest(True, 'c/**/', 'c/b/a', is_dir=True)
+  DoFilterRuleTest(True, 'c/a\\r', 'c/a\r')
 
   DoFilterRuleTest(True, 'c?', 'a',  expect_matcher_exception=True)
-  DoFilterRuleTest(True, 'c\\', 'a',  expect_matcher_exception=True)
+  DoFilterRuleTest(True, 'c\\\\', 'a',  expect_matcher_exception=True)
   DoFilterRuleTest(True, '[a-b]', 'a',  expect_matcher_exception=True)
 
 
