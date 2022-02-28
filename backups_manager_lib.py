@@ -1614,7 +1614,7 @@ class UniqueFilesInBackupsDumper(object):
 
     if previous_backup is None and next_backup is None:
       for itemized in manifest.GetItemized():
-        itemized.Print(output=self.output)
+        itemized.Print(output=self.output, warn_for_new_path=True)
       print('Paths: %d unique, %d total' % (num_paths, num_paths), file=self.output)
       return True
 
@@ -1649,7 +1649,7 @@ class UniqueFilesInBackupsDumper(object):
 
       if itemized.delete_path:
         if self.verbose:
-          itemized.Print(output=self.output)
+          itemized.Print(output=self.output, warn_for_new_path=True)
           if previous_path_info is not None:
             print('  <', previous_path_info.ToString(
               include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
@@ -1685,7 +1685,8 @@ class UniqueFilesInBackupsDumper(object):
         if path_info.HasFileContents():
           unique_size += path_info.size
 
-        itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
+        itemized.Print(output=self.output, found_matching_rename=found_matching_rename,
+                       warn_for_new_path=True)
         if self.verbose:
           if previous_path_info is not None:
             print('  <', previous_path_info.ToString(

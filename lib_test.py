@@ -164,11 +164,12 @@ def PathInfoTest():
 
 
 def ItemizedPathChangeTest():
-  def ReadItemizedTty(itemized, found_matching_rename=False):
+  def ReadItemizedTty(itemized, found_matching_rename=False, warn_for_new_path=False):
     tty_master, tty_slave = pty.openpty()
     try:
       with os.fdopen(tty_slave, 'w') as tty_output:
-        itemized.Print(output=tty_output, found_matching_rename=found_matching_rename)
+        itemized.Print(output=tty_output, found_matching_rename=found_matching_rename,
+                       warn_for_new_path=warn_for_new_path)
         tty_output.flush()
         return os.read(tty_master, 1024).rstrip()
     finally:
@@ -203,6 +204,10 @@ def ItemizedPathChangeTest():
 
   AssertEquals(b'\x1b[1;m.f.......\x1b[1;m path',
                ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE)))
+  AssertEquals(b'\x1b[1;32m>f+++++++\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True)))
+  AssertEquals(b'\x1b[1;31m>f+++++++\x1b[1;m path',
+               ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True), warn_for_new_path=True))
   AssertEquals(b'\x1b[1;m.f.......\x1b[1;m \x1b[1;36mpar/\x1b[1;mpath',
                ReadItemizedTty(lib.ItemizedPathChange('par/path', lib.PathInfo.TYPE_FILE)))
   AssertEquals(b'\x1b[1;m.d.......\x1b[1;m \x1b[1;36mpath\x1b[1;m',

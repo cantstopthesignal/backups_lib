@@ -1622,14 +1622,14 @@ class ItemizedPathChange:
     else:
       raise Exeption('Unexpected file type for %r' % path)
 
-  def Print(self, output, found_matching_rename=False):
-    print(self.ToString(colorize=output.isatty(),
-                        found_matching_rename=found_matching_rename), file=output)
+  def Print(self, output, found_matching_rename=False, warn_for_new_path=False):
+    print(self.ToString(colorize=output.isatty(), found_matching_rename=found_matching_rename,
+                        warn_for_new_path=warn_for_new_path), file=output)
 
   def __str__(self):
     return self.ToString(colorize=False)
 
-  def ToString(self, colorize=False, found_matching_rename=False):
+  def ToString(self, colorize=False, found_matching_rename=False, warn_for_new_path=False):
     path_str = EscapePath(self.path)
     if colorize:
       if self.path_type == PathInfo.TYPE_DIR:
@@ -1659,7 +1659,10 @@ class ItemizedPathChange:
     itemized_str = ['.', self.GetItemizedShortCode(), '.', '.', '.', '.', '.', '.', '.']
     color = TERM_COLOR_RESET
     if self.new_path:
-      color = TERM_COLOR_GREEN
+      if warn_for_new_path:
+        color = TERM_COLOR_RED
+      else:
+        color = TERM_COLOR_GREEN
       itemized_str[0] = '>'
       for i in range(2, 9):
         itemized_str[i] = '+'
