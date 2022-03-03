@@ -27,14 +27,9 @@ def CreateConfig(parent_dir, backups_filename_prefix='backups', filter_merge_pat
   return config
 
 
-def CreateBackupsBundle(config, encrypt=False, create_example_content=True):
-  assert not os.path.exists(config.image_path)
-  cmd = ['hdiutil', 'create', '-size', '10G', '-fs', 'APFS', '-quiet',
-         '-atomic', '-type', 'SPARSEBUNDLE', '-volname', 'Backups']
-  if encrypt:
-    cmd.extend(['-encryption', 'AES-128'])
-  cmd.append(config.image_path)
-  subprocess.check_call(cmd)
+def CreateBackupsBundle(config, create_example_content=True):
+  lib.GetDiskImageHelper().CreateImage(
+    config.image_path, size='10G', filesystem='APFS', image_type='SPARSEBUNDLE', volume_name='Backups')
   with lib.ImageAttacher(config.image_path, config.mount_path, readonly=False,
                          browseable=False) as attacher:
     backups_dir = CreateDir(attacher.GetMountPoint(), backups_manager_lib.BACKUPS_SUBDIR)

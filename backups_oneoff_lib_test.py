@@ -33,8 +33,9 @@ from .test_util import SetXattr
 from .test_util import TempDir
 from .test_util import Xattr
 
-from .lib_test_util import GetManifestItemized
 from .lib_test_util import DoVerifyManifest
+from .lib_test_util import GetManifestItemized
+from .lib_test_util import MaybeUseFakeDiskImageHelper
 
 from .backups_manager_lib_test_util import CreateConfig
 from .backups_manager_lib_test_util import CreateBackupsBundle
@@ -105,7 +106,7 @@ def OneoffUpdateIgnoredXattrsTest():
   new_ignored_xattr_keys = ['com.apple.lastuseddate#PS',
                             'com.apple.quarantine']
 
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     with ReplaceIgnoredXattrKeys(old_ignored_xattr_keys):
       config = CreateConfig(test_dir)
       CreateBackupsBundle(config)
@@ -252,9 +253,13 @@ def OneoffUpdateIgnoredXattrsTest():
                          'Verifying 2020-01-03-120000...',
                          'Paths: 6 total, 4 checksummed (0b)'])
 
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
+
 
 def OneoffAddXattrKeysTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -363,9 +368,13 @@ def OneoffAddXattrKeysTest():
                        'Verifying 2020-01-02-120000...',
                        'Paths: 6 total, 4 checksummed (0b)'])
 
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
+
 
 def OneoffUpdateSomeFilesTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -541,6 +550,10 @@ def OneoffUpdateSomeFilesTest():
     DoVerifyBackups(
       config,
       expected_output=None)
+
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
 
 
 def Test(tests=[]):

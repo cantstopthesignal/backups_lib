@@ -78,6 +78,8 @@ OPEN_CONTENT_FUNCTION = open
 
 GETPASS_FUNCTION = getpass.getpass
 
+DISK_IMAGE_HELPER_OVERRIDE = None
+
 DISK_IMAGE_DEFAULT_CAPACITY = '1T'
 
 TERM_COLOR_BLUE = '1;34m'
@@ -654,24 +656,42 @@ def GetDriveAvailableSpace(path):
   return available_kbs * 1024
 
 
-def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACITY,
-                    filesystem='APFS', image_type=None, encrypt=False, encryption_manager=None,
-                    dry_run=False):
-  password = None
-  if encrypt:
-    password = encryption_manager.CreatePassword(image_path)
+class DiskImageHelperAuthenticationError(Exception):
+  def __init__(self):
+    Exception.__init__(self)
 
-  assert not os.path.exists(image_path)
-  cmd = ['hdiutil', 'create', '-size', size, '-fs', filesystem, '-quiet',
-         '-atomic']
-  if image_type is not None:
-    cmd.extend(['-type', image_type])
-  if volume_name is not None:
-    cmd.extend(['-volname', volume_name])
-  if password is not None:
-    cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
-  cmd.append(image_path)
-  if not dry_run:
+
+class DiskImageHelperAttachResult:
+  def __init__(self):
+    self.mount_point = None
+    self.device = None
+
+
+class DiskImageHelper:
+  def __init__(self):
+    pass
+
+  def CreateImage(self, path, size=None, filesystem=None, image_type=None, volume_name=None,
+                  encryption=None, password=None):
+    assert not os.path.lexists(path)
+    if encryption is not None:
+      assert password is not None
+    cmd = ['hdiutil', 'create']
+    if size is not None:
+      cmd.extend(['-size', size])
+    if filesystem is not None:
+      cmd.extend(['-fs', filesystem])
+    if image_type is not None:
+      cmd.extend(['-type', image_type])
+    if volume_name is not None:
+      cmd.extend(['-volname', 'Backups'])
+    if encryption is not None:
+      cmd.extend(['-encryption', encryption])
+      if password is not None:
+        cmd.append('-stdinpass')
+    cmd.extend(['-quiet', '-atomic'])
+    cmd.append(path)
+
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
     if password is not None:
       p.stdin.write(password)
@@ -679,16 +699,135 @@ def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACI
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
-  if not dry_run and password is not None:
-    _, image_uuid = GetImageEncryptionDetails(image_path)
-    assert image_uuid
-    encryption_manager.SavePassword(password, image_uuid)
+  def AttachImage(self, path, encrypted=False, password=None, mount=False,
+                  random_mount_point=False, mount_point=None,
+                  readonly=True, browseable=False, verify=True):
+    cmd = ['hdiutil', 'attach', path, '-owners', 'on', '-plist']
+    if encrypted:
+      cmd.append('-stdinpass')
+    if mount:
+      if random_mount_point:
+        cmd.extend(['-mountrandom', tempfile.gettempdir()])
+      else:
+        cmd.extend(['-mountpoint', mount_point])
+    else:
+      cmd.append('-nomount')
+    if readonly:
+      cmd.append('-readonly')
+    if mount and not browseable:
+      cmd.append('-nobrowse')
+    if not verify:
+      cmd.append('-noverify')
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT)
+    if encrypted:
+      p.stdin.write(password.encode('utf8'))
+    p.stdin.close()
+    output = p.stdout.read()
+    if p.wait():
+      lines = output.decode('utf8').strip().split('\n')
+      if len(lines) == 1 and lines[0].endswith('- Authentication error'):
+        raise DiskImageHelperAuthenticationError()
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+    result = DiskImageHelperAttachResult()
+    plist_data = plistlib.loads(output)
+    for entry in plist_data['system-entities']:
+      if entry['content-hint'] == 'GUID_partition_scheme':
+        assert result.device is None
+        result.device = entry['dev-entry']
+        assert result.device.startswith('/dev/')
+      if 'mount-point' in entry:
+        assert result.mount_point is None
+        result.mount_point = entry['mount-point']
+        assert os.path.isdir(result.mount_point)
+        if not random_mount_point and mount_point is not None:
+          assert os.path.samefile(mount_point, result.mount_point)
+    if result.device is None or (mount and result.mount_point is None):
+      raise Exception('Unexpected output from hdiutil attach:\n%s' % output.decode('utf8'))
+    return result
+
+  def DetachImage(self, device):
+    cmd = ['hdiutil', 'detach', device]
+    for i in range(20):
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      output = p.stdout.read().strip()
+      if not p.wait():
+        break
+      if output.endswith('- No such file or directory'):
+        break
+      elif (not output.endswith('- Resource busy')
+            and not output.endswith('\nhdiutil: detach: drive not detached')):
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
+      time.sleep(10)
+    else:
+      raise Exception('Command %r failed after retries' % cmd)
+
+  def MoveImage(self, from_path, to_path):
+    shutil.move(from_path, to_path)
+
+  def GetImageEncryptionDetails(self, image_path):
+    cmd = ['hdiutil', 'isencrypted', image_path]
+    for i in range(5):
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      output = p.stdout.read().strip()
+      if not p.wait():
+        break
+      if (not output.endswith('- Resource busy')
+          and not output.endswith('- Resource temporarily unavailable')):
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
+      time.sleep(.5)
+    else:
+      raise Exception('Command %r failed after retries' % cmd)
+
+    encrypted = None
+    image_uuid = None
+    for line in output.split('\n'):
+      m = re.match('^encrypted: (YES|NO)$', line)
+      if m:
+        encrypted = m.group(1) == 'YES'
+      m = re.match('^uuid: ([A-Z0-9-]+)$', line)
+      if m:
+        image_uuid = m.group(1)
+    assert encrypted is not None
+    if encrypted:
+      assert image_uuid
+    return (encrypted, image_uuid)
+
+
+def GetDiskImageHelper():
+  if DISK_IMAGE_HELPER_OVERRIDE is not None:
+    return DISK_IMAGE_HELPER_OVERRIDE()
+  else:
+    return DiskImageHelper()
+
+
+def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACITY,
+                    filesystem='APFS', image_type=None, encrypt=False, encryption_manager=None,
+                    dry_run=False):
+  encryption = None
+  password = None
+  if encrypt:
+    password = encryption_manager.CreatePassword(image_path)
+    encryption = 'AES-128'
+
+  if not dry_run:
+    GetDiskImageHelper().CreateImage(
+      image_path, size=size, filesystem=filesystem, image_type=image_type, volume_name=volume_name,
+      encryption=encryption, password=password)
+
+    if password is not None:
+      _, image_uuid = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
+      assert image_uuid
+      encryption_manager.SavePassword(password, image_uuid)
 
 
 def CompactImage(image_path, output, encryption_manager=None, encrypted=None, image_uuid=None,
                  dry_run=False):
   if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   cmd = ['hdiutil', 'compact', image_path]
   if encrypted:
@@ -713,7 +852,7 @@ def CompactImage(image_path, output, encryption_manager=None, encrypted=None, im
 def ResizeImage(image_path, block_count, output, encryption_manager=None, encrypted=None,
                 image_uuid=None, dry_run=False):
   if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   cmd = ['hdiutil', 'resize', '-size', '%db' % block_count, image_path]
   if encrypted:
@@ -767,7 +906,7 @@ class DiskPartitionInfo(object):
 def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encrypted=None,
                                image_uuid=None, dry_run=False):
   if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   if not os.path.normpath(image_path).endswith('.sparsebundle'):
     raise Exception('Expected %s to be a sparsebundle image' % image_path)
@@ -869,7 +1008,7 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
 def CompactImageWithResize(image_path, output, encryption_manager=None, encrypted=None,
                            image_uuid=None, dry_run=False):
   if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   (current_block_count, min_block_count) = GetDiskImageLimits(
     image_path, encryption_manager=encryption_manager, encrypted=encrypted, image_uuid=image_uuid)
@@ -951,7 +1090,7 @@ def ResizeApfsContainer(apfs_device, new_size, output):
 
 def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uuid=None):
   if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   cmd = ['hdiutil', 'resize', '-limits', image_path]
   if encrypted:
@@ -982,7 +1121,7 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
 def CompactAndDefragmentImage(
     image_path, output, defragment=False, defragment_iterations=DEFAULT_DEFRAGMENT_ITERATIONS,
     encryption_manager=None, dry_run=False):
-  (encrypted, image_uuid) = GetImageEncryptionDetails(image_path)
+  (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
 
   if not defragment:
     CompactImage(image_path, output=output, encryption_manager=encryption_manager,
@@ -1032,36 +1171,6 @@ def CompactAndDefragmentImage(
 
   CompactImage(image_path, output=output, encryption_manager=encryption_manager,
                encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
-
-
-def GetImageEncryptionDetails(image_path):
-  cmd = ['hdiutil', 'isencrypted', image_path]
-  for i in range(5):
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         text=True)
-    output = p.stdout.read().strip()
-    if not p.wait():
-      break
-    if (not output.endswith('- Resource busy')
-        and not output.endswith('- Resource temporarily unavailable')):
-      raise Exception('Unexpected output from %r: %r' % (cmd, output))
-    time.sleep(.5)
-  else:
-    raise Exception('Command %r failed after retries' % cmd)
-
-  encrypted = None
-  image_uuid = None
-  for line in output.split('\n'):
-    m = re.match('^encrypted: (YES|NO)$', line)
-    if m:
-      encrypted = m.group(1) == 'YES'
-    m = re.match('^uuid: ([A-Z0-9-]+)$', line)
-    if m:
-      image_uuid = m.group(1)
-  assert encrypted is not None
-  if encrypted:
-    assert image_uuid
-  return (encrypted, image_uuid)
 
 
 def DecodeRsyncEncodedString(s):
@@ -1476,21 +1585,7 @@ class ImageAttacher(object):
   def Close(self):
     assert self.attached
     assert self.device is not None
-    cmd = ['hdiutil', 'detach', self.device]
-    for i in range(20):
-      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True)
-      output = p.stdout.read().strip()
-      if not p.wait():
-        break
-      if output.endswith('- No such file or directory'):
-        break
-      elif (not output.endswith('- Resource busy')
-            and not output.endswith('\nhdiutil: detach: drive not detached')):
-        raise Exception('Unexpected output from %r: %r' % (cmd, output))
-      time.sleep(10)
-    else:
-      raise Exception('Command %r failed after retries' % cmd)
+    GetDiskImageHelper().DetachImage(self.device)
     if self.mount:
       for i in range(10):
         if not os.path.exists(self.mount_point):
@@ -1510,27 +1605,12 @@ class ImageAttacher(object):
       assert self.mount_point is None
     else:
       assert not os.path.exists(self.mount_point)
-    (self.encrypted, self.image_uuid) = GetImageEncryptionDetails(self.GetImagePath())
-    cmd = ['hdiutil', 'attach', self.GetImagePath(), '-owners', 'on', '-plist']
-    if self.encrypted:
-      cmd.append('-stdinpass')
-    if self.mount:
-      if self.random_mount_point:
-        cmd.extend(['-mountrandom', tempfile.gettempdir()])
-      else:
-        cmd.extend(['-mountpoint', self.mount_point])
-    else:
-      cmd.append('-nomount')
-    if self.readonly:
-      cmd.append('-readonly')
-    if self.mount and not self.browseable:
-      cmd.append('-nobrowse')
-    if not self.hdiutil_verify:
-      cmd.append('-noverify')
+    (self.encrypted, self.image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(
+      self.GetImagePath())
     try:
-      if not self._TryAttachCommand(cmd, try_last_password=True):
-        if not self.encrypted or not self._TryAttachCommand(cmd, try_last_password=False):
-          if not self.encrypted or not self._TryAttachCommand(cmd, try_last_password=False):
+      if not self._TryAttach(try_last_password=True):
+        if not self.encrypted or not self._TryAttach(try_last_password=False):
+          if not self.encrypted or not self._TryAttach(try_last_password=False):
             raise Exception('Failed to attach %s' % self.GetImagePath())
     except:
       if self.random_mount_point:
@@ -1547,39 +1627,24 @@ class ImageAttacher(object):
     assert self.device is not None
     self.attached = True
 
-  def _TryAttachCommand(self, cmd, try_last_password):
+  def _TryAttach(self, try_last_password):
     if self.encrypted:
       password = self.encryption_manager.GetPassword(
         self.GetImagePath(), self.image_uuid, try_last_password=try_last_password)
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    if self.encrypted:
-      p.stdin.write(password.encode('utf8'))
-    p.stdin.close()
-    output = p.stdout.read()
-    if p.wait():
-      lines = output.decode('utf8').strip().split('\n')
-      if len(lines) == 1 and lines[0].endswith('- Authentication error'):
-        self.encryption_manager.ClearPassword(self.image_uuid)
-        return False
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    else:
+      password = None
 
-    plist_data = plistlib.loads(output)
-    self.device = None
-    found_mount_point = False
-    for entry in plist_data['system-entities']:
-      if entry['content-hint'] == 'GUID_partition_scheme':
-        assert self.device is None
-        self.device = entry['dev-entry']
-        assert self.device.startswith('/dev/')
-      if 'mount-point' in entry:
-        assert not found_mount_point
-        found_mount_point = True
-        assert os.path.isdir(entry['mount-point'])
-        if self.random_mount_point:
-          self.mount_point = entry['mount-point']
-    if self.device is None or (self.mount and not found_mount_point):
-      raise Exception('Unexpected output from hdiutil attach:\n%s' % output.decode('utf8'))
+    try:
+      attach_result = GetDiskImageHelper().AttachImage(
+        self.GetImagePath(), encrypted=self.encrypted, password=password, mount=self.mount,
+        random_mount_point=self.random_mount_point, mount_point=self.mount_point,
+        readonly=self.readonly, browseable=self.browseable, verify=self.hdiutil_verify)
+    except DiskImageHelperAuthenticationError:
+      self.encryption_manager.ClearPassword(self.image_uuid)
+      return False
+
+    self.device = attach_result.device
+    self.mount_point = attach_result.mount_point
     return True
 
 

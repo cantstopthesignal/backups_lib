@@ -55,7 +55,7 @@ SUPERSEDED_METADATA_PREFIX = 'superseded-'
 
 class BackupCheckpoint(object):
   BACKUP_CHECKPOINTS_PATTERN = re.compile(
-    '([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6})(-manifest)?[.]sparseimage')
+    '^([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6})(-manifest)?[.]sparseimage$')
 
   STATE_NEW = 'NEW'
   STATE_IN_PROGRESS = 'IN_PROGRESS'

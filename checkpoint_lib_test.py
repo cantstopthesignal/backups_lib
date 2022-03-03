@@ -42,6 +42,7 @@ from .lib_test_util import DoVerifyManifest
 from .lib_test_util import GetManifestItemized
 from .lib_test_util import HandleGetPass
 from .lib_test_util import HandleGoogleDriveRemoteFiles
+from .lib_test_util import MaybeUseFakeDiskImageHelper
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 
@@ -100,6 +101,13 @@ def AssertBasisInfoFileEquals(metadata_path, basis_path=None):
     with open(basis_info_path) as in_file:
       json_data = json.load(in_file)
       AssertEquals(os.path.basename(basis_path), json_data['basis_filename'])
+
+
+def AssertCheckpointsList(checkpoints_dir, expected_list):
+  AssertLinesEqual(
+    expected_list,
+    [p for p in sorted(os.listdir(checkpoints_dir))
+     if checkpoint_lib.CheckpointPathParts.IsMatchingPath(p)])
 
 
 def VerifyCheckpointContents(manifest, root_dir, prev_manifest=None):
@@ -188,7 +196,7 @@ def DoStrip(checkpoint_path, defragment=True, defragment_iterations=None,
 
 
 def CreateDryRunTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -227,7 +235,7 @@ def CreateDryRunTest():
       AssertEmptyRsync(src_root, checkpoint1.GetContentRootPath())
     finally:
       checkpoint1.Close()
-    AssertLinesEqual(os.listdir(checkpoints_dir), ['1.sparseimage'])
+    AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
 
     SetMTime(file1, None)
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -238,7 +246,11 @@ def CreateDryRunTest():
     expected_output=['>fcs..... par!/f2',
                      '.f..t.... par!/f_\\r',
                      'Transferring 2 of 5 paths (17b of 17b)'])
-    AssertLinesEqual(os.listdir(checkpoints_dir), ['1.sparseimage'])
+    AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
+
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
 
 
 def CreateTest():
@@ -498,7 +510,7 @@ def CreateTest():
 
 
 def CreateWithFilterMergeTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par')
@@ -539,9 +551,13 @@ def CreateWithFilterMergeTest():
     finally:
       checkpoint1.Close()
 
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
+
 
 def CreateFromGoogleDriveTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par')
@@ -578,121 +594,129 @@ def CreateFromGoogleDriveTest():
     finally:
       checkpoint1.Close()
 
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
+
 
 def CreateWithFollowSymlinksTest():
-  with TempDir() as test_dir2:
-    with TempDir() as test_dir:
-      checkpoints_dir = CreateDir(test_dir, 'checkpoints')
-      src_root = CreateDir(test_dir, 'src')
+  def RunTest(test_dir, test_dir2):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
 
-      file1 = CreateFile(src_root, 'f1')
-      ln1 = CreateSymlink(src_root, 'ln1', 'INVALID')
+    file1 = CreateFile(src_root, 'f1')
+    ln1 = CreateSymlink(src_root, 'ln1', 'INVALID')
 
-      ref_dir1 = CreateDir(test_dir2, 'd1')
-      ref_file2 = CreateFile(ref_dir1, 'f2', contents='abc')
-      ln2 = CreateSymlink(src_root, 'ln2', test_dir2)
-      ln3 = CreateSymlink(src_root, 'ln3', test_dir2)
+    ref_dir1 = CreateDir(test_dir2, 'd1')
+    ref_file2 = CreateFile(ref_dir1, 'f2', contents='abc')
+    ln2 = CreateSymlink(src_root, 'ln2', test_dir2)
+    ln3 = CreateSymlink(src_root, 'ln3', test_dir2)
 
-      ln4 = CreateSymlink(test_dir2, 'ln4', 'd1/f2')
-      ln5 = CreateSymlink(test_dir2, 'ln5', 'd1/f2')
+    ln4 = CreateSymlink(test_dir2, 'ln4', 'd1/f2')
+    ln5 = CreateSymlink(test_dir2, 'ln5', 'd1/f2')
 
-      ln6 = CreateSymlink(test_dir2, 'ln6', 'd1')
-      ln7 = CreateSymlink(test_dir2, 'ln7', 'd1')
+    ln6 = CreateSymlink(test_dir2, 'ln6', 'd1')
+    ln7 = CreateSymlink(test_dir2, 'ln7', 'd1')
 
-      DoCreate(
-        src_root, checkpoints_dir, '1', dry_run=True,
-        expected_output=['>d+++++++ .',
-                         '>f+++++++ f1',
-                         '>L+++++++ ln1 -> INVALID',
-                         '>L+++++++ ln2 -> %s' % test_dir2,
-                         '>L+++++++ ln3 -> %s' % test_dir2,
-                         'Transferring 5 paths (0b)'])
+    DoCreate(
+      src_root, checkpoints_dir, '1', dry_run=True,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> %s' % test_dir2,
+                       '>L+++++++ ln3 -> %s' % test_dir2,
+                       'Transferring 5 paths (0b)'])
 
-      CreateFile(src_root, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
-                 contents=['follow-symlinks /ln2/',
-                           'follow-symlinks /ln2/ln4',
-                           'follow-symlinks /ln2/ln6'])
+    CreateFile(src_root, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['follow-symlinks /ln2/',
+                         'follow-symlinks /ln2/ln4',
+                         'follow-symlinks /ln2/ln6'])
 
-      checkpoint1, manifest1 = DoCreate(
-        src_root, checkpoints_dir, '1',
-        expected_output=['>d+++++++ .',
-                         '>f+++++++ .staged_backup_filter',
-                         '>f+++++++ f1',
-                         '>L+++++++ ln1 -> INVALID',
-                         '>d+++++++ ln2',
-                         '>d+++++++ ln2/d1',
-                         '>f+++++++ ln2/d1/f2',
-                         '>f+++++++ ln2/ln4',
-                         '>L+++++++ ln2/ln5 -> d1/f2',
-                         '>d+++++++ ln2/ln6',
-                         '>f+++++++ ln2/ln6/f2',
-                         '>L+++++++ ln2/ln7 -> d1',
-                         '>L+++++++ ln3 -> %s' % test_dir2,
-                         'Transferring 13 paths (81b)'])
+    checkpoint1, manifest1 = DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ .staged_backup_filter',
+                       '>f+++++++ f1',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>d+++++++ ln2',
+                       '>d+++++++ ln2/d1',
+                       '>f+++++++ ln2/d1/f2',
+                       '>f+++++++ ln2/ln4',
+                       '>L+++++++ ln2/ln5 -> d1/f2',
+                       '>d+++++++ ln2/ln6',
+                       '>f+++++++ ln2/ln6/f2',
+                       '>L+++++++ ln2/ln7 -> d1',
+                       '>L+++++++ ln3 -> %s' % test_dir2,
+                       'Transferring 13 paths (81b)'])
 
-      try:
-        AssertLinesEqual(GetManifestItemized(manifest1),
-                         ['.d....... .',
-                          '.f....... .staged_backup_filter',
-                          '.f....... f1',
-                          '.L....... ln1 -> INVALID',
-                          '.d....... ln2',
-                          '.d....... ln2/d1',
-                          '.f....... ln2/d1/f2',
-                          '.f....... ln2/ln4',
-                          '.L....... ln2/ln5 -> d1/f2',
-                          '.d....... ln2/ln6',
-                          '.f....... ln2/ln6/f2',
-                          '.L....... ln2/ln7 -> d1',
-                          '.L....... ln3 -> %s' % test_dir2])
-        VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
-        f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
-        f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/d1/f2')
-        AssertEquals('abc', open(f2_checkpoint, 'r').read())
-        ln2_ln4_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln4')
-        AssertEquals('abc', open(ln2_ln4_checkpoint, 'r').read())
-        ln6_f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln6/f2')
-        AssertEquals('abc', open(ln6_f2_checkpoint, 'r').read())
-      finally:
-        checkpoint1.Close()
+    try:
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.f....... .staged_backup_filter',
+                        '.f....... f1',
+                        '.L....... ln1 -> INVALID',
+                        '.d....... ln2',
+                        '.d....... ln2/d1',
+                        '.f....... ln2/d1/f2',
+                        '.f....... ln2/ln4',
+                        '.L....... ln2/ln5 -> d1/f2',
+                        '.d....... ln2/ln6',
+                        '.f....... ln2/ln6/f2',
+                        '.L....... ln2/ln7 -> d1',
+                        '.L....... ln3 -> %s' % test_dir2])
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
+      f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
+      f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/d1/f2')
+      AssertEquals('abc', open(f2_checkpoint, 'r').read())
+      ln2_ln4_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln4')
+      AssertEquals('abc', open(ln2_ln4_checkpoint, 'r').read())
+      ln6_f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln6/f2')
+      AssertEquals('abc', open(ln6_f2_checkpoint, 'r').read())
+    finally:
+      checkpoint1.Close()
 
-      SetXattr(test_dir2, 'example', b'example_value')
-      ref_dir2 = CreateDir(test_dir2, 'd2')
-      ref_file3 = CreateFile(ref_dir2, 'f3', contents='def')
+    SetXattr(test_dir2, 'example', b'example_value')
+    ref_dir2 = CreateDir(test_dir2, 'd2')
+    ref_file3 = CreateFile(ref_dir2, 'f3', contents='def')
 
-      checkpoint2, manifest2 = DoCreate(
-        src_root, checkpoints_dir, '2',
-        last_checkpoint_path=checkpoint1.GetImagePath(),
-        expected_output=['.d......x ln2',
-                         '>d+++++++ ln2/d2',
-                         '>f+++++++ ln2/d2/f3',
-                         'Transferring 3 of 15 paths (3b of 84b)'])
-      try:
-        VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
-        ln2_checkpoint = os.path.join(checkpoint2.GetContentRootPath(), 'ln2')
-        AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
-      finally:
-        checkpoint2.Close()
+    checkpoint2, manifest2 = DoCreate(
+      src_root, checkpoints_dir, '2',
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      expected_output=['.d......x ln2',
+                       '>d+++++++ ln2/d2',
+                       '>f+++++++ ln2/d2/f3',
+                       'Transferring 3 of 15 paths (3b of 84b)'])
+    try:
+      VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
+      ln2_checkpoint = os.path.join(checkpoint2.GetContentRootPath(), 'ln2')
+      AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+    finally:
+      checkpoint2.Close()
 
-      ref_file3 = CreateFile(ref_dir2, 'f3', contents='ghi')
+    ref_file3 = CreateFile(ref_dir2, 'f3', contents='ghi')
 
-      checkpoint3, manifest3 = DoCreate(
-        src_root, checkpoints_dir, '3',
-        last_checkpoint_path=checkpoint2.GetImagePath(),
-        expected_output=['>fc...... ln2/d2/f3',
-                         'Transferring 1 of 15 paths (3b of 84b)'])
-      try:
-        VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
-        ref_file3_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2/d2/f3')
-        AssertEquals('ghi', open(ref_file3_checkpoint, 'r').read())
-        ln2_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2')
-        AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
-      finally:
-        checkpoint3.Close()
+    checkpoint3, manifest3 = DoCreate(
+      src_root, checkpoints_dir, '3',
+      last_checkpoint_path=checkpoint2.GetImagePath(),
+      expected_output=['>fc...... ln2/d2/f3',
+                       'Transferring 1 of 15 paths (3b of 84b)'])
+    try:
+      VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
+      ref_file3_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2/d2/f3')
+      AssertEquals('ghi', open(ref_file3_checkpoint, 'r').read())
+      ln2_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2')
+      AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+    finally:
+      checkpoint3.Close()
+
+  with TempDir() as test_dir:
+    with TempDir() as test_dir2:
+      with MaybeUseFakeDiskImageHelper():
+        RunTest(test_dir, test_dir2)
 
 
 def ApplyDryRunTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -731,6 +755,10 @@ def ApplyDryRunTest():
                       '*deleting del_par!/del',
                       'cd++++++++++ par!/',
                       '>f++++++++++ par!/f_\r'])
+
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
 
 
 def ApplyTest():
@@ -942,7 +970,7 @@ def ApplyTest():
 
 
 def ApplyFromGoogleDriveTest():
-  with TempDir() as test_dir:
+  def RunTest(test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -1036,6 +1064,10 @@ def ApplyFromGoogleDriveTest():
     AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
                      ['>fcs........ par!/g1',
                       '>fcs........ par!/g2'])
+
+  with TempDir() as test_dir:
+    with MaybeUseFakeDiskImageHelper():
+      RunTest(test_dir)
 
 
 def ApplyWithEncryptionTest():

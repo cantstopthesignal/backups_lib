@@ -649,7 +649,7 @@ class ImageFromFolderCreator(object):
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
     if self.encrypt:
-      _, image_uuid = lib.GetImageEncryptionDetails(rw_image_path)
+      _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(rw_image_path)
       assert image_uuid
       self.encryption_manager.SavePassword(self.password, image_uuid)
 
@@ -672,7 +672,7 @@ class ImageFromFolderCreator(object):
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
     if self.encrypt:
-      _, image_uuid = lib.GetImageEncryptionDetails(output_path)
+      _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(output_path)
       assert image_uuid
       self.encryption_manager.SavePassword(self.password, image_uuid)
 

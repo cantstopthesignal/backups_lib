@@ -1,5 +1,11 @@
 import contextlib
 import errno
+import json
+import os
+import shutil
+import tempfile
+import traceback
+import uuid
 
 from . import checkpoint_lib
 from . import lib
@@ -8,6 +14,9 @@ from .test_util import AssertEquals
 from .test_util import CreateFile
 from .test_util import DoBackupsMain
 from .test_util import Xattr
+
+
+ENABLE_FAKE_DISK_IMAGE_HELPER = True
 
 
 def GetManifestItemized(manifest):
@@ -83,6 +92,124 @@ def SetEscapeKeyDetectorCancelAtInvocation(invocation_num):
     yield
   finally:
     lib.EscapeKeyDetector.ClearCancelAtInvocation()
+
+
+class FakeDiskImage(object):
+  @staticmethod
+  def PathFromDevice(device):
+    prefix = '/dev/FAKE_'
+    assert device.startswith(prefix)
+    return device[len(prefix):]
+
+  def __init__(self, path):
+    assert os.path.splitext(path)[1] in ['.sparsebundle', '.dmg', '.sparseimage']
+    self.path = path
+    self.metadata = {}
+
+  def Create(self):
+    assert not os.path.lexists(self.path)
+    self.metadata['attached'] = False
+    self.metadata['mounted'] = False
+    self.metadata['mount_point'] = None
+    self.metadata['data_dir'] = self.path + '_FAKE_IMAGE_DATA'
+    self.metadata['image_uuid'] = str(uuid.uuid4())
+    os.mkdir(self.metadata['data_dir'])
+    self._Save()
+
+  def Attach(self, mount=False, random_mount_point=False, mount_point=None):
+    self._Load()
+    assert not self.metadata['attached']
+    assert not self.metadata['mounted']
+    self.metadata['attached'] = True
+    self.metadata['mounted'] = mount
+    if mount:
+      self.metadata['mount_point'] = mount_point
+      if random_mount_point or mount_point is None:
+        self.metadata['mount_point'] = tempfile.NamedTemporaryFile(delete=False).name
+        os.unlink(self.metadata['mount_point'])
+      assert os.path.isdir(self.metadata['data_dir'])
+      os.symlink(self.metadata['data_dir'], self.metadata['mount_point'])
+    self._Save()
+    result = lib.DiskImageHelperAttachResult()
+    result.device = '/dev/FAKE_' + self.path
+    result.mount_point = self.metadata['mount_point']
+    return result
+
+  def Detach(self):
+    self._Load()
+    assert self.metadata['attached']
+    self.metadata['attached'] = False
+    if self.metadata['mounted']:
+      assert self.metadata['mount_point'] is not None
+      os.unlink(self.metadata['mount_point'])
+      self.metadata['mount_point'] = None
+      self.metadata['mounted'] = False
+    self._Save()
+
+  def MoveTo(self, to_path):
+    self._Load()
+    assert not self.metadata['attached']
+    assert not self.metadata['mounted']
+    old_data_dir = self.metadata['data_dir']
+    self.metadata['data_dir'] = to_path + '_FAKE_IMAGE_DATA'
+    self._Save()
+    shutil.move(self.path, to_path)
+    self.path = to_path
+    shutil.move(old_data_dir, self.metadata['data_dir'])
+
+  def GetImageEncryptionDetails(self):
+    self._Load()
+    return (False, self.metadata['image_uuid'])
+
+  def _Load(self):
+    with open(self.path, 'r') as in_f:
+      self.metadata = json.load(in_f)
+
+  def _Save(self):
+    with open(self.path, 'w') as out_f:
+      json.dump(self.metadata, out_f, indent=2)
+
+
+class FakeDiskImageHelper(object):
+  def CreateImage(self, path, size=None, filesystem=None, image_type=None, volume_name=None,
+                  encryption=False, password=None):
+    assert not encryption
+    assert not os.path.lexists(path)
+    fake_image = FakeDiskImage(path)
+    fake_image.Create()
+
+  def AttachImage(self, path, encrypted=False, password=None, mount=False,
+                  random_mount_point=False, mount_point=None,
+                  readonly=True, browseable=False, verify=True):
+    assert not encrypted
+    fake_image = FakeDiskImage(path)
+    return fake_image.Attach(mount=mount, random_mount_point=random_mount_point, mount_point=mount_point)
+
+  def DetachImage(self, device):
+    fake_image = FakeDiskImage(FakeDiskImage.PathFromDevice(device))
+    fake_image.Detach()
+
+  def MoveImage(self, from_path, to_path):
+    fake_image = FakeDiskImage(from_path)
+    fake_image.MoveTo(to_path)
+
+  def GetImageEncryptionDetails(self, path):
+    fake_image = FakeDiskImage(path)
+    return fake_image.GetImageEncryptionDetails()
+
+
+@contextlib.contextmanager
+def MaybeUseFakeDiskImageHelper():
+  if not ENABLE_FAKE_DISK_IMAGE_HELPER:
+    yield
+    return
+
+  old_value = lib.DISK_IMAGE_HELPER_OVERRIDE
+  lib.DISK_IMAGE_HELPER_OVERRIDE = FakeDiskImageHelper
+  try:
+    yield
+  finally:
+    lib.DISK_IMAGE_HELPER_OVERRIDE = old_value
 
 
 def CollapseApfsOperationsInOutput(output_lines):

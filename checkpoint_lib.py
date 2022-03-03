@@ -29,6 +29,10 @@ STAGED_BACKUP_DEFAULT_FILTERS = [lib.FilterRuleDirMerge(STAGED_BACKUP_DIR_MERGE_
 class CheckpointPathParts(object):
   PATTERN = re.compile('^((?:(?!-manifest).)*)(-manifest)?([.]sparseimage)$')
 
+  @staticmethod
+  def IsMatchingPath(path):
+    return CheckpointPathParts.PATTERN.match(os.path.basename(path)) is not None
+
   def __init__(self, path):
     m = CheckpointPathParts.PATTERN.match(path)
     if not m:
@@ -158,7 +162,7 @@ class Checkpoint(object):
       assert self.state == Checkpoint.STATE_DONE and not self.mounted
       new_path = os.path.join(new_base_path, os.path.basename(self.GetImagePath()))
       assert not os.path.lexists(new_path)
-      shutil.move(self.GetImagePath(), new_path)
+      lib.GetDiskImageHelper().MoveImage(self.GetImagePath(), new_path)
       self.base_path = new_base_path
 
   def _CreateImage(self):
