@@ -16,7 +16,30 @@ from .test_util import DoBackupsMain
 from .test_util import Xattr
 
 
-ENABLE_FAKE_DISK_IMAGE_HELPER = True
+FAKE_DISK_IMAGE_LEVEL_OFF = 'off'
+FAKE_DISK_IMAGE_LEVEL_MEDIUM = 'medium'
+FAKE_DISK_IMAGE_LEVEL_HIGH = 'high'
+FAKE_DISK_IMAGE_LEVEL_MAX = 'max'
+FAKE_DISK_IMAGE_LEVEL_NONE = 'none'
+
+FAKE_DISK_IMAGE_LEVEL_CHOICES = [
+  FAKE_DISK_IMAGE_LEVEL_OFF,
+  FAKE_DISK_IMAGE_LEVEL_MEDIUM,
+  FAKE_DISK_IMAGE_LEVEL_HIGH,
+  FAKE_DISK_IMAGE_LEVEL_MAX,
+]
+
+FAKE_DISK_IMAGE_LEVEL_TO_INDEX = {
+  FAKE_DISK_IMAGE_LEVEL_OFF: 0,
+  FAKE_DISK_IMAGE_LEVEL_MEDIUM: 1,
+  FAKE_DISK_IMAGE_LEVEL_HIGH: 2,
+  FAKE_DISK_IMAGE_LEVEL_MAX: 3,
+  FAKE_DISK_IMAGE_LEVEL_NONE: 4,
+}
+
+FAKE_DISK_IMAGE_LEVEL = FAKE_DISK_IMAGE_LEVEL_MEDIUM
+
+DEBUG_FAKE_DISK_IMAGE_LEVELS = False
 
 
 def GetManifestItemized(manifest):
@@ -101,6 +124,10 @@ class FakeDiskImage(object):
     assert device.startswith(prefix)
     return device[len(prefix):]
 
+  @staticmethod
+  def UnMountedDataDir(image_path):
+    return image_path + '_FAKE_IMAGE_DATA_UNMOUNTED'
+
   def __init__(self, path):
     assert os.path.splitext(path)[1] in ['.sparsebundle', '.dmg', '.sparseimage']
     self.path = path
@@ -111,9 +138,9 @@ class FakeDiskImage(object):
     self.metadata['attached'] = False
     self.metadata['mounted'] = False
     self.metadata['mount_point'] = None
-    self.metadata['data_dir'] = self.path + '_FAKE_IMAGE_DATA'
+    self.metadata['unmounted_data_dir'] = FakeDiskImage.UnMountedDataDir(self.path)
     self.metadata['image_uuid'] = str(uuid.uuid4())
-    os.mkdir(self.metadata['data_dir'])
+    os.mkdir(self.metadata['unmounted_data_dir'])
     self._Save()
 
   def Attach(self, mount=False, random_mount_point=False, mount_point=None):
@@ -127,8 +154,8 @@ class FakeDiskImage(object):
       if random_mount_point or mount_point is None:
         self.metadata['mount_point'] = tempfile.NamedTemporaryFile(delete=False).name
         os.unlink(self.metadata['mount_point'])
-      assert os.path.isdir(self.metadata['data_dir'])
-      os.symlink(self.metadata['data_dir'], self.metadata['mount_point'])
+      assert os.path.isdir(self.metadata['unmounted_data_dir'])
+      os.rename(self.metadata['unmounted_data_dir'], self.metadata['mount_point'])
     self._Save()
     result = lib.DiskImageHelperAttachResult()
     result.device = '/dev/FAKE_' + self.path
@@ -141,7 +168,7 @@ class FakeDiskImage(object):
     self.metadata['attached'] = False
     if self.metadata['mounted']:
       assert self.metadata['mount_point'] is not None
-      os.unlink(self.metadata['mount_point'])
+      os.rename(self.metadata['mount_point'], self.metadata['unmounted_data_dir'])
       self.metadata['mount_point'] = None
       self.metadata['mounted'] = False
     self._Save()
@@ -150,12 +177,12 @@ class FakeDiskImage(object):
     self._Load()
     assert not self.metadata['attached']
     assert not self.metadata['mounted']
-    old_data_dir = self.metadata['data_dir']
-    self.metadata['data_dir'] = to_path + '_FAKE_IMAGE_DATA'
+    old_unmounted_data_dir = self.metadata['unmounted_data_dir']
+    self.metadata['unmounted_data_dir'] = FakeDiskImage.UnMountedDataDir(to_path)
     self._Save()
     shutil.move(self.path, to_path)
     self.path = to_path
-    shutil.move(old_data_dir, self.metadata['data_dir'])
+    shutil.move(old_unmounted_data_dir, self.metadata['unmounted_data_dir'])
 
   def GetImageEncryptionDetails(self):
     self._Load()
@@ -199,15 +226,30 @@ class FakeDiskImageHelper(object):
 
 
 @contextlib.contextmanager
-def MaybeUseFakeDiskImageHelper():
-  if not ENABLE_FAKE_DISK_IMAGE_HELPER:
-    yield
+def ApplyFakeDiskImageHelperLevel(min_fake_disk_image_level=FAKE_DISK_IMAGE_LEVEL_MEDIUM, test_case=None):
+  if (FAKE_DISK_IMAGE_LEVEL == FAKE_DISK_IMAGE_LEVEL_MAX
+      and min_fake_disk_image_level == FAKE_DISK_IMAGE_LEVEL_NONE):
+    print('*** Warning: %s skipped since it requires real disk images' % test_case)
+    yield False
+    return
+
+  if (FAKE_DISK_IMAGE_LEVEL_TO_INDEX[min_fake_disk_image_level] >
+      FAKE_DISK_IMAGE_LEVEL_TO_INDEX[FAKE_DISK_IMAGE_LEVEL]):
+    if DEBUG_FAKE_DISK_IMAGE_LEVELS:
+      print('Using REAL Disk Images')
+      yield False
+      return
+    yield True
     return
 
   old_value = lib.DISK_IMAGE_HELPER_OVERRIDE
   lib.DISK_IMAGE_HELPER_OVERRIDE = FakeDiskImageHelper
   try:
-    yield
+    if DEBUG_FAKE_DISK_IMAGE_LEVELS:
+      print('Using FAKE Disk Images')
+      yield False
+      return
+    yield True
   finally:
     lib.DISK_IMAGE_HELPER_OVERRIDE = old_value
 

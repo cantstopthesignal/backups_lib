@@ -4,6 +4,7 @@ import argparse
 import os
 import re
 import sys
+import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -11,9 +12,11 @@ __package__ = backups_lib.__package__
 
 from . import checksums_lib
 from . import lib
+from . import test_main
 
 from .test_util import AssertEquals
 from .test_util import AssertNotEquals
+from .test_util import BaseTestCase
 from .test_util import CreateDir
 from .test_util import CreateDirs
 from .test_util import CreateFile
@@ -35,8 +38,12 @@ def DoOneoffAddXattrsKeys(
                   expected_output=expected_output)
 
 
-def OneoffAddXattrKeysTest():
-  with TempDir() as test_dir:
+class OneoffAddXattrKeysTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
     alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
 
@@ -97,16 +104,5 @@ def OneoffAddXattrKeysTest():
              expected_output=['Paths: 6 total (0b), 4 checksummed (0b)'])
 
 
-def Test(tests=[]):
-  if not tests or 'OneoffAddXattrKeysTest' in tests:
-    OneoffAddXattrKeysTest()
-
-
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('tests', nargs='*', default=[])
-  args = parser.parse_args()
-
-  SetPacificTimezone()
-
-  Test(tests=args.tests)
+  test_main.RunCurrentFileUnitTests()

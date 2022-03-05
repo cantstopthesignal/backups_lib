@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -17,10 +18,13 @@ __package__ = backups_lib.__package__
 
 from . import backups_manager_lib
 from . import lib
+from . import lib_test_util
+from . import test_main
 
 from .test_util import AssertEquals
 from .test_util import AssertLinesEqual
 from .test_util import AssertNotEquals
+from .test_util import BaseTestCase
 from .test_util import CreateDir
 from .test_util import CreateDirs
 from .test_util import CreateFile
@@ -31,9 +35,9 @@ from .test_util import SetPacificTimezone
 from .test_util import SetXattr
 from .test_util import TempDir
 
+from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import GetManifestItemized
-from .lib_test_util import MaybeUseFakeDiskImageHelper
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetMaxDupCounts
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
@@ -59,8 +63,15 @@ from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
 from .backups_manager_lib_test_util import VerifyBackupManifest
 
 
-def ApplyToBackupsTest():
-  with TempDir() as test_dir:
+class ApplyToBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_HIGH, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -300,8 +311,14 @@ def ApplyToBackupsTest():
                        'Paths: 14 total, 8 inode hits, 1 checksummed (1kb)'])
 
 
-def ApplyToBackupsWithFilterMergeTest():
-  def RunTest(test_dir):
+class ApplyToBackupsWithFilterMergeTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     filter_merge_path = CreateFile(
       test_dir, 'filter_merge',
       contents=['exclude *.skp',
@@ -363,25 +380,30 @@ def ApplyToBackupsWithFilterMergeTest():
                        'Verifying 2020-01-03-120000...',
                        'Paths: 4 total, 1 inode hits, 1 checksummed (0b)'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class ListBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def ListBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
 
     DoListBackups(config, expected_backups=['2020-01-01-120000'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class VerifyBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_HIGH, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def VerifyBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -561,12 +583,15 @@ def VerifyBackupsTest():
                        'Verifying 2020-01-03-120000...',
                        'Paths: 5 unique, 2 matching, 3 checksummed (0b)'])
 
-  with TempDir() as test_dir:
-    RunTest(test_dir)
 
+class AddMissingManifestsToBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def AddMissingManifestsToBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -671,13 +696,15 @@ def AddMissingManifestsToBackupsTest():
                        'Verifying 2020-01-04-120000...',
                        'Paths: 5 total, 3 inode hits, 1 checksummed (3b)'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class DeDuplicateBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def DeDuplicateBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -925,13 +952,17 @@ def DeDuplicateBackupsTest():
                        'Verifying 2020-01-05-120000...',
                        'Paths: 9 total, 7 inode hits, 1 checksummed (1kb)'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class PruneBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
-def PruneBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config, create_example_content=False)
 
@@ -1020,13 +1051,15 @@ def PruneBackupsTest():
     finally:
       backups_manager.Close()
 
-  with SetHdiutilCompactOnBatteryAllowed(True):
-    with TempDir() as test_dir:
-      RunTest(test_dir)
 
+class CloneBackupTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def CloneBackupTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -1089,13 +1122,15 @@ def CloneBackupTest():
     finally:
       backups_manager.Close()
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class DeleteBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def DeleteBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -1231,13 +1266,15 @@ def DeleteBackupsTest():
 
     DoListBackups(config, expected_backups=[])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class DumpUniqueFilesInBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def DumpUniqueFilesInBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -1705,13 +1742,16 @@ def DumpUniqueFilesInBackupsTest():
                        '.d..t.... par2',
                        'Paths: 4 unique (2kb), 13 total'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class ExtractFromBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
-def ExtractFromBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -1947,14 +1987,16 @@ def ExtractFromBackupsTest():
     finally:
       extracted_manager.Close()
 
-  with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
-    with TempDir() as test_dir:
-      with MaybeUseFakeDiskImageHelper():
-        RunTest(test_dir)
 
+class MergeIntoBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
-def MergeIntoBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     CreateLatestManifestCheckpoint(config)
@@ -2204,14 +2246,15 @@ def MergeIntoBackupsTest():
                        '.f......x par/f5_both',
                        '.f......x par/f7_from'])
 
-  with SetLogThrottlerLogAlways(backups_manager_lib.PathsIntoBackupCopier.HARD_LINK_LOG_THROTTLER):
-    with TempDir() as test_dir:
-      with MaybeUseFakeDiskImageHelper():
-        RunTest(test_dir)
 
+class DeleteInBackupsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def DeleteInBackupsTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -2444,45 +2487,6 @@ def DeleteInBackupsTest():
     finally:
       backups_manager.Close()
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
-
-
-def Test(tests=[]):
-  if not tests or 'ApplyToBackupsTest' in tests:
-    ApplyToBackupsTest()
-  if not tests or 'ApplyToBackupsWithFilterMergeTest' in tests:
-    ApplyToBackupsWithFilterMergeTest()
-  if not tests or 'ListBackupsTest' in tests:
-    ListBackupsTest()
-  if not tests or 'VerifyBackupsTest' in tests:
-    VerifyBackupsTest()
-  if not tests or 'AddMissingManifestsToBackupsTest' in tests:
-    AddMissingManifestsToBackupsTest()
-  if not tests or 'DeDuplicateBackupsTest' in tests:
-    DeDuplicateBackupsTest()
-  if not tests or 'PruneBackupsTest' in tests:
-    PruneBackupsTest()
-  if not tests or 'CloneBackupTest' in tests:
-    CloneBackupTest()
-  if not tests or 'DeleteBackupsTest' in tests:
-    DeleteBackupsTest()
-  if not tests or 'DumpUniqueFilesInBackupsTest' in tests:
-    DumpUniqueFilesInBackupsTest()
-  if not tests or 'ExtractFromBackupsTest' in tests:
-    ExtractFromBackupsTest()
-  if not tests or 'MergeIntoBackupsTest' in tests:
-    MergeIntoBackupsTest()
-  if not tests or 'DeleteInBackupsTest' in tests:
-    DeleteInBackupsTest()
-
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('tests', nargs='*', default=[])
-  args = parser.parse_args()
-
-  SetPacificTimezone()
-
-  Test(tests=args.tests)
+  test_main.RunCurrentFileUnitTests()

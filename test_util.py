@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import io
 import os
@@ -6,9 +7,13 @@ import shutil
 import subprocess
 import tempfile
 import time
+import unittest
 import xattr
 
 from . import backups_main
+
+
+VERBOSE_TESTS = False
 
 
 @contextlib.contextmanager
@@ -173,3 +178,13 @@ def DoBackupsMain(cmd_args, dry_run=False, verbose=False, expected_success=True,
     raise Exception('Expected main to return %s but returned %s; output=%r'
                     % (expected_success, success, output_lines))
   return output_lines
+
+
+class BaseTestCase(unittest.TestCase):
+  def setUp(self):
+    self.start_time = time.time()
+
+  def tearDown(self):
+    run_time = time.time() - self.start_time
+    if VERBOSE_TESTS:
+      print('ran in %.3fs: ' % run_time, end='')

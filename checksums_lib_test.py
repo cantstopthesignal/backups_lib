@@ -9,17 +9,21 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
 __package__ = backups_lib.__package__
 
 from . import checksums_lib
+from . import lib_test_util
+from . import test_main
 
 from .test_util import AssertDiskImageFormat
 from .test_util import AssertEquals
 from .test_util import AssertLinesEqual
 from .test_util import AssertNotEquals
+from .test_util import BaseTestCase
 from .test_util import CreateDir
 from .test_util import CreateDirs
 from .test_util import CreateFile
@@ -30,6 +34,7 @@ from .test_util import SetMTime
 from .test_util import SetXattr
 from .test_util import TempDir
 
+from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 
@@ -42,8 +47,12 @@ from .checksums_lib_test_util import InteractiveCheckerReadyResults
 from .checksums_lib_test_util import SetMaxRenameDetectionMatchingSizeFileCount
 
 
-def CreateTest():
-  with TempDir() as test_dir:
+class CreateTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
 
     DoCreate(
@@ -78,8 +87,12 @@ def CreateTest():
       expected_output=['*** Error: Did not expect %s to exist' % alt_manifest_path])
 
 
-def VerifyTest():
-  with TempDir() as test_dir:
+class VerifyTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
     file1 = CreateFile(root_dir, 'f1', contents='1'*1025)
     parent1 = CreateDir(root_dir, 'par! \r')
@@ -138,8 +151,12 @@ def VerifyTest():
                        'Paths: 5 total (1kb), 5 mismatched (1kb)'])
 
 
-def SyncTest():
-  with TempDir() as test_dir:
+class SyncTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
     alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
 
@@ -542,8 +559,12 @@ def SyncTest():
              expected_output=['Paths: 11 total (5kb), 7 checksummed (5kb)'])
 
 
-def RenamePathsTest():
-  with TempDir() as test_dir:
+class RenamePathsTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
 
     DoCreate(root_dir, expected_output=None)
@@ -605,8 +626,15 @@ def RenamePathsTest():
              expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
 
 
-def ImageFromFolderTest():
-  with TempDir() as test_dir:
+class ImageFromFolderTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
     image_path = os.path.join(test_dir, '1.dmg')
 
@@ -689,22 +717,5 @@ def ImageFromFolderTest():
                       expected_output=['*** Error: Temporary dir /dev/null is not a directory'])
 
 
-def Test(tests=[]):
-  if not tests or 'CreateTest' in tests:
-    CreateTest()
-  if not tests or 'VerifyTest' in tests:
-    VerifyTest()
-  if not tests or 'SyncTest' in tests:
-    SyncTest()
-  if not tests or 'RenamePathsTest' in tests:
-    RenamePathsTest()
-  if not tests or 'ImageFromFolderTest' in tests:
-    ImageFromFolderTest()
-
-
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('tests', nargs='*', default=[])
-  args = parser.parse_args()
-
-  Test(tests=args.tests)
+  test_main.RunCurrentFileUnitTests()

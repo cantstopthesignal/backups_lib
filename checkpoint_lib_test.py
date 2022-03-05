@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -20,10 +21,13 @@ __package__ = backups_lib.__package__
 from . import backups_main
 from . import checkpoint_lib
 from . import lib
+from . import lib_test_util
+from . import test_main
 
 from .test_util import AssertEquals
 from .test_util import AssertLinesEqual
 from .test_util import AssertNotEquals
+from .test_util import BaseTestCase
 from .test_util import CreateDir
 from .test_util import CreateFile
 from .test_util import CreateSymlink
@@ -35,6 +39,7 @@ from .test_util import SetXattr
 from .test_util import TempDir
 from .test_util import Xattr
 
+from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import CollapseApfsOperationsInOutput
 from .lib_test_util import CreateGoogleDriveRemoteFile
 from .lib_test_util import DoDumpManifest
@@ -42,7 +47,6 @@ from .lib_test_util import DoVerifyManifest
 from .lib_test_util import GetManifestItemized
 from .lib_test_util import HandleGetPass
 from .lib_test_util import HandleGoogleDriveRemoteFiles
-from .lib_test_util import MaybeUseFakeDiskImageHelper
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 
@@ -73,13 +77,14 @@ def RsyncPaths(from_path, to_path, checksum=True, dry_run=False,
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
   output = []
-  for line in p.stdout:
-    line = line.strip()
-    if not line:
-      continue
-    pieces = line.split(None, 1)
-    assert len(pieces) == 2
-    output.append((lib.DecodeRsyncEncodedString(pieces[1]), pieces[0]))
+  with p.stdout:
+    for line in p.stdout:
+      line = line.strip()
+      if not line:
+        continue
+      pieces = line.split(None, 1)
+      assert len(pieces) == 2
+      output.append((lib.DecodeRsyncEncodedString(pieces[1]), pieces[0]))
   if p.wait():
     print('\n'.join([ '%s %s' % (change, path) for (path, change) in output ]))
     raise Exception('Rsync failed')
@@ -101,6 +106,11 @@ def AssertBasisInfoFileEquals(metadata_path, basis_path=None):
     with open(basis_info_path) as in_file:
       json_data = json.load(in_file)
       AssertEquals(os.path.basename(basis_path), json_data['basis_filename'])
+
+
+def AssertFileContents(expected_contents, path):
+  with open(path, 'r') as in_f:
+    AssertEquals(expected_contents, in_f.read())
 
 
 def AssertCheckpointsList(checkpoints_dir, expected_list):
@@ -195,8 +205,14 @@ def DoStrip(checkpoint_path, defragment=True, defragment_iterations=None,
   AssertLinesEqual(output_lines, expected_output)
 
 
-def CreateDryRunTest():
-  def RunTest(test_dir):
+class CreateDryRunTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -248,13 +264,16 @@ def CreateDryRunTest():
                      'Transferring 2 of 5 paths (17b of 17b)'])
     AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class CreateTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_HIGH, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def CreateTest():
-  with TempDir() as test_dir:
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -509,8 +528,14 @@ def CreateTest():
     SetMTime(src_root, 1510000000)
 
 
-def CreateWithFilterMergeTest():
-  def RunTest(test_dir):
+class CreateWithFilterMergeTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par')
@@ -551,13 +576,15 @@ def CreateWithFilterMergeTest():
     finally:
       checkpoint1.Close()
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class CreateFromGoogleDriveTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
 
-def CreateFromGoogleDriveTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par')
@@ -584,23 +611,27 @@ def CreateFromGoogleDriveTest():
                         '.f....... par/f1',
                         '.f....... par/f2'])
       f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
-      AssertEquals('{"user.drive.id": "gdrive_id1", "user.drive.mime_type": "application/vnd.google-apps.document"}',
-                   open(f1_checkpoint, 'r').read())
+      AssertFileContents(
+        '{"user.drive.id": "gdrive_id1", "user.drive.mime_type": "application/vnd.google-apps.document"}',
+        f1_checkpoint)
       AssertEquals(['user.drive.id', 'user.drive.mime_type'], Xattr(f1_checkpoint).keys())
       AssertEquals(b'application/vnd.google-apps.document', Xattr(f1_checkpoint)['user.drive.mime_type'])
       AssertEquals(b'gdrive_id1', Xattr(f1_checkpoint)['user.drive.id'])
       f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f2')
-      AssertEquals('abc', open(f2_checkpoint, 'r').read())
+      AssertFileContents('abc', f2_checkpoint)
     finally:
       checkpoint1.Close()
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class CreateWithFollowSymlinksTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with TempDir() as test_dir2:
+        with ApplyFakeDiskImageHelperLevel() as should_run:
+          if should_run:
+            self.RunTest(test_dir, test_dir2)
 
-def CreateWithFollowSymlinksTest():
-  def RunTest(test_dir, test_dir2):
+  def RunTest(self, test_dir, test_dir2):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
 
@@ -667,11 +698,11 @@ def CreateWithFollowSymlinksTest():
       VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
       f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
       f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/d1/f2')
-      AssertEquals('abc', open(f2_checkpoint, 'r').read())
+      AssertFileContents('abc', f2_checkpoint)
       ln2_ln4_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln4')
-      AssertEquals('abc', open(ln2_ln4_checkpoint, 'r').read())
+      AssertFileContents('abc', ln2_ln4_checkpoint)
       ln6_f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'ln2/ln6/f2')
-      AssertEquals('abc', open(ln6_f2_checkpoint, 'r').read())
+      AssertFileContents('abc', ln6_f2_checkpoint)
     finally:
       checkpoint1.Close()
 
@@ -703,20 +734,21 @@ def CreateWithFollowSymlinksTest():
     try:
       VerifyCheckpointContents(manifest3, checkpoint3.GetContentRootPath(), prev_manifest=manifest2)
       ref_file3_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2/d2/f3')
-      AssertEquals('ghi', open(ref_file3_checkpoint, 'r').read())
+      AssertFileContents('ghi', ref_file3_checkpoint)
       ln2_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2')
       AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
     finally:
       checkpoint3.Close()
 
-  with TempDir() as test_dir:
-    with TempDir() as test_dir2:
-      with MaybeUseFakeDiskImageHelper():
-        RunTest(test_dir, test_dir2)
 
+class ApplyDryRunTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
 
-def ApplyDryRunTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -756,13 +788,16 @@ def ApplyDryRunTest():
                       'cd++++++++++ par!/',
                       '>f++++++++++ par!/f_\r'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class ApplyTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_HIGH, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def ApplyTest():
-  with TempDir() as test_dir:
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     SetXattr(src_root, 'example', b'example_value')
@@ -969,8 +1004,14 @@ def ApplyTest():
     DoVerifyManifest(dest_root, checkpoint7.GetImagePath())
 
 
-def ApplyFromGoogleDriveTest():
-  def RunTest(test_dir):
+class ApplyFromGoogleDriveTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -1065,13 +1106,16 @@ def ApplyFromGoogleDriveTest():
                      ['>fcs........ par!/g1',
                       '>fcs........ par!/g2'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class ApplyWithEncryptionTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
-def ApplyWithEncryptionTest():
-  with TempDir() as test_dir:
+  def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par!')
@@ -1156,108 +1200,86 @@ def ApplyWithEncryptionTest():
     AssertEmptyRsync(src_root, dest_root)
 
 
-def StripTest():
-  def AssertCheckpointStripState(image_path, stripped_expected):
-    checkpoint = checkpoint_lib.Checkpoint.Open(image_path)
-    try:
-      AssertEquals(True, os.path.exists(checkpoint.GetMetadataPath()))
-      AssertEquals(not stripped_expected, os.path.exists(checkpoint.GetContentRootPath()))
-    finally:
-      checkpoint.Close()
+class StripTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
-  with SetHdiutilCompactOnBatteryAllowed(True):
-    with TempDir() as test_dir:
-      checkpoints_dir = CreateDir(test_dir, 'checkpoints')
-      src_root = CreateDir(test_dir, 'src')
-      file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
-
-      checkpoint1, manifest1 = DoCreate(
-        src_root, checkpoints_dir, '1',
-        expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+  def RunTest(self, test_dir):
+    def AssertCheckpointStripState(image_path, stripped_expected):
+      checkpoint = checkpoint_lib.Checkpoint.Open(image_path)
       try:
-        AssertLinesEqual(GetManifestItemized(manifest1),
-                         ['.d....... .',
-                          '.f....... f1'])
+        AssertEquals(True, os.path.exists(checkpoint.GetMetadataPath()))
+        AssertEquals(not stripped_expected, os.path.exists(checkpoint.GetContentRootPath()))
       finally:
-        checkpoint1.Close()
-      checkpoint1_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint1.GetImagePath())
-      AssertCheckpointStripState(checkpoint1.GetImagePath(), False)
+        checkpoint.Close()
 
-      checkpoint2_path = os.path.join(checkpoints_dir, '2.sparseimage')
-      checkpoint2_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint2_path)
-      shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
 
-      AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
-      DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
-              expected_output=['Checkpoint stripped',
-                               'Image size 34mb -> 34mb'])
-      DoStrip(checkpoint1.GetImagePath(), defragment=False,
-              expected_output=['Checkpoint stripped',
-                               'Starting to compact…',
-                               'Reclaiming free space…',
-                               'Finishing compaction…',
-                               'Reclaimed 4 MB out of 1023.6 GB possible.',
-                               'Image size 34mb -> 30mb'])
-      checkpoint1_path_parts.SetIsManifestOnly(True)
-      AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
-      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
+    checkpoint1, manifest1 = DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+    try:
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.f....... f1'])
+    finally:
+      checkpoint1.Close()
+    checkpoint1_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint1.GetImagePath())
+    AssertCheckpointStripState(checkpoint1.GetImagePath(), False)
 
-      DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
-              expected_output=[
-                'Checkpoint stripped',
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
-                'Image size 34mb -> 34mb'])
-      checkpoint2_path_parts.SetIsManifestOnly(True)
-      DoStrip(checkpoint2_path, defragment_iterations=2,
-              expected_output=[
-                'Checkpoint stripped',
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
-                '<... snip APFS operation ...>',
-                re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
-                '<... snip APFS operation ...>',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 13 MB out of 1.2 GB possible.',
-                'Restoring apfs container size to 1023.8gb...',
-                '<... snip APFS operation ...>',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 4 MB out of 1023.6 GB possible.',
-                'Image size 34mb -> 20mb'])
-      AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
-      AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
+    checkpoint2_path = os.path.join(checkpoints_dir, '2.sparseimage')
+    checkpoint2_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint2_path)
+    shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
+    AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
+    DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+            expected_output=['Checkpoint stripped',
+                             'Image size 34mb -> 34mb'])
+    DoStrip(checkpoint1.GetImagePath(), defragment=False,
+            expected_output=['Checkpoint stripped',
+                             'Starting to compact…',
+                             'Reclaiming free space…',
+                             'Finishing compaction…',
+                             'Reclaimed 4 MB out of 1023.6 GB possible.',
+                             'Image size 34mb -> 30mb'])
+    checkpoint1_path_parts.SetIsManifestOnly(True)
+    AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+    AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
 
-def Test(tests=[]):
-  if not tests or 'CreateDryRunTest' in tests:
-    CreateDryRunTest()
-  if not tests or 'CreateTest' in tests:
-    CreateTest()
-  if not tests or 'CreateWithFilterMergeTest' in tests:
-    CreateWithFilterMergeTest()
-  if not tests or 'CreateFromGoogleDriveTest' in tests:
-    CreateFromGoogleDriveTest()
-  if not tests or 'CreateWithFollowSymlinksTest' in tests:
-    CreateWithFollowSymlinksTest()
-  if not tests or 'ApplyDryRunTest' in tests:
-    ApplyDryRunTest()
-  if not tests or 'ApplyTest' in tests:
-    ApplyTest()
-  if not tests or 'ApplyFromGoogleDriveTest' in tests:
-    ApplyFromGoogleDriveTest()
-  if not tests or 'ApplyWithEncryptionTest' in tests:
-    ApplyWithEncryptionTest()
-  if not tests or 'StripTest' in tests:
-    StripTest()
+    DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
+            expected_output=[
+              'Checkpoint stripped',
+              'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
+              'Image size 34mb -> 34mb'])
+    checkpoint2_path_parts.SetIsManifestOnly(True)
+    DoStrip(checkpoint2_path, defragment_iterations=2,
+            expected_output=[
+              'Checkpoint stripped',
+              'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
+              '<... snip APFS operation ...>',
+              re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+              '<... snip APFS operation ...>',
+              'Starting to compact…',
+              'Reclaiming free space…',
+              'Finishing compaction…',
+              'Reclaimed 13 MB out of 1.2 GB possible.',
+              'Restoring apfs container size to 1023.8gb...',
+              '<... snip APFS operation ...>',
+              'Starting to compact…',
+              'Reclaiming free space…',
+              'Finishing compaction…',
+              'Reclaimed 4 MB out of 1023.6 GB possible.',
+              'Image size 34mb -> 20mb'])
+    AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+    AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('tests', nargs='*', default=[])
-  args = parser.parse_args()
-
-  SetPacificTimezone()
-
-  Test(tests=args.tests)
+  test_main.RunCurrentFileUnitTests()

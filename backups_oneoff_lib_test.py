@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
 import backups_lib
@@ -18,9 +19,11 @@ __package__ = backups_lib.__package__
 from . import backups_manager_lib
 from . import backups_oneoff_lib
 from . import lib
+from . import test_main
 
 from .test_util import AssertEquals
 from .test_util import AssertNotEquals
+from .test_util import BaseTestCase
 from .test_util import CreateDir
 from .test_util import CreateDirs
 from .test_util import CreateFile
@@ -33,9 +36,9 @@ from .test_util import SetXattr
 from .test_util import TempDir
 from .test_util import Xattr
 
+from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import DoVerifyManifest
 from .lib_test_util import GetManifestItemized
-from .lib_test_util import MaybeUseFakeDiskImageHelper
 
 from .backups_manager_lib_test_util import CreateConfig
 from .backups_manager_lib_test_util import CreateBackupsBundle
@@ -101,12 +104,18 @@ def DoOneoffUpdateSomeFiles(
                 expected_output=expected_output)
 
 
-def OneoffUpdateIgnoredXattrsTest():
-  old_ignored_xattr_keys = ['com.apple.lastuseddate#PS']
-  new_ignored_xattr_keys = ['com.apple.lastuseddate#PS',
-                            'com.apple.quarantine']
+class OneoffUpdateIgnoredXattrsTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
 
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
+    old_ignored_xattr_keys = ['com.apple.lastuseddate#PS']
+    new_ignored_xattr_keys = ['com.apple.lastuseddate#PS',
+                              'com.apple.quarantine']
+
     with ReplaceIgnoredXattrKeys(old_ignored_xattr_keys):
       config = CreateConfig(test_dir)
       CreateBackupsBundle(config)
@@ -253,13 +262,15 @@ def OneoffUpdateIgnoredXattrsTest():
                          'Verifying 2020-01-03-120000...',
                          'Paths: 6 total, 4 checksummed (0b)'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class OneoffAddXattrKeysTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
 
-def OneoffAddXattrKeysTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -368,13 +379,15 @@ def OneoffAddXattrKeysTest():
                        'Verifying 2020-01-02-120000...',
                        'Paths: 6 total, 4 checksummed (0b)'])
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
 
+class OneoffUpdateSomeFilesTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
 
-def OneoffUpdateSomeFilesTest():
-  def RunTest(test_dir):
+  def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
     latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
@@ -551,25 +564,6 @@ def OneoffUpdateSomeFilesTest():
       config,
       expected_output=None)
 
-  with TempDir() as test_dir:
-    with MaybeUseFakeDiskImageHelper():
-      RunTest(test_dir)
-
-
-def Test(tests=[]):
-  if not tests or 'OneoffUpdateIgnoredXattrsTest' in tests:
-    OneoffUpdateIgnoredXattrsTest()
-  if not tests or 'OneoffAddXattrKeysTest' in tests:
-    OneoffAddXattrKeysTest()
-  if not tests or 'OneoffUpdateSomeFilesTest' in tests:
-    OneoffUpdateSomeFilesTest()
-
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('tests', nargs='*', default=[])
-  args = parser.parse_args()
-
-  SetPacificTimezone()
-
-  Test(tests=args.tests)
+  test_main.RunCurrentFileUnitTests()

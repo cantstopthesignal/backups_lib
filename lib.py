@@ -78,6 +78,8 @@ OPEN_CONTENT_FUNCTION = open
 
 GETPASS_FUNCTION = getpass.getpass
 
+KEYCHAIN_PASSWORDS_ENABLED = True
+
 DISK_IMAGE_HELPER_OVERRIDE = None
 
 DISK_IMAGE_DEFAULT_CAPACITY = '1T'
@@ -723,7 +725,8 @@ class DiskImageHelper:
     if encrypted:
       p.stdin.write(password.encode('utf8'))
     p.stdin.close()
-    output = p.stdout.read()
+    with p.stdout:
+      output = p.stdout.read()
     if p.wait():
       lines = output.decode('utf8').strip().split('\n')
       if len(lines) == 1 and lines[0].endswith('- Authentication error'):
@@ -752,7 +755,8 @@ class DiskImageHelper:
     for i in range(20):
       p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            text=True)
-      output = p.stdout.read().strip()
+      with p.stdout:
+        output = p.stdout.read().strip()
       if not p.wait():
         break
       if output.endswith('- No such file or directory'):
@@ -772,7 +776,8 @@ class DiskImageHelper:
     for i in range(5):
       p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            text=True)
-      output = p.stdout.read().strip()
+      with p.stdout:
+        output = p.stdout.read().strip()
       if not p.wait():
         break
       if (not output.endswith('- Resource busy')
@@ -844,7 +849,8 @@ def CompactImage(image_path, output, encryption_manager=None, encrypted=None, im
     if encrypted:
       p.stdin.write(password)
     p.stdin.close()
-    output.write(p.stdout.read())
+    with p.stdout:
+      output.write(p.stdout.read())
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -867,7 +873,8 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
     if encrypted:
       p.stdin.write(password)
     p.stdin.close()
-    output.write(p.stdout.read())
+    with p.stdout:
+      output.write(p.stdout.read())
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -928,7 +935,8 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
   if encrypted:
     p.stdin.write(password)
   p.stdin.close()
-  hdiutil_output = p.stdout.read()
+  with p.stdout:
+    hdiutil_output = p.stdout.read()
   if p.wait():
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -1082,8 +1090,9 @@ def ResizeApfsContainer(apfs_device, new_size, output):
   cmd = ['diskutil', 'apfs', 'resizeContainer', apfs_device, str(new_size)]
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
-  for line in p.stdout:
-    print(line.rstrip(), file=output)
+  with p.stdout:
+    for line in p.stdout:
+      print(line.rstrip(), file=output)
   if p.wait():
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -1104,7 +1113,8 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
   if encrypted:
     p.stdin.write(password)
   p.stdin.close()
-  hdiutil_output = p.stdout.read()
+  with p.stdout:
+    hdiutil_output = p.stdout.read()
   if p.wait():
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
@@ -1199,8 +1209,9 @@ def RsyncDirectoryOnly(src_dir, dest_dir, output, dry_run=False, verbose=False):
 
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
-  for line in p.stdout:
-    print(line.strip(), file=output)
+  with p.stdout:
+    for line in p.stdout:
+      print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -1237,8 +1248,9 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
   for path in paths:
     p.stdin.write('%s\0' % path)
   p.stdin.close()
-  for line in p.stdout:
-    print(line.strip(), file=output)
+  with p.stdout:
+    for line in p.stdout:
+      print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -1309,8 +1321,9 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
     print('(%d paths)' % len(paths), file=output)
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
-  for line in p.stdout:
-    print(line.strip(), file=output)
+  with p.stdout:
+    for line in p.stdout:
+      print(line.strip(), file=output)
   if p.wait():
     raise Exception('Rsync failed')
 
@@ -1528,17 +1541,20 @@ class EncryptionManager(object):
     return password
 
   def _LoadPasswordFromKeychain(self, image_uuid):
-    cmd = ['security', 'find-generic-password', '-ga', image_uuid]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         text=True)
-    output = p.stdout.read().strip().split('\n')
-    for line in output:
-      if line.endswith('The specified item could not be found in the keychain.'):
-        return
-      m = re.match('^password: "(.*)"$', line)
-      if m:
-        return m.group(1)
-    raise Exception('Unexpected output from %s' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    if KEYCHAIN_PASSWORDS_ENABLED:
+      cmd = ['security', 'find-generic-password', '-ga', image_uuid]
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      with p.stdout:
+        output = p.stdout.read().strip().split('\n')
+      p.wait()
+      for line in output:
+        if line.endswith('The specified item could not be found in the keychain.'):
+          return
+        m = re.match('^password: "(.*)"$', line)
+        if m:
+          return m.group(1)
+      raise Exception('Unexpected output from %s' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
 class ImageAttacher(object):
