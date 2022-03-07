@@ -459,8 +459,7 @@ class CreateTestCase(BaseTestCase):
                           '>d+++++++ par2',
                           '>f+++++++ par2/f2b'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
-                         ['.d..t.....x. ./',
-                          '>f++++++++++ .staged_backup_filter',
+                         ['>f++++++++++ .staged_backup_filter',
                           '>f++++++++++ par!/f3',
                           '>f++++++++++ par!/f_\r'])
         AssertBasisInfoFileEquals(checkpoint4.GetMetadataPath(), checkpoint3.GetImagePath())
@@ -509,8 +508,7 @@ class CreateTestCase(BaseTestCase):
                           '*f.delete par!/file6_to2',
                           '*f.delete par!/file6_to3'])
         AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
-                         ['.d..t.....x. ./',
-                          '>f++++++++++ .staged_backup_filter',
+                         ['>f++++++++++ .staged_backup_filter',
                           '>f++++++++++ par!/f2',
                           '>f++++++++++ par!/f3',
                           '>f++++++++++ par!/f_\r',

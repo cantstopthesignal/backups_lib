@@ -383,6 +383,8 @@ class CheckpointCreator(object):
         while parent_dir:
           paths_to_sync_set.add(parent_dir)
           parent_dir = os.path.dirname(parent_dir)
+      if paths_to_sync_set:
+        paths_to_sync_set.add('.')
 
       path_datas_to_sync = []
       for path in paths_to_sync_set:
