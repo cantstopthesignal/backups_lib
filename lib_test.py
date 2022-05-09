@@ -218,6 +218,9 @@ class ItemizedPathChangeTestCase(BaseTestCase):
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True)))
     AssertEquals(b'\x1b[1;31m>f+++++++\x1b[1;m path',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True), warn_for_new_path=True))
+    AssertEquals(b'\x1b[1;35m>f+++++++\x1b[1;m path',
+                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True),
+                                 warn_for_new_path=True, found_matching_rename=True))
     AssertEquals(b'\x1b[1;m.f.......\x1b[1;m \x1b[1;36mpar/\x1b[1;mpath',
                  ReadItemizedTty(lib.ItemizedPathChange('par/path', lib.PathInfo.TYPE_FILE)))
     AssertEquals(b'\x1b[1;m.d.......\x1b[1;m \x1b[1;36mpath\x1b[1;m',
@@ -228,7 +231,7 @@ class ItemizedPathChangeTestCase(BaseTestCase):
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True)))
     AssertEquals(b'\x1b[1;35m*f.delete\x1b[1;m path',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True), found_matching_rename=True))
-    AssertEquals(b'\x1b[1;31m*d.delete\x1b[1;m \x1b[1;36mpath\x1b[1;m',
+    AssertEquals(b'\x1b[1;35m*d.delete\x1b[1;m \x1b[1;36mpath\x1b[1;m',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, delete_path=True)))
     AssertEquals(b'\x1b[1;35m.fc......\x1b[1;m path',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, checksum_diff=True)))

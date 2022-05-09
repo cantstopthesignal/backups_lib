@@ -1727,7 +1727,8 @@ class ItemizedPathChange:
           assert self.path_type == PathInfo.TYPE_SYMLINK
           path_str += self._Colorize(path_str_parts[1], color=TERM_COLOR_PURPLE)
     if self.delete_path:
-      color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
+      color = ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
+               and TERM_COLOR_PURPLE or TERM_COLOR_RED)
       return '%s %s' % (
         self._Colorize(
           '*%s.delete' % self.GetItemizedShortCode(), color=color, colorize=colorize),
@@ -1741,7 +1742,8 @@ class ItemizedPathChange:
     color = TERM_COLOR_RESET
     if self.new_path:
       if warn_for_new_path:
-        color = TERM_COLOR_RED
+        color = ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
+                 and TERM_COLOR_PURPLE or TERM_COLOR_RED)
       else:
         color = TERM_COLOR_GREEN
       itemized_str[0] = '>'
