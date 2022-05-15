@@ -708,7 +708,7 @@ class ImageFromFolderTestCase(BaseTestCase):
         'Converting to image %s with format UDRO...' % image_path,
         'Verifying checksums in %s...' % image_path,
         'Verifying source tree matches...',
-        re.compile('^Created image %s [(]50[0-9]([.][0-9])?kb[)]; Source size 1kb$'
+        re.compile('^Created image %s [(]5[0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
                    % re.escape(image_path))])
     AssertDiskImageFormat('UDRO', image_path)
     DeleteFileOrDir(image_path)
