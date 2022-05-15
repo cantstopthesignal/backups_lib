@@ -39,27 +39,6 @@ def GetManifestNewPath(manifest_path):
   return path
 
 
-class InteractiveChecker:
-  def __init__(self):
-    self.ready_results = []
-
-  def AddReadyResult(self, result):
-    self.ready_results.append(result)
-
-  def ClearReadyResults(self):
-    self.ready_results = []
-
-  def Confirm(self, message, output):
-    if self.ready_results:
-      result = self.ready_results[0]
-      del self.ready_results[0]
-      print('%s (y/N): %s' % (message, result and 'y' or 'n'), file=output)
-      return result
-
-    print('%s (y/N):' % message, end=' ', file=output)
-    return input() == 'y'
-
-
 class ChecksumsError(Exception):
   def __init__(self, message):
     Exception.__init__(self, message)
@@ -194,7 +173,7 @@ class ChecksumsVerifier(object):
 
 
 class ChecksumsSyncer(object):
-  INTERACTIVE_CHECKER = InteractiveChecker()
+  INTERACTIVE_CHECKER = lib.InteractiveChecker()
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
                detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):

@@ -15,14 +15,6 @@ from .test_util import CreateFile
 
 
 @contextlib.contextmanager
-def InteractiveCheckerReadyResults(interactive_checker):
-  try:
-    yield interactive_checker
-  finally:
-    interactive_checker.ClearReadyResults()
-
-
-@contextlib.contextmanager
 def SetMaxRenameDetectionMatchingSizeFileCount(new_file_count):
   old_value = checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT
   checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT = new_file_count

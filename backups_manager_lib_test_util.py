@@ -208,18 +208,6 @@ def DoDeduplicateBackups(
   DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_output=expected_output)
 
 
-def DoPruneBackups(config, dry_run=False, did_prune=True, expected_output=[]):
-  cmd_args = ['prune-backups',
-              '--backups-config', config.path]
-  if not dry_run and did_prune:
-    expected_output = expected_output + [
-      'Starting to compact…',
-      'Reclaiming free space…',
-      'Finishing compaction…',
-      re.compile('^Reclaimed .* out of .* possible[.]$')]
-  DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=expected_output)
-
-
 def DoCloneBackup(config, backup_name, dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['clone-backup',
               '--backups-config', config.path,
@@ -234,6 +222,26 @@ def DoDeleteBackups(config, backup_names, dry_run=False, expected_success=True, 
   for backup_name in backup_names:
     cmd_args.extend(['--backup-name', backup_name])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
+
+
+def DoDeleteBackupsInteractive(config, backup_names=[], min_backup=None, max_backup=None,
+                               ignore_matching_renames=False, include_latest_backup=False,
+                               dry_run=False, verbose=False,
+                               expected_success=True, expected_output=[]):
+  cmd_args = ['delete-backups-interactive',
+              '--backups-config', config.path]
+  for backup_name in backup_names:
+    cmd_args.extend(['--backup-name', backup_name])
+  if min_backup is not None:
+    cmd_args.extend(['--min-backup', min_backup])
+  if max_backup is not None:
+    cmd_args.extend(['--max-backup', max_backup])
+  if ignore_matching_renames:
+    cmd_args.append('--ignore-matching-renames')
+  if include_latest_backup:
+    cmd_args.append('--include-latest-backup')
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
                 expected_output=expected_output)
 
 

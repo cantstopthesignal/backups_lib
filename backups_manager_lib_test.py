@@ -38,6 +38,7 @@ from .test_util import TempDir
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import GetManifestItemized
+from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetMaxDupCounts
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
@@ -52,12 +53,12 @@ from .backups_manager_lib_test_util import DoCreateBackup
 from .backups_manager_lib_test_util import DoCreateCheckpoint
 from .backups_manager_lib_test_util import DoDeduplicateBackups
 from .backups_manager_lib_test_util import DoDeleteBackups
+from .backups_manager_lib_test_util import DoDeleteBackupsInteractive
 from .backups_manager_lib_test_util import DoDeleteInBackups
 from .backups_manager_lib_test_util import DoDumpUniqueFilesInBackups
 from .backups_manager_lib_test_util import DoExtractFromBackups
 from .backups_manager_lib_test_util import DoListBackups
 from .backups_manager_lib_test_util import DoMergeIntoBackups
-from .backups_manager_lib_test_util import DoPruneBackups
 from .backups_manager_lib_test_util import DoVerifyBackups
 from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
 from .backups_manager_lib_test_util import VerifyBackupManifest
@@ -953,105 +954,6 @@ class DeDuplicateBackupsTestCase(BaseTestCase):
                        'Paths: 9 total, 7 inode hits, 1 checksummed (1kb)'])
 
 
-class PruneBackupsTestCase(BaseTestCase):
-  def test(self):
-    with ApplyFakeDiskImageHelperLevel(
-        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-      if should_run:
-        with SetHdiutilCompactOnBatteryAllowed(True):
-          with TempDir() as test_dir:
-            self.RunTest(test_dir)
-
-  def RunTest(self, test_dir):
-    config = CreateConfig(test_dir)
-    CreateBackupsBundle(config, create_example_content=False)
-
-    DoPruneBackups(config, did_prune=False,
-                   expected_output=['No backups needed to be pruned out of 1'])
-
-    backups_manager = backups_manager_lib.BackupsManager.Open(
-      config, readonly=False, browseable=False)
-    try:
-      backups_dir = backups_manager.GetBackupsRootDir()
-      for i in range(2, 15):
-        backup_dir = CreateDir(backups_dir, '2020-01-%02d-120000' % i)
-        metadata_dir = CreateDir(backup_dir, '.metadata')
-        CreateFile(metadata_dir, lib.MANIFEST_FILENAME)
-        if i in [2, 3]:
-          CreateFile(metadata_dir, 'prune.SKIP')
-    finally:
-      backups_manager.Close()
-
-    DoPruneBackups(
-      config,
-      dry_run=True,
-      expected_output=[
-        'Pruning Backup<2020-01-01-120000,DONE>: Backup<2020-01-02-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-04-120000,DONE>: Backup<2020-01-05-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-06-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-07-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-08-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-09-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-10-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-11-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-13-120000,DONE>: Backup<2020-01-14-120000,DONE> supersedes it...'])
-
-    DoPruneBackups(
-      config,
-      expected_output=[
-        'Pruning Backup<2020-01-01-120000,DONE>: Backup<2020-01-02-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-04-120000,DONE>: Backup<2020-01-05-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-06-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-07-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-08-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-09-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-10-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-11-120000,DONE>: Backup<2020-01-12-120000,DONE> supersedes it...',
-        'Pruning Backup<2020-01-13-120000,DONE>: Backup<2020-01-14-120000,DONE> supersedes it...'])
-
-    backups_manager = backups_manager_lib.BackupsManager.Open(
-      config, readonly=True, browseable=False)
-    try:
-      AssertLinesEqual(GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
-                       ['.d....... .',
-                        '.d....... 2020-01-02-120000',
-                        '.d....... 2020-01-02-120000/.metadata',
-                        '.f....... 2020-01-02-120000/.metadata/manifest.pbdata',
-                        '.f....... 2020-01-02-120000/.metadata/prune.SKIP',
-                        '.d....... 2020-01-02-120000/.metadata/superseded-2020-01-01-120000',
-                        '.d....... 2020-01-03-120000',
-                        '.d....... 2020-01-03-120000/.metadata',
-                        '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
-                        '.f....... 2020-01-03-120000/.metadata/prune.SKIP',
-                        '.d....... 2020-01-05-120000',
-                        '.d....... 2020-01-05-120000/.metadata',
-                        '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000',
-                        '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000',
-                        '.d....... 2020-01-12-120000/.metadata',
-                        '.f....... 2020-01-12-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-06-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-07-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-08-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-09-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-10-120000/manifest.pbdata',
-                        '.d....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000',
-                        '.f....... 2020-01-12-120000/.metadata/superseded-2020-01-11-120000/manifest.pbdata',
-                        '.d....... 2020-01-14-120000',
-                        '.d....... 2020-01-14-120000/.metadata',
-                        '.f....... 2020-01-14-120000/.metadata/manifest.pbdata',
-                        '.d....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000',
-                        '.f....... 2020-01-14-120000/.metadata/superseded-2020-01-13-120000/manifest.pbdata'])
-    finally:
-      backups_manager.Close()
-
-
 class CloneBackupTestCase(BaseTestCase):
   def test(self):
     with ApplyFakeDiskImageHelperLevel() as should_run:
@@ -1265,6 +1167,495 @@ class DeleteBackupsTestCase(BaseTestCase):
       expected_output=['Deleting Backup<2020-01-04-120000,DONE>...'])
 
     DoListBackups(config, expected_backups=[])
+
+
+class DeleteBackupsInteractiveTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    config = CreateConfig(test_dir)
+    CreateBackupsBundle(config)
+    latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
+
+    fileX = CreateFile(config.src_path, 'fX')
+    fileT = CreateFile(config.src_path, 'fT')
+    parent1 = CreateDir(config.src_path, 'par!')
+    fileY = CreateFile(parent1, 'fY')
+    file2 = CreateFile(parent1, 'f_\r \xc2\xa9')
+    ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
+    ln2 = CreateSymlink(config.src_path, 'ln2', 'fX')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-02-120000',
+      expected_output=['*f.delete f1',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> fX',
+                       '>d+++++++ par!',
+                       '>f+++++++ par!/fY',
+                       '>f+++++++ par!/f_\\r \\xc2\\xa9',
+                       'Transferring 5 of 8 paths (0b of 0b)'])
+
+    DeleteFileOrDir(os.path.join(config.src_path, 'fX'))
+    DeleteFileOrDir(fileY)
+    SetMTime(fileT, None)
+    file3 = CreateFile(config.src_path, 'f3')
+    parent2 = CreateDir(config.src_path, 'par2')
+    file4 = CreateFile(parent1, 'f4')
+    file5 = CreateFile(parent2, 'f5')
+    ln2 = CreateSymlink(config.src_path, 'ln2', 'fT')
+    file6 = CreateFile(config.src_path, 'f6', contents='1' * 1025)
+    file7 = CreateFile(config.src_path, 'f7', contents='2' * 1025)
+    file8 = CreateFile(parent2, 'f8', contents='5' * 1025)
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000',
+      expected_output=['>f+++++++ f3',
+                       '>f+++++++ f6',
+                       '>f+++++++ f7',
+                       '.f..t.... fT',
+                       '*f.delete fX',
+                       '.Lc...... ln2 -> fT',
+                       '>f+++++++ par!/f4',
+                       '*f.delete par!/fY',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f5',
+                       '>f+++++++ par2/f8',
+                       'Transferring 9 of 13 paths (3kb of 3kb)'])
+
+    DoApplyToBackups(
+      config,
+      expected_output=[
+        'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        '*f.delete f1',
+        '>L+++++++ ln1 -> INVALID',
+        '>L+++++++ ln2 -> fX',
+        '>d+++++++ par!',
+        '>f+++++++ par!/fY',
+        '>f+++++++ par!/f_\\r \\xc2\\xa9',
+        'Copying paths: 8 to copy, 2 to hard link, 8 total in source, 8 total in result...',
+        'Verifying 2020-01-02-120000...',
+        'Paths: 8 total (0b), 4 checksummed (0b)',
+        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
+        '>f+++++++ f3',
+        '>f+++++++ f6',
+        '>f+++++++ f7',
+        '.f..t.... fT',
+        '*f.delete fX',
+        '.Lc...... ln2 -> fT',
+        '>f+++++++ par!/f4',
+        '*f.delete par!/fY',
+        '>d+++++++ par2',
+        '>f+++++++ par2/f5',
+        '>f+++++++ par2/f8',
+        'Copying paths: 13 to copy, 1 to hard link, 13 total in source, 13 total in result...',
+        'Verifying 2020-01-03-120000...',
+        'Paths: 13 total (3kb), 8 checksummed (3kb)'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+          'Compare to next Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f1',
+          'Paths: 1 unique (0b), 4 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-01-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-02-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-03-120000,DONE>...',
+          '.Lc...... ln2 -> fX',
+          '>f+++++++ par!/fY',
+          'Paths: 2 unique (0b), 8 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-02-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f3',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '.f..t.... fT',
+          '.Lc...... ln2 -> fT',
+          '>f+++++++ par!/f4',
+          '>d+++++++ par2',
+          '>f+++++++ par2/f5',
+          '>f+++++++ par2/f8',
+          'Paths: 9 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-03-120000,DONE> ***'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+          'Compare to next Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f1',
+          'Paths: 1 unique (0b), 4 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-01-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-02-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-03-120000,DONE>...',
+          '.Lc...... ln2 -> fX',
+          '>f+++++++ par!/fY',
+          'Paths: 2 unique (0b), 8 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-02-120000,DONE> ***',
+          '*** Skipping latest backup Backup<2020-01-03-120000,DONE> ***'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(True)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, dry_run=True, include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+          'Compare to next Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f1',
+          'Paths: 1 unique (0b), 4 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-01-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-02-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-03-120000,DONE>...',
+          '.Lc...... ln2 -> fX',
+          '>f+++++++ par!/fY',
+          'Paths: 2 unique (0b), 8 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-02-120000,DONE>: Backup<2020-01-03-120000,DONE> supersedes it...',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f3',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '.f..t.... fT',
+          '.Lc...... ln2 -> fT',
+          '>f+++++++ par!/f4',
+          '>d+++++++ par2',
+          '>f+++++++ par2/f5',
+          '>f+++++++ par2/f8',
+          'Paths: 9 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-03-120000,DONE> ***'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(True)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+          'Compare to next Backup<2020-01-02-120000,DONE>...',
+          '>f+++++++ f1',
+          'Paths: 1 unique (0b), 4 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-01-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-02-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-03-120000,DONE>...',
+          '.Lc...... ln2 -> fX',
+          '>f+++++++ par!/fY',
+          'Paths: 2 unique (0b), 8 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-02-120000,DONE>: Backup<2020-01-03-120000,DONE> supersedes it...',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE>...',
+          '>f+++++++ f3',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '.f..t.... fT',
+          '>L+++++++ ln1 -> INVALID',
+          '>L+++++++ ln2 -> fT',
+          '>d+++++++ par!',
+          '>f+++++++ par!/f4',
+          '>f+++++++ par!/f_\\r \\xc2\\xa9',
+          '>d+++++++ par2',
+          '>f+++++++ par2/f5',
+          '>f+++++++ par2/f8',
+          'Paths: 12 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-03-120000,DONE> ***'])
+
+    DoVerifyBackups(
+      config,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total, 3 checksummed (0b)',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 13 total, 8 checksummed (3kb)'])
+
+    backups_manager = backups_manager_lib.BackupsManager.Open(
+      config, readonly=True, browseable=False)
+    try:
+      AssertLinesEqual(
+        GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+        ['.d....... .',
+         '.d....... 2020-01-01-120000',
+         '.d....... 2020-01-01-120000/.metadata',
+         '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+         '.d....... 2020-01-01-120000/Root',
+         '.f....... 2020-01-01-120000/Root/f1',
+         '.f....... 2020-01-01-120000/Root/fT',
+         '.f....... 2020-01-01-120000/Root/fX',
+         '.d....... 2020-01-03-120000',
+         '.d....... 2020-01-03-120000/.metadata',
+         '.f....... 2020-01-03-120000/.metadata/manifest.pbdata',
+         '.d....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000',
+         '.f....... 2020-01-03-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
+         '.d....... 2020-01-03-120000/Root',
+         '.f....... 2020-01-03-120000/Root/f3',
+         '.f....... 2020-01-03-120000/Root/f6',
+         '.f....... 2020-01-03-120000/Root/f7',
+         '.f....... 2020-01-03-120000/Root/fT',
+         '.L....... 2020-01-03-120000/Root/ln1 -> INVALID',
+         '.L....... 2020-01-03-120000/Root/ln2 -> fT',
+         '.d....... 2020-01-03-120000/Root/par!',
+         '.f....... 2020-01-03-120000/Root/par!/f4',
+         '.f....... 2020-01-03-120000/Root/par!/f_\\r \\xc2\\xa9',
+         '.d....... 2020-01-03-120000/Root/par2',
+         '.f....... 2020-01-03-120000/Root/par2/f5',
+         '.f....... 2020-01-03-120000/Root/par2/f8',
+         '.L....... Latest -> 2020-01-03-120000'])
+    finally:
+      backups_manager.Close()
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, backup_names=['2020-01-01-120000', '2020-01-03-120000'], include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
+          'Compare to next Backup<2020-01-03-120000,DONE>...',
+          '>f+++++++ f1',
+          '.f..t.... fT',
+          '>f+++++++ fX',
+          'Paths: 3 unique (0b), 4 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-01-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE>...',
+          '>f+++++++ f3',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '.f..t.... fT',
+          '>L+++++++ ln1 -> INVALID',
+          '>L+++++++ ln2 -> fT',
+          '>d+++++++ par!',
+          '>f+++++++ par!/f4',
+          '>f+++++++ par!/f_\\r \\xc2\\xa9',
+          '>d+++++++ par2',
+          '>f+++++++ par2/f5',
+          '>f+++++++ par2/f8',
+          'Paths: 12 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-03-120000,DONE> ***'])
+
+    ln1 = CreateSymlink(config.src_path, 'ln1', 'f3')
+    DeleteFileOrDir(file6)
+    DeleteFileOrDir(file7)
+    file6_new_dup = CreateFile(config.src_path, 'f6_new_dup', contents='2' * 1025)
+    file7_renamed = CreateFile(config.src_path, 'f7_renamed', contents='2' * 1025)
+    SetMTime(parent2, None)
+    SetMTime(file6_new_dup, None)
+    SetMTime(file7_renamed, None)
+    DeleteFileOrDir(file8)
+    file8 = CreateFile(parent1, 'f8', contents='5' * 1025)
+
+    DoCreateBackup(
+      config, backup_name='2020-01-04-120000',
+      expected_output=['*f.delete f6',
+                       '>f+++++++ f6_new_dup',
+                       '  replacing similar: .f..t.... f7',
+                       '*f.delete f7',
+                       '  replaced by similar: .f..t.... f7_renamed',
+                       '  replaced by similar: .f..t.... f6_new_dup',
+                       '>f+++++++ f7_renamed',
+                       '  replacing similar: .f..t.... f7',
+                       '.Lc...... ln1 -> f3',
+                       '>f+++++++ par!/f8',
+                       '  replacing duplicate: .f....... par2/f8',
+                       '.d..t.... par2',
+                       '*f.delete par2/f8',
+                       '  replaced by duplicate: .f....... par!/f8',
+                       'Transferring 5 of 13 paths (3kb of 3kb)'])
+
+    SetMTime(parent2, 1530000000)
+
+    DoCreateBackup(
+      config, backup_name='2020-01-05-120000',
+      expected_output=['.d..t.... par2',
+                       'Transferring 1 of 13 paths (0b of 3kb)'])
+
+    DoApplyToBackups(
+      config,
+      expected_output=[
+        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
+        '*f.delete f6',
+        '>f+++++++ f6_new_dup',
+        '*f.delete f7',
+        '>f+++++++ f7_renamed',
+        '.Lc...... ln1 -> f3',
+        '>f+++++++ par!/f8',
+        '  duplicate to par2/f8 (size=1kb)',
+        '.d..t.... par2',
+        '*f.delete par2/f8',
+        'Copying paths: 13 to copy, 6 to hard link, 1 to duplicate, 13 total in source, 13 total in result...',
+        'Verifying 2020-01-04-120000...',
+        'Paths: 13 total (3kb), 8 checksummed (3kb)',
+        'Applying 2020-01-05-120000 onto 2020-01-04-120000...',
+        '.d..t.... par2',
+        'Copying paths: 13 to copy, 8 to hard link, 13 total in source, 13 total in result...',
+        'Verifying 2020-01-05-120000...',
+        'Paths: 13 total (3kb), 8 checksummed (3kb)'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, min_backup='2020-01-02', include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '  replaced by similar: .f..t.... f7_renamed',
+          '  replaced by similar: .f..t.... f6_new_dup',
+          '.Lc...... ln1 -> INVALID',
+          '.d..t.... par2',
+          '>f+++++++ par2/f8',
+          '  replaced by duplicate: .f....... par!/f8',
+          'Paths: 5 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-03-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
+          'Compare to previous Backup<2020-01-03-120000,DONE> and next Backup<2020-01-05-120000,DONE>...',
+          '.d..t.... par2',
+          'Paths: 1 unique (0b), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-04-120000,DONE> ***',
+          'Finding unique files in backup Backup<2020-01-05-120000,DONE>...',
+          'Compare to previous Backup<2020-01-04-120000,DONE>...',
+          '.d..t.... par2',
+          'Paths: 1 unique (0b), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-05-120000,DONE> ***'])
+
+    DoVerifyBackups(
+      config,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total, 3 checksummed (0b)',
+                       'Verifying 2020-01-03-120000...',
+                       'Paths: 13 total, 8 checksummed (3kb)',
+                       'Verifying 2020-01-04-120000...',
+                       'Paths: 13 total, 6 inode hits, 2 checksummed (2kb)',
+                       'Verifying 2020-01-05-120000...',
+                       'Paths: 13 total, 8 inode hits'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      interactive_checker.AddReadyResult(True)
+      interactive_checker.AddReadyResult(False)
+      DoDeleteBackupsInteractive(
+        config, min_backup='2020-01-02', include_latest_backup=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
+          '>f+++++++ f6',
+          '>f+++++++ f7',
+          '  replaced by similar: .f..t.... f7_renamed',
+          '  replaced by similar: .f..t.... f6_new_dup',
+          '.Lc...... ln1 -> INVALID',
+          '.d..t.... par2',
+          '>f+++++++ par2/f8',
+          '  replaced by duplicate: .f....... par!/f8',
+          'Paths: 5 unique (3kb), 13 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...',
+          'Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-05-120000,DONE>...',
+          '.d..t.... par2',
+          'Paths: 1 unique (0b), 13 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-04-120000,DONE>: Backup<2020-01-05-120000,DONE> supersedes it...',
+          'Finding unique files in backup Backup<2020-01-05-120000,DONE>...',
+          'Compare to previous Backup<2020-01-01-120000,DONE>...',
+          '>f+++++++ f3',
+          '>f+++++++ f6_new_dup',
+          '>f+++++++ f7_renamed',
+          '.f..t.... fT',
+          '>L+++++++ ln1 -> f3',
+          '>L+++++++ ln2 -> fT',
+          '>d+++++++ par!',
+          '>f+++++++ par!/f4',
+          '>f+++++++ par!/f8',
+          '>f+++++++ par!/f_\\r \\xc2\\xa9',
+          '>d+++++++ par2',
+          '>f+++++++ par2/f5',
+          'Paths: 12 unique (3kb), 13 total',
+          'Delete backup? (y/N): n',
+          '*** Skipping backup Backup<2020-01-05-120000,DONE> ***'])
+
+    DoVerifyBackups(
+      config,
+      expected_output=['Verifying 2020-01-01-120000...',
+                       'Paths: 4 total, 3 checksummed (0b)',
+                       'Verifying 2020-01-05-120000...',
+                       'Paths: 13 total, 8 checksummed (3kb)'])
+
+    backups_manager = backups_manager_lib.BackupsManager.Open(
+      config, readonly=True, browseable=False)
+    try:
+      AssertLinesEqual(
+        GetManifestItemized(GetFileTreeManifest(backups_manager.GetBackupsRootDir())),
+        ['.d....... .',
+         '.d....... 2020-01-01-120000',
+         '.d....... 2020-01-01-120000/.metadata',
+         '.f....... 2020-01-01-120000/.metadata/manifest.pbdata',
+         '.d....... 2020-01-01-120000/Root',
+         '.f....... 2020-01-01-120000/Root/f1',
+         '.f....... 2020-01-01-120000/Root/fT',
+         '.f....... 2020-01-01-120000/Root/fX',
+         '.d....... 2020-01-05-120000',
+         '.d....... 2020-01-05-120000/.metadata',
+         '.f....... 2020-01-05-120000/.metadata/manifest.pbdata',
+         '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-02-120000',
+         '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-02-120000/manifest.pbdata',
+         '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-03-120000',
+         '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-03-120000/manifest.pbdata',
+         '.d....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000',
+         '.f....... 2020-01-05-120000/.metadata/superseded-2020-01-04-120000/manifest.pbdata',
+         '.d....... 2020-01-05-120000/Root',
+         '.f....... 2020-01-05-120000/Root/f3',
+         '.f....... 2020-01-05-120000/Root/f6_new_dup',
+         '.f....... 2020-01-05-120000/Root/f7_renamed',
+         '.f....... 2020-01-05-120000/Root/fT',
+         '.L....... 2020-01-05-120000/Root/ln1 -> f3',
+         '.L....... 2020-01-05-120000/Root/ln2 -> fT',
+         '.d....... 2020-01-05-120000/Root/par!',
+         '.f....... 2020-01-05-120000/Root/par!/f4',
+         '.f....... 2020-01-05-120000/Root/par!/f8',
+         '.f....... 2020-01-05-120000/Root/par!/f_\\r \\xc2\\xa9',
+         '.d....... 2020-01-05-120000/Root/par2',
+         '.f....... 2020-01-05-120000/Root/par2/f5',
+         '.L....... Latest -> 2020-01-05-120000'])
+    finally:
+      backups_manager.Close()
 
 
 class DumpUniqueFilesInBackupsTestCase(BaseTestCase):

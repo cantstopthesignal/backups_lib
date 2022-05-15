@@ -36,6 +36,7 @@ from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
+from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 
 from .checksums_lib_test_util import DoCreate
@@ -43,7 +44,6 @@ from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
 from .checksums_lib_test_util import DoSync
 from .checksums_lib_test_util import DoVerify
-from .checksums_lib_test_util import InteractiveCheckerReadyResults
 from .checksums_lib_test_util import SetMaxRenameDetectionMatchingSizeFileCount
 
 

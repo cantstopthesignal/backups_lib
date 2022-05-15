@@ -386,6 +386,27 @@ def Chdir(new_cwd):
     os.chdir(old_cwd)
 
 
+class InteractiveChecker:
+  def __init__(self):
+    self.ready_results = []
+
+  def AddReadyResult(self, result):
+    self.ready_results.append(result)
+
+  def ClearReadyResults(self):
+    self.ready_results = []
+
+  def Confirm(self, message, output):
+    if self.ready_results:
+      result = self.ready_results[0]
+      del self.ready_results[0]
+      print('%s (y/N): %s' % (message, result and 'y' or 'n'), file=output)
+      return result
+
+    print('%s (y/N):' % message, end=' ', file=output)
+    return input() == 'y'
+
+
 class MtimePreserver(object):
   def __init__(self):
     self.preserved_path_mtimes = {}

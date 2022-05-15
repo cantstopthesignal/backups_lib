@@ -117,6 +117,14 @@ def SetEscapeKeyDetectorCancelAtInvocation(invocation_num):
     lib.EscapeKeyDetector.ClearCancelAtInvocation()
 
 
+@contextlib.contextmanager
+def InteractiveCheckerReadyResults(interactive_checker):
+  try:
+    yield interactive_checker
+  finally:
+    interactive_checker.ClearReadyResults()
+
+
 class FakeDiskImage(object):
   @staticmethod
   def PathFromDevice(device):

@@ -18,10 +18,10 @@ COMMAND_CREATE_BACKUPS_IMAGE = 'create-backups-image'
 COMMAND_LIST_BACKUPS = 'list-backups'
 COMMAND_VERIFY_BACKUPS = 'verify-backups'
 COMMAND_DEDUPLICATE_BACKUPS = 'deduplicate-backups'
-COMMAND_PRUNE_BACKUPS = 'prune-backups'
 COMMAND_ADD_MISSING_MANIFESTS_TO_BACKUPS = 'add-missing-manifests-to-backups'
 COMMAND_CLONE_BACKUP = 'clone-backup'
 COMMAND_DELETE_BACKUPS = 'delete-backups'
+COMMAND_DELETE_BACKUPS_INTERACTIVE = 'delete-backups-interactive'
 COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS = 'dump-unique-files-in-backups'
 COMMAND_EXTRACT_FROM_BACKUPS = 'extract-from-backups'
 COMMAND_MERGE_INTO_BACKUPS = 'merge-into-backups'
@@ -34,10 +34,10 @@ COMMANDS = [
   COMMAND_LIST_BACKUPS,
   COMMAND_VERIFY_BACKUPS,
   COMMAND_DEDUPLICATE_BACKUPS,
-  COMMAND_PRUNE_BACKUPS,
   COMMAND_ADD_MISSING_MANIFESTS_TO_BACKUPS,
   COMMAND_CLONE_BACKUP,
   COMMAND_DELETE_BACKUPS,
+  COMMAND_DELETE_BACKUPS_INTERACTIVE,
   COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS,
   COMMAND_EXTRACT_FROM_BACKUPS,
   COMMAND_MERGE_INTO_BACKUPS,
@@ -49,7 +49,6 @@ BACKUPS_SUBDIR = 'Backups'
 
 DEDUP_MIN_FILE_SIZE = 100 * 1024
 
-PRUNE_SKIP_FILENAME = 'prune.SKIP'
 SUPERSEDED_METADATA_PREFIX = 'superseded-'
 
 
@@ -529,6 +528,114 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
   return result
 
 
+def DumpUniqueFilesInBackup(
+    backup, previous_backup, next_backup, output, verbose=False,
+    ignore_matching_renames=False):
+  print("Finding unique files in backup %s..." % backup, file=output)
+  compared_to_output = []
+  if previous_backup is not None:
+    compared_to_output.append('previous %s' % previous_backup)
+  if next_backup is not None:
+    compared_to_output.append('next %s' % next_backup)
+  if compared_to_output:
+    print("Compare to %s..." % ' and '.join(compared_to_output), file=output)
+
+  manifest = lib.Manifest(backup.GetManifestPath())
+  manifest.Read()
+  num_paths = manifest.GetPathCount()
+
+  if previous_backup is None and next_backup is None:
+    for itemized in manifest.GetItemized():
+      itemized.Print(output=output, warn_for_new_path=True)
+    print('Paths: %d unique, %d total' % (num_paths, num_paths), file=output)
+    return
+
+  if previous_backup is not None:
+    previous_manifest = lib.Manifest(previous_backup.GetManifestPath())
+    previous_manifest.Read()
+    sha256_to_previous_pathinfos = previous_manifest.CreateSha256ToPathInfosMap()
+  else:
+    previous_manifest = None
+    sha256_to_previous_pathinfos = None
+
+  if next_backup is not None:
+    next_manifest = lib.Manifest(next_backup.GetManifestPath())
+    next_manifest.Read()
+    sha256_to_next_pathinfos = next_manifest.CreateSha256ToPathInfosMap()
+  else:
+    next_manifest = None
+    sha256_to_next_pathinfos = None
+
+  if next_manifest is not None:
+    compare_manifest = next_manifest
+  else:
+    compare_manifest = previous_manifest
+
+  num_unique = 0
+  unique_size = 0
+
+  for itemized in manifest.GetDiffItemized(compare_manifest):
+    path_info = manifest.GetPathInfo(itemized.path)
+    previous_path_info = previous_manifest and previous_manifest.GetPathInfo(itemized.path) or None
+    next_path_info = next_manifest and next_manifest.GetPathInfo(itemized.path) or None
+
+    if itemized.delete_path:
+      if verbose:
+        itemized.Print(output=output, warn_for_new_path=True)
+        if previous_path_info is not None:
+          print('  <', previous_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=output)
+        if next_path_info is not None:
+          print('  >', next_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=output)
+      continue
+
+    if next_manifest is not None and previous_path_info is not None:
+      previous_itemized = lib.PathInfo.GetItemizedDiff(path_info, previous_path_info)
+      if not previous_itemized.HasDiffs():
+        continue
+      if itemized.new_path:
+        assert not previous_itemized.new_path
+        itemized = previous_itemized
+
+    found_matching_rename = False
+
+    dup_output_lines = []
+    if itemized.new_path and path_info.HasFileContents():
+      for sha256_to_other_pathinfos, replacing_previous in [
+          (sha256_to_next_pathinfos, False), (sha256_to_previous_pathinfos, True)]:
+        if sha256_to_other_pathinfos is not None:
+          dup_path_infos = sha256_to_other_pathinfos.get(path_info.sha256, [])
+          analyze_result = lib.AnalyzePathInfoDups(
+            path_info, dup_path_infos, replacing_previous=replacing_previous, verbose=verbose)
+          dup_output_lines.extend(analyze_result.dup_output_lines)
+          if analyze_result.found_matching_rename:
+            found_matching_rename = True
+
+    if not ignore_matching_renames or not found_matching_rename:
+      num_unique += 1
+      if path_info.HasFileContents():
+        unique_size += path_info.size
+
+      itemized.Print(output=output, found_matching_rename=found_matching_rename,
+                     warn_for_new_path=True)
+      if verbose:
+        if previous_path_info is not None:
+          print('  <', previous_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=output)
+        print('  =', path_info.ToString(
+          include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=output)
+        if next_path_info is not None:
+          print('  >', next_path_info.ToString(
+            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=output)
+
+      for dup_output_line in dup_output_lines:
+        print(dup_output_line, file=output)
+
+  print('Paths: %d unique (%s), %d total' % (
+    num_unique, lib.FileSizeToString(unique_size), num_paths), file=output)
+
+
 def AddBackupsConfigArgs(parser):
   parser.add_argument('--backups-config')
   parser.add_argument('--backups-image-path')
@@ -878,6 +985,45 @@ class BackupsManager(object):
       if os.path.lexists(latest_symlink):
         os.unlink(latest_symlink)
       os.symlink(backup.GetName(), latest_symlink)
+
+  def DeleteBackup(self, backup, output, dry_run=False):
+    backup_index = self.backups.index(backup)
+    superseding_backup = None
+    if backup_index + 1 < len(self.backups):
+      superseding_backup = self.backups[backup_index + 1]
+    if superseding_backup is not None:
+      print("Deleting %s: %s supersedes it..." % (backup, superseding_backup), file=output)
+      backup.CopyMetadataToSupersedingBackup(superseding_backup, dry_run=dry_run)
+    else:
+      print("Deleting %s..." % backup, file=output)
+    if not dry_run:
+      backup.Delete()
+
+  def GetPreviousBackup(self, backup, skip_deleted=True):
+    backup_index = self.backups.index(backup)
+    for i in range(backup_index - 1, -1, -1):
+      if self.backups[i].GetState() == Backup.STATE_DONE:
+        return self.backups[i]
+      elif self.backups[i].GetState() == Backup.STATE_DELETED:
+        if skip_deleted:
+          continue
+        else:
+          return self.backups[i]
+      else:
+        raise Exception('Unexpected backup state: %s' % self.backups[i])
+
+  def GetNextBackup(self, backup, skip_deleted=True):
+    backup_index = self.backups.index(backup)
+    for i in range(backup_index + 1, len(self.backups)):
+      if self.backups[i].GetState() == Backup.STATE_DONE:
+        return self.backups[i]
+      elif self.backups[i].GetState() == Backup.STATE_DELETED:
+        if skip_deleted:
+          continue
+        else:
+          return self.backups[i]
+      else:
+        raise Exception('Unexpected backup state: %s' % self.backups[i])
 
   def _Open(self):
     attacher = lib.ImageAttacher.Open(
@@ -1323,67 +1469,6 @@ class BackupsDeDuplicator(object):
       self.manager.Close()
 
 
-class BackupsPruner(object):
-  def __init__(self, config, output, encryption_manager=None, dry_run=False, verbose=False):
-    self.config = config
-    self.output = output
-    self.encryption_manager = encryption_manager
-    self.dry_run = dry_run
-    self.verbose = verbose
-    self.num_pruned = 0
-
-  def Prune(self):
-    backups_manager = BackupsManager.Open(
-      self.config, readonly=False, browseable=False, encryption_manager=self.encryption_manager,
-      dry_run=self.dry_run)
-    try:
-      self._PruneInternal(backups_manager)
-
-      if not self.num_pruned:
-        print('No backups needed to be pruned out of %d' % len(backups_manager.GetBackupList()), file=self.output)
-        return True
-    finally:
-      backups_manager.Close()
-
-    lib.CompactImage(backups_manager.GetImagePath(), output=self.output, dry_run=self.dry_run,
-                     encryption_manager=self.encryption_manager)
-    return True
-
-  def _PruneInternal(self, backups_manager):
-    time_buckets = {}
-
-    for backup in backups_manager.GetBackupList():
-      backup_time = backup.GetBackupTime()
-      parsed_time = time.localtime(backup_time)
-      time_bucket = backup_time - (parsed_time.tm_wday) * 24 * 60 * 60
-      time_bucket -= parsed_time.tm_hour * 60 * 60
-      time_bucket -= parsed_time.tm_min * 60
-      time_bucket -= parsed_time.tm_sec
-      if not time_bucket in time_buckets:
-        time_buckets[time_bucket] = []
-      time_buckets[time_bucket].append(backup)
-
-    for time_bucket, bucket_backups in sorted(time_buckets.items()):
-      if len(bucket_backups) == 1:
-        continue
-      backups_to_prune_pair = []
-      superseding_backup = bucket_backups[-1]
-      for backup in reversed(bucket_backups[:-1]):
-        if not os.path.exists(backup.GetMetadataPath()):
-          raise Exception('Expected path %s to exist' % backup.GetMetadataPath())
-        if os.path.exists(os.path.join(
-            backup.GetMetadataPath(), PRUNE_SKIP_FILENAME)):
-          superseding_backup = backup
-        else:
-          backups_to_prune_pair.append((backup, superseding_backup))
-      for backup, superseding_backup in reversed(backups_to_prune_pair):
-        print("Pruning %s: %s supersedes it..." % (backup, superseding_backup), file=self.output)
-        backup.CopyMetadataToSupersedingBackup(superseding_backup, dry_run=self.dry_run)
-        if not self.dry_run:
-          backup.Delete()
-        self.num_pruned += 1
-
-
 class MissingManifestsToBackupsAdder(object):
   def __init__(self, config, output, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
@@ -1523,28 +1608,70 @@ class BackupsDeleter(object):
           if not backup:
             print('*** Error: No backup %s found for %s' % (backup_name, self.manager), file=self.output)
             return False
-          if not self._DeleteBackupsInternal(backup):
-            return False
+          self._DeleteBackupInternal(backup)
         return True
       finally:
         escape_key_detector.Shutdown()
     finally:
       self.manager.Close()
 
-  def _DeleteBackupsInternal(self, backup):
-    backups = self.manager.GetBackupList()
-    backup_index = backups.index(backup)
-    superseding_backup = None
-    if backup_index + 1 < len(backups):
-      superseding_backup = backups[backup_index + 1]
-    if superseding_backup is not None:
-      print("Deleting %s: %s supersedes it..." % (backup, superseding_backup), file=self.output)
-      backup.CopyMetadataToSupersedingBackup(superseding_backup, dry_run=self.dry_run)
-    else:
-      print("Deleting %s..." % backup, file=self.output)
-    if not self.dry_run:
-      backup.Delete()
+  def _DeleteBackupInternal(self, backup):
+    self.manager.DeleteBackup(backup, output=self.output, dry_run=self.dry_run)
+
+
+class BackupsInteractiveDeleter(object):
+  INTERACTIVE_CHECKER = lib.InteractiveChecker()
+
+  def __init__(self, config, output, backups_matcher=BackupsMatcher(), ignore_matching_renames=False,
+               include_latest_backup=True, encryption_manager=None, dry_run=False, verbose=False):
+    self.config = config
+    self.output = output
+    self.backups_matcher = backups_matcher
+    self.ignore_matching_renames = ignore_matching_renames
+    self.include_latest_backup = include_latest_backup
+    self.match_previous_only = False
+    self.match_next_only = False
+    self.encryption_manager = encryption_manager
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.manager = None
+
+  def DeleteBackupsInteractively(self):
+    self.manager = BackupsManager.Open(
+      self.config, encryption_manager=self.encryption_manager, readonly=self.dry_run,
+      dry_run=self.dry_run)
+    try:
+      for backup in self.manager.GetBackupList():
+        if not self.backups_matcher.Matches(backup.GetName()):
+          continue
+
+        if not self.match_next_only:
+          previous_backup = self.manager.GetPreviousBackup(backup, skip_deleted=True)
+        else:
+          previous_backup = None
+
+        next_backup = self.manager.GetNextBackup(backup, skip_deleted=True)
+        if next_backup is None and not self.include_latest_backup:
+          print('*** Skipping latest backup %s ***' % backup, file=self.output)
+          continue
+        if self.match_previous_only:
+          next_backup = None
+
+        self._DumpUniqueFilesInternal(backup, previous_backup, next_backup)
+
+        if not self.INTERACTIVE_CHECKER.Confirm('Delete backup?', self.output):
+          print('*** Skipping backup %s ***' % backup, file=self.output)
+          continue
+        self.manager.DeleteBackup(backup, output=self.output, dry_run=self.dry_run)
+    finally:
+      self.manager.Close()
+
     return True
+
+  def _DumpUniqueFilesInternal(self, backup, previous_backup, next_backup):
+    DumpUniqueFilesInBackup(
+      backup, previous_backup, next_backup, output=self.output, verbose=self.verbose,
+      ignore_matching_renames=self.ignore_matching_renames)
 
 
 class UniqueFilesInBackupsDumper(object):
@@ -1569,19 +1696,16 @@ class UniqueFilesInBackupsDumper(object):
     try:
       escape_key_detector = lib.EscapeKeyDetector()
       try:
-        backups = self.manager.GetBackupList()
-        for i in range(0, len(backups)):
-          backup = backups[i]
-
+        for backup in self.manager.GetBackupList():
           if not self.backups_matcher.Matches(backup.GetName()):
             continue
 
           if not self.match_next_only:
-            previous_backup = i > 0 and backups[i - 1] or None
+            previous_backup = self.manager.GetPreviousBackup(backup, skip_deleted=True)
           else:
             previous_backup = None
           if not self.match_previous_only:
-            next_backup = i + 1 < len(backups) and backups[i + 1] or None
+            next_backup = self.manager.GetNextBackup(backup, skip_deleted=True)
           else:
             next_backup = None
 
@@ -1589,8 +1713,7 @@ class UniqueFilesInBackupsDumper(object):
             print('*** Cancelled before backup %s' % backup, file=self.output)
             return False
 
-          if not self._DumpUniqueFilesInternal(backup, previous_backup, next_backup):
-            return False
+          self._DumpUniqueFilesInternal(backup, previous_backup, next_backup)
       finally:
         escape_key_detector.Shutdown()
     finally:
@@ -1599,110 +1722,9 @@ class UniqueFilesInBackupsDumper(object):
     return True
 
   def _DumpUniqueFilesInternal(self, backup, previous_backup, next_backup):
-    print("Finding unique files in backup %s..." % backup, file=self.output)
-    compared_to_output = []
-    if previous_backup is not None:
-      compared_to_output.append('previous %s' % previous_backup)
-    if next_backup is not None:
-      compared_to_output.append('next %s' % next_backup)
-    if compared_to_output:
-      print("Compare to %s..." % ' and '.join(compared_to_output), file=self.output)
-
-    manifest = lib.Manifest(backup.GetManifestPath())
-    manifest.Read()
-    num_paths = manifest.GetPathCount()
-
-    if previous_backup is None and next_backup is None:
-      for itemized in manifest.GetItemized():
-        itemized.Print(output=self.output, warn_for_new_path=True)
-      print('Paths: %d unique, %d total' % (num_paths, num_paths), file=self.output)
-      return True
-
-    if previous_backup is not None:
-      previous_manifest = lib.Manifest(previous_backup.GetManifestPath())
-      previous_manifest.Read()
-      sha256_to_previous_pathinfos = previous_manifest.CreateSha256ToPathInfosMap()
-    else:
-      previous_manifest = None
-      sha256_to_previous_pathinfos = None
-
-    if next_backup is not None:
-      next_manifest = lib.Manifest(next_backup.GetManifestPath())
-      next_manifest.Read()
-      sha256_to_next_pathinfos = next_manifest.CreateSha256ToPathInfosMap()
-    else:
-      next_manifest = None
-      sha256_to_next_pathinfos = None
-
-    if next_manifest is not None:
-      compare_manifest = next_manifest
-    else:
-      compare_manifest = previous_manifest
-
-    num_unique = 0
-    unique_size = 0
-
-    for itemized in manifest.GetDiffItemized(compare_manifest):
-      path_info = manifest.GetPathInfo(itemized.path)
-      previous_path_info = previous_manifest and previous_manifest.GetPathInfo(itemized.path) or None
-      next_path_info = next_manifest and next_manifest.GetPathInfo(itemized.path) or None
-
-      if itemized.delete_path:
-        if self.verbose:
-          itemized.Print(output=self.output, warn_for_new_path=True)
-          if previous_path_info is not None:
-            print('  <', previous_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
-          if next_path_info is not None:
-            print('  >', next_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
-        continue
-
-      if next_manifest is not None and previous_path_info is not None:
-        previous_itemized = lib.PathInfo.GetItemizedDiff(path_info, previous_path_info)
-        if not previous_itemized.HasDiffs():
-          continue
-        if itemized.new_path:
-          assert not previous_itemized.new_path
-          itemized = previous_itemized
-
-      found_matching_rename = False
-
-      dup_output_lines = []
-      if itemized.new_path and path_info.HasFileContents():
-        for sha256_to_other_pathinfos, replacing_previous in [
-            (sha256_to_next_pathinfos, False), (sha256_to_previous_pathinfos, True)]:
-          if sha256_to_other_pathinfos is not None:
-            dup_path_infos = sha256_to_other_pathinfos.get(path_info.sha256, [])
-            analyze_result = lib.AnalyzePathInfoDups(
-              path_info, dup_path_infos, replacing_previous=replacing_previous, verbose=self.verbose)
-            dup_output_lines.extend(analyze_result.dup_output_lines)
-            if analyze_result.found_matching_rename:
-              found_matching_rename = True
-
-      if not self.ignore_matching_renames or not found_matching_rename:
-        num_unique += 1
-        if path_info.HasFileContents():
-          unique_size += path_info.size
-
-        itemized.Print(output=self.output, found_matching_rename=found_matching_rename,
-                       warn_for_new_path=True)
-        if self.verbose:
-          if previous_path_info is not None:
-            print('  <', previous_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
-          print('  =', path_info.ToString(
-            include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
-          if next_path_info is not None:
-            print('  >', next_path_info.ToString(
-              include_path=False, shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
-
-        for dup_output_line in dup_output_lines:
-          print(dup_output_line, file=self.output)
-
-    print('Paths: %d unique (%s), %d total' % (
-      num_unique, lib.FileSizeToString(unique_size), num_paths), file=self.output)
-    return True
+    DumpUniqueFilesInBackup(
+      backup, previous_backup, next_backup, output=self.output, verbose=self.verbose,
+      ignore_matching_renames=self.ignore_matching_renames)
 
 
 class PathsFromBackupsExtractor(object):
@@ -2161,23 +2183,6 @@ def DoDeDuplicateBackups(args, output):
   return deduplicator.DeDuplicate()
 
 
-def DoPruneBackups(args, output):
-  parser = argparse.ArgumentParser(
-    prog='... %s' % COMMAND_PRUNE_BACKUPS,
-    description=("Prunes backups that are more dense than one per week, unless\n"
-                 "they have the file prune.SKIP within their metadata directories.\n"
-                 "The week ends Sunday evening."))
-  AddBackupsConfigArgs(parser)
-  cmd_args = parser.parse_args(args.cmd_args)
-
-  config = GetBackupsConfigFromArgs(cmd_args)
-
-  pruner = BackupsPruner(
-    config, output=output, encryption_manager=lib.EncryptionManager(),
-    dry_run=args.dry_run, verbose=args.verbose)
-  return pruner.Prune()
-
-
 def DoAddMissingManifestsToBackups(args, output):
   parser = argparse.ArgumentParser()
   AddBackupsConfigArgs(parser)
@@ -2221,6 +2226,29 @@ def DoDeleteBackups(args, output):
     config, output=output, backup_names=cmd_args.backup_names,
     encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
   return deleter.DeleteBackups()
+
+
+def DoDeleteBackupsInteractive(args, output):
+  parser = argparse.ArgumentParser()
+  AddBackupsConfigArgs(parser)
+  AddBackupsMatcherArgs(parser)
+  parser.add_argument('--ignore-matching-renames', action='store_true')
+  parser.add_argument('--include-latest-backup', action='store_true')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  config = GetBackupsConfigFromArgs(cmd_args)
+  try:
+    backups_matcher = GetBackupsMatcherFromArgs(cmd_args)
+  except BackupsMatcherArgsError as e:
+    print('*** Error:', e.args[0], file=output)
+    return False
+
+  deleter = BackupsInteractiveDeleter(
+    config, output=output, backups_matcher=backups_matcher,
+    ignore_matching_renames=cmd_args.ignore_matching_renames,
+    include_latest_backup=cmd_args.include_latest_backup,
+    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+  return deleter.DeleteBackupsInteractively()
 
 
 def DoDumpUniqueFilesInBackups(args, output):
@@ -2324,14 +2352,14 @@ def DoCommand(args, output):
     return DoVerifyBackups(args, output=output)
   elif args.command == COMMAND_DEDUPLICATE_BACKUPS:
     return DoDeDuplicateBackups(args, output=output)
-  elif args.command == COMMAND_PRUNE_BACKUPS:
-    return DoPruneBackups(args, output=output)
   elif args.command == COMMAND_ADD_MISSING_MANIFESTS_TO_BACKUPS:
     return DoAddMissingManifestsToBackups(args, output=output)
   elif args.command == COMMAND_CLONE_BACKUP:
     return DoCloneBackup(args, output=output)
   elif args.command == COMMAND_DELETE_BACKUPS:
     return DoDeleteBackups(args, output=output)
+  elif args.command == COMMAND_DELETE_BACKUPS_INTERACTIVE:
+    return DoDeleteBackupsInteractive(args, output=output)
   elif args.command == COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS:
     return DoDumpUniqueFilesInBackups(args, output=output)
   elif args.command == COMMAND_EXTRACT_FROM_BACKUPS:
