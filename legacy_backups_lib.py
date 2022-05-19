@@ -16,6 +16,11 @@ from . import lib
 
 
 COMMAND_VERIFY_LEGACY_BACKUP_CHECKSUMS = 'verify-legacy-backup-checksums'
+COMMAND_VERIFY_LEGACY_CHECKSUMS = 'verify-legacy-checksums'
+
+COMMANDS = [
+  COMMAND_VERIFY_LEGACY_CHECKSUMS
+]
 
 LEGACY_CHECKSUMS_FILENAME = '.checksums'
 LEGACY_CHECKSUMS_IN_BACKUP_FILENAME = 'checksums'
@@ -33,7 +38,7 @@ def Md5(path):
 
 
 def XmlTextNodeToUtf8(textNode):
-  return unicodedata.normalize('NFD', textNode.data).encode('utf8')
+  return unicodedata.normalize('NFD', textNode.data)
 
 
 class LegacyChecksums(object):
@@ -70,7 +75,7 @@ class LegacyChecksums(object):
     return re.compile('^(%s)$' % '|'.join(self.ignore_patterns))
 
 
-class LegacyChecksumsVerifier(object):
+class LegacyBackupChecksumsVerifier(object):
   def __init__(self, config, output, encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
@@ -162,14 +167,98 @@ class LegacyChecksumsVerifier(object):
     return (num_errors == 0)
 
 
-def DoVerifyLegacyChecksums(args, output):
+class LegacyChecksumsVerifier(object):
+  def __init__(self, root_dir, output, dry_run=False, verbose=False):
+    self.root_dir = root_dir
+    self.output = output
+    self.dry_run = dry_run
+    self.verbose = verbose
+
+  def Verify(self):
+    legacy_checksums = self._LoadLegacyChecksums()
+    if legacy_checksums is None:
+      raise Exception('Legacy checksums file did not exists at %s' % self.root)
+    if not self._VerifyInternal(
+        legacy_checksums.GetPathToMd5Map(),
+        legacy_checksums.GetIgnoresRegexp()):
+      raise Exception('Failed to verify %r' % self.root_dir)
+
+  def _LoadLegacyChecksums(self):
+    checksums_path = os.path.join(self.root_dir, LEGACY_CHECKSUMS_FILENAME)
+    if os.path.exists(checksums_path):
+      return LegacyChecksums.LoadFromFile(checksums_path)
+
+  def _VerifyInternal(self, legacy_md5_map, legacy_ignore_pattern):
+    print('Verify %s using legacy checksums...' % self.root_dir, file=self.output)
+
+    legacy_md5_map = dict(legacy_md5_map)
+
+    num_errors = 0
+    num_ignored = 0
+    num_matching = 0
+
+    path_enumerator = lib.PathEnumerator(self.root_dir, self.output, verbose=self.verbose)
+    for enumerated_path in path_enumerator.Scan():
+      path = enumerated_path.GetPath()
+      full_path = os.path.join(self.root_dir, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+      if path_info.path_type == lib.PathInfo.TYPE_FILE:
+        assert path_info.dev_inode is not None
+        legacy_md5 = legacy_md5_map.get(path)
+        if legacy_md5 is None:
+          if legacy_ignore_pattern.match(path):
+            num_ignored += 1
+          else:
+            num_errors += 1
+            print("*** Error: Missing md5 for %r" % path, file=self.output)
+        else:
+          del legacy_md5_map[path]
+          while len(legacy_md5) < 32:
+            legacy_md5 = '0' + legacy_md5
+          legacy_md5_bin = binascii.a2b_hex(legacy_md5)
+          md5 = Md5(full_path)
+          if md5 != legacy_md5_bin:
+            print(("*** Error: md5 mismatch for %r: %r != %r"
+                   % (path, binascii.b2a_hex(md5), legacy_md5)), file=self.output)
+            num_errors += 1
+          else:
+            num_matching += 1
+    if legacy_md5_map:
+      raise Exception('Some paths unverified: %r' % legacy_md5_map)
+    print(('Verify: %d matching, %d ignored, %d errors'
+           % (num_matching, num_ignored, num_errors)), file=self.output)
+
+    return (num_errors == 0)
+
+
+def DoVerifyLegacyBackupChecksums(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = backups_manager_lib.BackupsConfig.Load(cmd_args.backups_config)
 
-  verifier = LegacyChecksumsVerifier(
+  verifier = LegacyBackupChecksumsVerifier(
     config, output=output, encryption_manager=lib.EncryptionManager(),
     dry_run=args.dry_run, verbose=args.verbose)
   return verifier.Verify()
+
+
+def DoVerifyLegacyChecksums(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('root_dir')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  verifier = LegacyChecksumsVerifier(
+    cmd_args.root_dir, output=output, dry_run=args.dry_run, verbose=args.verbose)
+  return verifier.Verify()
+
+
+def DoCommand(args, output):
+  if args.command == COMMAND_VERIFY_LEGACY_BACKUP_CHECKSUMS:
+    return DoVerifyLegacyBackupChecksums(args, output=output)
+  elif args.command == COMMAND_VERIFY_LEGACY_CHECKSUMS:
+    return DoVerifyLegacyChecksums(args, output=output)
+
+  print('*** Error: Unknown command %s' % args.command, file=output)
+  return False

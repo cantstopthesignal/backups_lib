@@ -4,13 +4,15 @@ import sys
 from . import backups_manager_lib
 from . import backups_oneoff_lib
 from . import checkpoint_lib
+from . import legacy_backups_lib
 from . import lib
 
 
 COMMANDS = (lib.COMMANDS +
             checkpoint_lib.COMMANDS +
             backups_manager_lib.COMMANDS +
-            backups_oneoff_lib.COMMANDS)
+            backups_oneoff_lib.COMMANDS +
+            legacy_backups_lib.COMMANDS)
 
 
 def Main(main_args=sys.argv[1:], output=sys.stdout):
@@ -29,6 +31,8 @@ def Main(main_args=sys.argv[1:], output=sys.stdout):
     return backups_oneoff_lib.DoCommand(args, output=output)
   elif args.command in checkpoint_lib.COMMANDS:
     return checkpoint_lib.DoCommand(args, output=output)
+  elif args.command in legacy_backups_lib.COMMANDS:
+    return legacy_backups_lib.DoCommand(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False
