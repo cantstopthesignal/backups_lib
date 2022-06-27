@@ -539,41 +539,45 @@ def GetTerminalSize(output):
 
 
 def Sha256WithProgress(full_path, path_info, output):
-  BLOCKSIZE = 65536
-  hasher = hashlib.sha256()
-  read_bytes = 0
-  read_bytes_str_max_len = 0
-  print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
-  last_progress_time = 0
-  if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
-    hasher.update(GetGoogleDriveRemoteFileStubContents(full_path))
-    return hasher.digest()
-  with OPEN_CONTENT_FUNCTION(full_path, 'rb') as f:
-    buf = f.read(BLOCKSIZE)
-    read_bytes += len(buf)
-    while len(buf) > 0:
-      hasher.update(buf)
+  try:
+    BLOCKSIZE = 65536
+    hasher = hashlib.sha256()
+    read_bytes = 0
+    read_bytes_str_max_len = 0
+    print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
+    last_progress_time = 0
+    if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
+      hasher.update(GetGoogleDriveRemoteFileStubContents(full_path))
+      return hasher.digest()
+    with OPEN_CONTENT_FUNCTION(full_path, 'rb') as f:
       buf = f.read(BLOCKSIZE)
       read_bytes += len(buf)
-      now = time.time()
-      if print_progress and now > last_progress_time + PRINT_PROGRESS_MIN_INTERVAL:
-        last_progress_time = now
-        terminal_width = GetTerminalSize(output)[0]
-        read_bytes_str = FileSizeToString(read_bytes, strip_trailing_zero=False)
-        total_bytes_str = FileSizeToString(path_info.size, strip_trailing_zero=False)
-        read_bytes_str_max_len = max(read_bytes_str_max_len, len(read_bytes_str))
-        read_bytes_str_max_len = max(read_bytes_str_max_len, len(total_bytes_str))
-        read_bytes_str = read_bytes_str + ' ' * (read_bytes_str_max_len - len(read_bytes_str))
-        message = '[%s/%s] ' % (read_bytes_str, total_bytes_str)
-        max_path_len = terminal_width - len(message) - 2
-        if len(path_info.path) > max_path_len:
-          message += '\u2026' + path_info.path[len(path_info.path)-max_path_len+1:]
-        else:
-          message += path_info.path
-        output.write('\033[K%s\r' % message)
-  if print_progress:
-    output.write("\033[K")
-  return hasher.digest()
+      while len(buf) > 0:
+        hasher.update(buf)
+        buf = f.read(BLOCKSIZE)
+        read_bytes += len(buf)
+        now = time.time()
+        if print_progress and now > last_progress_time + PRINT_PROGRESS_MIN_INTERVAL:
+          last_progress_time = now
+          terminal_width = GetTerminalSize(output)[0]
+          read_bytes_str = FileSizeToString(read_bytes, strip_trailing_zero=False)
+          total_bytes_str = FileSizeToString(path_info.size, strip_trailing_zero=False)
+          read_bytes_str_max_len = max(read_bytes_str_max_len, len(read_bytes_str))
+          read_bytes_str_max_len = max(read_bytes_str_max_len, len(total_bytes_str))
+          read_bytes_str = read_bytes_str + ' ' * (read_bytes_str_max_len - len(read_bytes_str))
+          message = '[%s/%s] ' % (read_bytes_str, total_bytes_str)
+          max_path_len = terminal_width - len(message) - 2
+          if len(path_info.path) > max_path_len:
+            message += '\u2026' + path_info.path[len(path_info.path)-max_path_len+1:]
+          else:
+            message += path_info.path
+          output.write('\033[K%s\r' % message)
+    if print_progress:
+      output.write("\033[K")
+    return hasher.digest()
+  except Exception as e:
+    print('*** Error reading %s' % EscapePath(full_path), file=output)
+    raise
 
 
 def Stat(path, follow_symlinks=False):
