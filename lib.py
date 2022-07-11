@@ -10,6 +10,7 @@ import json
 import os
 import pipes
 import plistlib
+import pwd
 import re
 import select
 import shutil
@@ -170,8 +171,12 @@ def GetPathMatcherFromArgs(args, match_all_by_default=True):
     return PathMatcherAll()
 
 
+def IsRunningAsRoot():
+  return os.geteuid() == 0
+
+
 def EnsureRunningAsRoot():
-  if os.geteuid() != 0:
+  if not IsRunningAsRoot():
     raise Exception('This script must be run with sudo')
 
 
@@ -725,6 +730,10 @@ class DiskImageHelper:
     p.stdin.close()
     if p.wait():
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+    if IsRunningAsRoot():
+      pwd_info = pwd.getpwnam(os.getlogin())
+      os.chown(path, pwd_info.pw_uid, pwd_info.pw_gid, follow_symlinks=True)
 
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
