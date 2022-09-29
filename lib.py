@@ -6,6 +6,7 @@ import errno
 import fcntl
 import getpass
 import hashlib
+import io
 import json
 import os
 import pipes
@@ -65,15 +66,11 @@ DEFAULT_DEFRAGMENT_ITERATIONS = 5
 # resize during compaction on Big Sur seems to error
 DEFRAGMENT_WITH_COMPACT_WITH_RESIZE = False
 
-GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY = 'user.drive.mime_type'
-GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX = 'application/vnd.google-apps.'
+GOOGLE_DRIVE_FILE_XATTR_KEY = 'com.google.drivefs.item-id#S'
 
-GOOGLE_DRIVE_STUB_CONTENTS_XATTR_KEYS = set([
-  'user.drive.email',
-  'user.drive.id',
-  'user.drive.mime_type',
-  'user.drive.item_open_url',
-])
+GOOGLE_DRIVE_FILE_EXTENSIONS_WITH_MISMATCHED_FILE_SIZES = [
+  '.gdoc', '.gsheet', '.gform', '.gmap', '.gdraw', '.gslides', '.gsite'
+]
 
 OPEN_CONTENT_FUNCTION = open
 
@@ -551,9 +548,6 @@ def Sha256WithProgress(full_path, path_info, output):
     read_bytes_str_max_len = 0
     print_progress = output.isatty() and path_info.size > MIN_SIZE_FOR_SHA256_PROGRESS
     last_progress_time = 0
-    if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
-      hasher.update(GetGoogleDriveRemoteFileStubContents(full_path))
-      return hasher.digest()
     with OPEN_CONTENT_FUNCTION(full_path, 'rb') as f:
       buf = f.read(BLOCKSIZE)
       read_bytes += len(buf)
@@ -602,7 +596,6 @@ def Xattr(path, follow_symlinks=False):
 def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
   xattr_hash = None
   xattr_keys = []
-  google_drive_remote_file = False
 
   xattr_data = Xattr(path, follow_symlinks=follow_symlinks)
   xattr_list = []
@@ -615,10 +608,6 @@ def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
       continue
     xattr_keys.append(key)
     xattr_list.append((key, value))
-    if (path_type == PathInfo.TYPE_FILE
-        and key == GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY
-        and value.decode('ascii').startswith(GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX)):
-      google_drive_remote_file = True
   if xattr_list:
     hasher = hashlib.sha256()
     byte_str_list = []
@@ -632,31 +621,24 @@ def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
     byte_str = b'[%b]' % b', '.join(byte_str_list)
     hasher.update(byte_str)
     xattr_hash = hasher.digest()
-  return xattr_hash, xattr_keys, google_drive_remote_file
+  return xattr_hash, xattr_keys
 
 
-def GetGoogleDriveRemoteFileStubContents(path):
-  contents_map = {}
-  xattr_data = Xattr(path)
-  for key in sorted(xattr_data.keys()):
-    if key not in GOOGLE_DRIVE_STUB_CONTENTS_XATTR_KEYS:
-      continue
-    try:
-      value = xattr_data[key]
-    except KeyError as e:
-      continue
-    contents_map[key] = value.decode('utf8')
-  return json.dumps(contents_map).encode('utf8')
+def GetCorrectedGoogleDriveFileSize(path_stat, path):
+  BLOCKSIZE = 65536
 
-
-def IsReadUnsupportedContentFile(path):
-  try:
-    with OPEN_CONTENT_FUNCTION(path, 'r') as f:
-      f.read(1)
-  except OSError as e:
-    if e.errno == errno.ENOTSUP:
-      return True
-  return False
+  assert stat.S_ISREG(path_stat.st_mode)
+  _, ext = os.path.splitext(path)
+  if ext not in GOOGLE_DRIVE_FILE_EXTENSIONS_WITH_MISMATCHED_FILE_SIZES:
+    return path_stat.st_size
+  with OPEN_CONTENT_FUNCTION(path, 'rb') as in_f:
+    in_f.seek(0, io.SEEK_END)
+    size = in_f.tell()
+    buf = in_f.read(BLOCKSIZE)
+    while len(buf) > 0:
+      size += len(buf)
+      buf = in_f.read(BLOCKSIZE)
+    return size
 
 
 def GetPathTreeSize(path, files_only=False, excludes=[]):
@@ -1447,13 +1429,8 @@ class PathSyncer(object):
                          follow_symlinks=False):
     assert dest_path_info is None or dest_path_info.path_type == path_info.path_type
     self.mtime_preserver.PreserveParentMtime(dest_path)
-    if path_info.google_drive_remote_file and IsReadUnsupportedContentFile(src_path):
-      assert dest_path_info is None or dest_path_info.path_type == PathInfo.TYPE_FILE
-      with open(dest_path, 'wb') as f:
-        f.write(GetGoogleDriveRemoteFileStubContents(src_path))
-    else:
-      dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=follow_symlinks)
-      assert dest_path == dest_path_result
+    dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=follow_symlinks)
+    assert dest_path == dest_path_result
     self._SyncXattrs(src_path, dest_path, follow_symlinks=follow_symlinks)
     self._SyncMeta(path_info, src_path, dest_path, follow_symlinks=follow_symlinks)
 
@@ -1827,6 +1804,8 @@ class PathInfo(object):
 
   TYPES = [TYPE_DIR, TYPE_FILE, TYPE_SYMLINK]
 
+  STAT_FUNCTION = Stat
+
   @staticmethod
   def FromProto(pb):
     path = pb.path
@@ -1858,24 +1837,22 @@ class PathInfo(object):
   def FromPath(path, full_path, ignored_xattr_keys=None, follow_symlinks=False):
     if ignored_xattr_keys is None:
       ignored_xattr_keys = IGNORED_XATTR_KEYS
-    stat_result = Stat(full_path, follow_symlinks=follow_symlinks)
+    stat_result = PathInfo.STAT_FUNCTION(full_path, follow_symlinks=follow_symlinks)
     size = None
     sha256 = None
     link_dest = None
     xattr_hash = None
     xattr_keys = []
-    google_drive_remote_file = False
     if stat.S_ISDIR(stat_result.st_mode):
       path_type = PathInfo.TYPE_DIR
-      xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
+      xattr_hash, xattr_keys = ParseXattrData(
         full_path, path_type, ignored_keys=ignored_xattr_keys, follow_symlinks=follow_symlinks)
-      assert not google_drive_remote_file
     elif stat.S_ISREG(stat_result.st_mode):
       path_type = PathInfo.TYPE_FILE
-      xattr_hash, xattr_keys, google_drive_remote_file = ParseXattrData(
+      xattr_hash, xattr_keys = ParseXattrData(
         full_path, path_type, ignored_keys=ignored_xattr_keys, follow_symlinks=follow_symlinks)
-      if google_drive_remote_file and IsReadUnsupportedContentFile(full_path):
-        size = len(GetGoogleDriveRemoteFileStubContents(full_path))
+      if GOOGLE_DRIVE_FILE_XATTR_KEY in xattr_keys:
+        size = GetCorrectedGoogleDriveFileSize(stat_result, full_path)
       if size is None:
         size = stat_result.st_size
     elif stat.S_ISLNK(stat_result.st_mode):
@@ -1886,7 +1863,7 @@ class PathInfo(object):
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
                     gid=stat_result.st_gid, mtime=int(stat_result.st_mtime), size=size,
                     link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash, xattr_keys=xattr_keys,
-                    google_drive_remote_file=google_drive_remote_file,
+                    google_drive_remote_file=False,
                     dev_inode=(stat_result.st_dev, stat_result.st_ino))
 
   @staticmethod

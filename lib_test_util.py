@@ -282,37 +282,55 @@ def CollapseApfsOperationsInOutput(output_lines):
   return new_output_lines
 
 
-def CreateGoogleDriveRemoteFile(parent_dir, filename):
-  path = CreateFile(parent_dir, filename, contents='IGNORE')
+def CreateGoogleDriveRemoteFile(parent_dir, filename, contents='', google_drive_id='FAKE_ID'):
+  _, ext = os.path.splitext(filename)
+  assert ext in lib.GOOGLE_DRIVE_FILE_EXTENSIONS_WITH_MISMATCHED_FILE_SIZES
+  path = CreateFile(parent_dir, filename, contents=contents)
   xattr_data = Xattr(path)
-  xattr_data[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = (
-    ('%sdocument' % lib.GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX).encode('ascii'))
+  xattr_data[lib.GOOGLE_DRIVE_FILE_XATTR_KEY] = google_drive_id.encode('ascii')
   return path
 
 
 @contextlib.contextmanager
 def HandleGoogleDriveRemoteFiles(paths):
-  class ErroringFile:
-    def __enter__(self):
-      return self
-    def __exit__(self, exc_type, exc, exc_traceback):
-      pass
-    def read(self, size=-1):
-      raise OSError(errno.ENOTSUP, 'Operation not supported')
-    def close(self):
-      pass
+  class FakeStat:
+    def __init__(self, orig_stat):
+      self.st_mode = orig_stat.st_mode
+      self.st_ino = orig_stat.st_ino
+      self.st_dev = orig_stat.st_dev
+      self.st_nlink = orig_stat.st_nlink
+      self.st_uid = orig_stat.st_uid
+      self.st_gid = orig_stat.st_gid
+      self.st_size = orig_stat.st_size
+      self.st_atime = orig_stat.st_atime
+      self.st_mtime = orig_stat.st_mtime
+      self.st_ctime = orig_stat.st_ctime
 
-  def OpenContentOverride(path, mode='r'):
-    if path in paths:
-      return ErroringFile()
-    return open(path, mode)
+  class GoogleDriveRemoteFilesHandler:
+    def __init__(self):
+      self._paths_with_stat_overrides = set([])
 
-  old_value = lib.OPEN_CONTENT_FUNCTION
-  lib.OPEN_CONTENT_FUNCTION = OpenContentOverride
+    def GetPathsWithStatOverrides(self):
+      return sorted(list(self._paths_with_stat_overrides))
+
+    def StatOverride(self, path, follow_symlinks=False):
+      if path in paths:
+        stat = FakeStat(lib.Stat(path, follow_symlinks=follow_symlinks))
+        assert stat.st_size > 0
+        # Set an incorrect file size to mimic google drive
+        stat.st_size = stat.st_size - 1
+        self._paths_with_stat_overrides.add(path)
+        return stat
+      return lib.Stat(path, follow_symlinks=follow_symlinks)
+
+  handler = GoogleDriveRemoteFilesHandler()
+
+  old_stat_value = lib.PathInfo.STAT_FUNCTION
+  lib.PathInfo.STAT_FUNCTION = handler.StatOverride
   try:
-    yield
+    yield handler
   finally:
-    lib.OPEN_CONTENT_FUNCTION = old_value
+    lib.PathInfo.STAT_FUNCTION = old_stat_value
 
 
 @contextlib.contextmanager

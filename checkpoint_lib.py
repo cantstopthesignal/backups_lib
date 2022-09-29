@@ -463,6 +463,13 @@ class CheckpointCreator(object):
           print(line, file=self.output)
       else:
         itemized.Print(output=self.output)
+      if self.verbose:
+        if basis_path_info is not None:
+          print('<', basis_path_info.ToString(
+            shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
+        if path_info is not None:
+          print('>', path_info.ToString(
+            shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
     self.pending_path_printouts = []
 

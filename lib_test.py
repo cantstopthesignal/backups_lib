@@ -101,14 +101,15 @@ class PathInfoTestCase(BaseTestCase):
     dir1_path_info = lib.PathInfo.FromPath(os.path.basename(dir1), dir1)
     ln1_path_info = lib.PathInfo.FromPath(os.path.basename(ln1), ln1)
 
-    gdrf1 = CreateGoogleDriveRemoteFile(test_dir, 'gdrf1')
-    with HandleGoogleDriveRemoteFiles([gdrf1]):
+    gdrf1 = CreateGoogleDriveRemoteFile(test_dir, 'gdrf1.gdoc', contents='mydoc1')
+    with HandleGoogleDriveRemoteFiles([gdrf1]) as handler:
       gdrf1_path_info = lib.PathInfo.FromPath(os.path.basename(gdrf1), gdrf1)
+      AssertEquals([gdrf1], handler.GetPathsWithStatOverrides())
 
     AssertEquals('.f....... file1', str(file1_path_info.GetItemized()))
     AssertEquals('.d....... dir1', str(dir1_path_info.GetItemized()))
     AssertEquals('.L....... ln1 -> INVALID', str(ln1_path_info.GetItemized()))
-    AssertEquals('.f....... gdrf1', str(gdrf1_path_info.GetItemized()))
+    AssertEquals('.f....... gdrf1.gdoc', str(gdrf1_path_info.GetItemized()))
 
     AssertEquals('.f....... file1', str(lib.PathInfo.GetItemizedDiff(file1_path_info, file1_path_info)))
     AssertEquals('>fcs.p... file1', str(lib.PathInfo.GetItemizedDiff(file1_path_info, dir1_path_info, ignore_paths=True)))
@@ -122,21 +123,21 @@ class PathInfoTestCase(BaseTestCase):
     AssertEquals('>Lc...... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
     AssertEquals('.L....... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, ln1_path_info)))
 
-    AssertEquals('.f.s....x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, file1_path_info, ignore_paths=True)))
-    AssertEquals('>fcs.p..x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, dir1_path_info, ignore_paths=True)))
-    AssertEquals('>fcs.p..x gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, ln1_path_info, ignore_paths=True)))
-    AssertEquals('.f....... gdrf1', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, gdrf1_path_info)))
+    AssertEquals('.f.s....x gdrf1.gdoc', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, file1_path_info, ignore_paths=True)))
+    AssertEquals('>fcs.p..x gdrf1.gdoc', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, dir1_path_info, ignore_paths=True)))
+    AssertEquals('>fcs.p..x gdrf1.gdoc', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, ln1_path_info, ignore_paths=True)))
+    AssertEquals('.f....... gdrf1.gdoc', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, gdrf1_path_info)))
 
     AssertEquals(False, file1_path_info.google_drive_remote_file)
     AssertEquals(False, dir1_path_info.google_drive_remote_file)
     AssertEquals(False, ln1_path_info.google_drive_remote_file)
-    AssertEquals(True, gdrf1_path_info.google_drive_remote_file)
+    AssertEquals(False, gdrf1_path_info.google_drive_remote_file)
 
     AssertEquals(True, file1_path_info.HasFileContents())
     AssertEquals(False, dir1_path_info.HasFileContents())
     AssertEquals(False, ln1_path_info.HasFileContents())
     AssertEquals(True, gdrf1_path_info.HasFileContents())
-    AssertEquals(64, gdrf1_path_info.size)
+    AssertEquals(6, gdrf1_path_info.size)
 
     class PathInfoLike:
       def __init__(self, path):

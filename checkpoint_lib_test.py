@@ -165,14 +165,6 @@ def GetManifestProtoDump(manifest):
   return proto_outputs
 
 
-def CreateGoogleDriveRemoteFile(parent_dir, filename):
-  path = CreateFile(parent_dir, filename, contents='IGNORE')
-  xattr_data = Xattr(path)
-  xattr_data[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = (
-    ('%sdocument' % lib.GOOGLE_DRIVE_REMOTE_FILE_MIME_TYPE_PREFIX).encode('ascii'))
-  return path
-
-
 def DoApply(src_checkpoint_path, dest_root, dry_run=False, expected_output=[]):
   args = []
   if dry_run:
@@ -587,34 +579,28 @@ class CreateFromGoogleDriveTestCase(BaseTestCase):
     src_root = CreateDir(test_dir, 'src')
     parent1 = CreateDir(src_root, 'par')
 
-    file1 = CreateGoogleDriveRemoteFile(parent1, 'f1')
-    Xattr(file1)['user.drive.id'] = 'gdrive_id1'.encode('utf8')
+    file1 = CreateGoogleDriveRemoteFile(parent1, 'f1.gdoc', contents='mydoc1')
 
     file2 = CreateFile(parent1, 'f2', contents='abc')
-    Xattr(file2)[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = 'text/plain'.encode('utf8')
 
     with HandleGoogleDriveRemoteFiles([file1]):
      checkpoint1, manifest1 = DoCreate(
         src_root, checkpoints_dir, '1',
         expected_output=['>d+++++++ .',
                          '>d+++++++ par',
-                         '>f+++++++ par/f1',
+                         '>f+++++++ par/f1.gdoc',
                          '>f+++++++ par/f2',
-                         'Transferring 4 paths (98b)'])
+                         'Transferring 4 paths (9b)'])
 
     try:
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
                         '.d....... par',
-                        '.f....... par/f1',
+                        '.f....... par/f1.gdoc',
                         '.f....... par/f2'])
-      f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1')
-      AssertFileContents(
-        '{"user.drive.id": "gdrive_id1", "user.drive.mime_type": "application/vnd.google-apps.document"}',
-        f1_checkpoint)
-      AssertEquals(['user.drive.id', 'user.drive.mime_type'], Xattr(f1_checkpoint).keys())
-      AssertEquals(b'application/vnd.google-apps.document', Xattr(f1_checkpoint)['user.drive.mime_type'])
-      AssertEquals(b'gdrive_id1', Xattr(f1_checkpoint)['user.drive.id'])
+      f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1.gdoc')
+      AssertEquals(['com.google.drivefs.item-id#S'], Xattr(f1_checkpoint).keys())
+      AssertEquals(b'FAKE_ID', Xattr(f1_checkpoint)[lib.GOOGLE_DRIVE_FILE_XATTR_KEY])
       f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f2')
       AssertFileContents('abc', f2_checkpoint)
     finally:
@@ -1016,93 +1002,86 @@ class ApplyFromGoogleDriveTestCase(BaseTestCase):
 
     dest_root = CreateDir(test_dir, 'dest')
 
-    gdrf1 = CreateGoogleDriveRemoteFile(parent1, 'g1')
-    Xattr(gdrf1)['user.drive.id'] = 'gdrive_id1'.encode('utf8')
+    gdrf1 = CreateGoogleDriveRemoteFile(parent1, 'g1.gdoc', contents='mydoc1')
 
     file2 = CreateFile(parent1, 'f2', contents='abc')
-    Xattr(file2)[lib.GOOGLE_DRIVE_MIME_TYPE_XATTR_KEY] = 'text/plain'.encode('utf8')
 
-    with HandleGoogleDriveRemoteFiles([gdrf1]):
+    with HandleGoogleDriveRemoteFiles([gdrf1]) as handler:
       checkpoint1, manifest1 = DoCreate(
         src_root, checkpoints_dir, '1',
         expected_output=['>d+++++++ .',
                          '>d+++++++ par!',
                          '>f+++++++ par!/f2',
-                         '>f+++++++ par!/g1',
-                         'Transferring 4 paths (98b)'])
+                         '>f+++++++ par!/g1.gdoc',
+                         'Transferring 4 paths (9b)'])
+      AssertEquals([gdrf1], handler.GetPathsWithStatOverrides())
     try:
       DoDumpManifest(
         checkpoint1.GetManifestPath(),
         expected_output=[
-          'dir path=., mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
+        'dir path=., mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
           'dir path=par!, mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
-          ("file path=par!/f2, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=3, sha256='ba7816', " +
-           "xattr-hash='c5e4da', xattr-keys=['user.drive.mime_type']"),
-          ("file path=par!/g1, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=95, sha256='3c4d7b', " +
-           "xattr-hash='794b59', xattr-keys=['user.drive.id', 'user.drive.mime_type'], google_drive_remote_file")
-        ])
+          "file path=par!/f2, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=3, sha256='ba7816'",
+          ("file path=par!/g1.gdoc, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=6, " +
+           "sha256='c73ef4', xattr-hash='38514d', xattr-keys=['com.google.drivefs.item-id#S']")])
     finally:
       checkpoint1.Close()
 
     DoApply(checkpoint1.GetImagePath(), dest_root,
             expected_output=['>d+++++++ par!',
                              '>f+++++++ par!/f2',
-                             '>f+++++++ par!/g1'])
+                             '>f+++++++ par!/g1.gdoc'])
     DoVerifyManifest(dest_root, checkpoint1.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['>fcs........ par!/g1'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
-    gdrf2 = CreateGoogleDriveRemoteFile(parent1, 'g2')
-    Xattr(gdrf2)['user.drive.id'] = 'gdrive_id2'.encode('utf8')
+    gdrf2 = CreateGoogleDriveRemoteFile(parent1, 'g2.gsheet', contents='mysheet1')
 
-    with HandleGoogleDriveRemoteFiles([gdrf1, gdrf2]):
+    with HandleGoogleDriveRemoteFiles([gdrf1, gdrf2]) as handler:
       checkpoint2, manifest2 = DoCreate(
         src_root, checkpoints_dir, '2', last_checkpoint_path=checkpoint1.GetImagePath(),
-        expected_output=['>f+++++++ par!/g2',
-                         'Transferring 1 of 5 paths (95b of 193b)'])
+        expected_output=['>f+++++++ par!/g2.gsheet',
+                         'Transferring 1 of 5 paths (8b of 17b)'])
+      AssertEquals([gdrf1, gdrf2], handler.GetPathsWithStatOverrides())
     try:
       AssertLinesEqual(GetManifestItemized(manifest2),
                        ['.d....... .',
                         '.d....... par!',
                         '.f....... par!/f2',
-                        '.f....... par!/g1',
-                        '.f....... par!/g2'])
+                        '.f....... par!/g1.gdoc',
+                        '.f....... par!/g2.gsheet'])
     finally:
       checkpoint2.Close()
 
     DoApply(checkpoint2.GetImagePath(), dest_root,
-            expected_output=['>f+++++++ par!/g2'])
+            expected_output=['>f+++++++ par!/g2.gsheet'])
     DoVerifyManifest(dest_root, checkpoint2.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['>fcs........ par!/g1',
-                      '>fcs........ par!/g2'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
     SetMTime(gdrf1, 1510000000)
     SetMTime(file2, 1510000000)
 
-    with HandleGoogleDriveRemoteFiles([gdrf1, gdrf2]):
+    with HandleGoogleDriveRemoteFiles([gdrf1, gdrf2]) as handler:
       checkpoint3, manifest3 = DoCreate(
         src_root, checkpoints_dir, '3', last_checkpoint_path=checkpoint2.GetImagePath(),
         expected_output=['.f..t.... par!/f2',
-                         '.f..t.... par!/g1',
-                         'Transferring 2 of 5 paths (98b of 193b)'])
+                         '.f..t.... par!/g1.gdoc',
+                         'Transferring 2 of 5 paths (9b of 17b)'])
+      AssertEquals([gdrf1, gdrf2], handler.GetPathsWithStatOverrides())
     try:
       AssertLinesEqual(GetManifestItemized(manifest3),
                        ['.d....... .',
                         '.d....... par!',
                         '.f....... par!/f2',
-                        '.f....... par!/g1',
-                        '.f....... par!/g2'])
+                        '.f....... par!/g1.gdoc',
+                        '.f....... par!/g2.gsheet'])
     finally:
       checkpoint3.Close()
 
     DoApply(checkpoint3.GetImagePath(), dest_root,
             expected_output=['.f..t.... par!/f2',
-                             '.f..t.... par!/g1'])
+                             '.f..t.... par!/g1.gdoc'])
     DoVerifyManifest(dest_root, checkpoint3.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['>fcs........ par!/g1',
-                      '>fcs........ par!/g2'])
+    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
 
 class ApplyWithEncryptionTestCase(BaseTestCase):
