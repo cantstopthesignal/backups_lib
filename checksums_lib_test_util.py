@@ -61,6 +61,21 @@ def DoCreate(root_path, manifest_path=None, dry_run=False, expected_success=True
                   expected_output=expected_output)
 
 
+def DoDiff(path1, path2, root_path1=None, root_path2=None, manifest_path1=None, manifest_path2=None,
+           dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['diff', path1, path2]
+  if root_path1 is not None:
+    cmd_args.extend(['--root-path1', root_path1])
+  if root_path2 is not None:
+    cmd_args.extend(['--root-path2', root_path2])
+  if manifest_path1 is not None:
+    cmd_args.extend(['--manifest-path1', manifest_path1])
+  if manifest_path2 is not None:
+    cmd_args.extend(['--manifest-path2', manifest_path2])
+  DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                  expected_output=expected_output)
+
+
 def DoVerify(root_path, manifest_path=None, dry_run=False, checksum_all=False, paths=[],
              expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]

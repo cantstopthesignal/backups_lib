@@ -10,6 +10,7 @@ from . import lib
 
 
 COMMAND_CREATE = 'create'
+COMMAND_DIFF = 'diff'
 COMMAND_VERIFY = 'verify'
 COMMAND_SYNC = 'sync'
 COMMAND_RENAME_PATHS = 'rename-paths'
@@ -17,6 +18,7 @@ COMMAND_IMAGE_FROM_FOLDER = 'image-from-folder'
 
 COMMANDS = [
   COMMAND_CREATE,
+  COMMAND_DIFF,
   COMMAND_VERIFY,
   COMMAND_SYNC,
   COMMAND_RENAME_PATHS,
@@ -111,6 +113,90 @@ class ChecksumsCreator(object):
 
     print('Created checksums metadata for %s' % self.root_path, file=self.output)
     return True
+
+
+class ChecksumsDiffer(object):
+  def __init__(self, path1, path2, root_path1=None, root_path2=None,
+               manifest_path1=None, manifest_path2=None, output=None,
+               dry_run=False, verbose=False):
+    self.path1 = os.path.normpath(path1)
+    self.path2 = os.path.normpath(path2)
+    self.root_path1 = root_path1
+    self.root_path2 = root_path2
+    self.manifest_path1 = manifest_path1
+    self.manifest_path2 = manifest_path2
+    self.output = output
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.checksums1 = None
+    self.checksums2 = None
+
+  def Diff(self):
+    self.path1, self.root_path1 = self._LocatePathAndRoot(self.path1, self.root_path1)
+    self.path2, self.root_path2 = self._LocatePathAndRoot(self.path2, self.root_path2)
+    if self.root_path1 is None or self.root_path2 is None:
+      return False
+
+    try:
+      self.checksums1 = Checksums.Open(self.root_path1, manifest_path=self.manifest_path1, dry_run=self.dry_run)
+      self.checksums2 = Checksums.Open(self.root_path2, manifest_path=self.manifest_path2, dry_run=self.dry_run)
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
+      return False
+
+    return self._DiffInternal()
+
+  def _DiffInternal(self):
+    manifest1 = self.checksums1.GetManifest()
+    manifest2 = self.checksums2.GetManifest()
+
+    cmp_manifest1 = self._CreateCmpManifest(manifest1, self.path1)
+    cmp_manifest2 = self._CreateCmpManifest(manifest2, self.path2)
+
+    diff_dumper = lib.ManifestDiffDumper(
+      first_manifest=cmp_manifest1, second_manifest=cmp_manifest2, output=self.output, verbose=self.verbose)
+    diff_dumper.DumpDiff()
+    stats = diff_dumper.GetStats()
+
+    out_pieces = ['%d total' % stats.total_paths]
+    if stats.total_matched_paths:
+      out_pieces.append('%d matched (%s)' % (
+        stats.total_matched_paths, lib.FileSizeToString(stats.total_matched_size)))
+    if stats.total_mismatched_paths:
+      out_pieces.append('%d mismatched (%s)' % (
+        stats.total_mismatched_paths, lib.FileSizeToString(stats.total_mismatched_size)))
+    print('Paths: %s' % ', '.join(out_pieces), file=self.output)
+
+    return not stats.total_mismatched_paths
+
+  def _CreateCmpManifest(self, manifest, match_path):
+    cmp_manifest = lib.Manifest()
+
+    for path, path_info in manifest.GetPathMap().items():
+      if path == match_path or match_path == '.' or path.startswith(match_path + '/'):
+        cmp_path_info = path_info.Clone()
+        cmp_path_info.path = os.path.relpath(path, match_path)
+        cmp_manifest.AddPathInfo(cmp_path_info)
+
+    return cmp_manifest
+
+  def _LocatePathAndRoot(self, path, root_path=None):
+    path = os.path.normpath(os.path.abspath(path))
+    if root_path is None:
+      parent_dir = os.path.isdir(path) and path or os.path.dirname(path)
+      while parent_dir:
+        if os.path.exists(os.path.join(parent_dir, lib.METADATA_DIR_NAME, lib.MANIFEST_FILENAME)):
+          root_path = parent_dir
+          break
+        if parent_dir == '/':
+          break
+        parent_dir = os.path.dirname(parent_dir)
+      if root_path is None:
+        print('*** Error: Could not determine the checksums root path for %s'
+              % lib.EscapePath(path), file=self.output)
+        return path, None
+    path = os.path.relpath(path, root_path)
+    return path, root_path
 
 
 class ChecksumsVerifier(object):
@@ -668,6 +754,23 @@ def DoCreate(args, output):
   return checksums_creator.Create()
 
 
+def DoDiff(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('path1')
+  parser.add_argument('path2')
+  parser.add_argument('--root-path1')
+  parser.add_argument('--root-path2')
+  parser.add_argument('--manifest-path1')
+  parser.add_argument('--manifest-path2')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  checksums_differ = ChecksumsDiffer(
+    cmd_args.path1, cmd_args.path2, root_path1=cmd_args.root_path1, root_path2=cmd_args.root_path2,
+    manifest_path1=cmd_args.manifest_path1, manifest_path2=cmd_args.manifest_path2,
+    output=output, dry_run=args.dry_run, verbose=args.verbose)
+  return checksums_differ.Diff()
+
+
 def DoVerify(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_or_image_path')
@@ -743,6 +846,8 @@ def DoImageFromFolder(args, output):
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
+  elif args.command == COMMAND_DIFF:
+    return DoDiff(args, output=output)
   elif args.command == COMMAND_VERIFY:
     return DoVerify(args, output=output)
   elif args.command == COMMAND_SYNC:

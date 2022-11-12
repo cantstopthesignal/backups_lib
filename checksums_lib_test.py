@@ -40,6 +40,7 @@ from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 
 from .checksums_lib_test_util import DoCreate
+from .checksums_lib_test_util import DoDiff
 from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
 from .checksums_lib_test_util import DoSync
@@ -85,6 +86,90 @@ class CreateTestCase(BaseTestCase):
       manifest_path=alt_manifest_path,
       expected_success=False,
       expected_output=['*** Error: Did not expect %s to exist' % alt_manifest_path])
+
+
+class DiffTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    root_dir1 = CreateDir(test_dir, 'root1')
+    file1 = CreateFile(root_dir1, 'f1', contents='1'*1025)
+    parent1 = CreateDir(root_dir1, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='2'*2025)
+    ln1 = CreateSymlink(root_dir1, 'ln1', 'INVALID')
+
+    root_dir2 = CreateDir(test_dir, 'root2')
+    file1_2 = CreateFile(root_dir2, 'f1', contents='1'*1025)
+    parent1_2 = CreateDir(root_dir2, 'par! \r')
+    file2_2 = CreateFile(parent1_2, 'f2', contents='2'*2025)
+    ln1_2 = CreateSymlink(root_dir2, 'ln1', 'INVALID')
+
+    DoDiff(
+      root_dir1,
+      root_dir2,
+      expected_success=False,
+      expected_output=['*** Error: Could not determine the checksums root path for %s' % root_dir1,
+                       '*** Error: Could not determine the checksums root path for %s' % root_dir2])
+
+    DoCreate(root_dir1, expected_output=None)
+    DoCreate(root_dir2, expected_output=None)
+
+    DoDiff(
+      root_dir1,
+      root_dir2,
+      expected_output=['Paths: 0 total'])
+    DoDiff(
+      root_dir1,
+      root_dir2,
+      root_path1=parent1,
+      expected_success=False,
+      expected_output=['*** Error: Manifest file %s/.metadata/manifest.pbdata should exist' % parent1])
+
+    DoSync(root_dir1, expected_output=None)
+    DoSync(root_dir2, expected_output=None)
+
+    DoDiff(
+      root_dir1,
+      root_dir2,
+      expected_output=['Paths: 5 total, 5 matched (3kb)'])
+    DoDiff(
+      parent1,
+      parent1_2,
+      expected_output=['Paths: 2 total, 2 matched (2kb)'])
+    DoDiff(
+      file1,
+      file2,
+      expected_success=False,
+      expected_output=['>fcs..... .',
+                       'Paths: 1 total, 1 mismatched (2kb)'])
+    DoDiff(
+      root_dir1,
+      parent1,
+      expected_success=False,
+      expected_output=['.d..t.... .',
+                       '*f.delete f1',
+                       '>f+++++++ f2',
+                       '  replacing duplicate: .f....... par! \\r/f2',
+                       '*L.delete ln1',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f2',
+                       '  replaced by duplicate: .f....... f2',
+                       'Paths: 6 total, 6 mismatched (5kb)'])
+    DoDiff(
+      parent1,
+      root_dir2,
+      expected_success=False,
+      expected_output=['.d..t.... .',
+                       '>f+++++++ f1',
+                       '*f.delete f2',
+                       '  replaced by duplicate: .f....... par! \\r/f2',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       '  replacing duplicate: .f....... f2',
+                       'Paths: 6 total, 6 mismatched (5kb)'])
 
 
 class VerifyTestCase(BaseTestCase):

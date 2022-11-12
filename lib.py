@@ -2303,6 +2303,15 @@ class ImageCompactor(object):
     return True
 
 
+class DiffDumperStats(object):
+  def __init__(self):
+    self.total_paths = 0
+    self.total_matched_paths = 0
+    self.total_matched_size = 0
+    self.total_mismatched_paths = 0
+    self.total_mismatched_size = 0
+
+
 class ManifestDiffDumper(object):
   def __init__(self, first_manifest, second_manifest, output, ignore_matching_renames=False,
                ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False):
@@ -2313,6 +2322,7 @@ class ManifestDiffDumper(object):
     self.ignore_uid_diffs = ignore_uid_diffs
     self.ignore_gid_diffs = ignore_gid_diffs
     self.verbose = verbose
+    self.stats = DiffDumperStats()
 
   def DumpDiff(self):
     sha256_to_first_pathinfos = self.first_manifest.CreateSha256ToPathInfosMap()
@@ -2321,11 +2331,23 @@ class ManifestDiffDumper(object):
     all_paths = set(self.second_manifest.GetPathMap().keys())
     all_paths.update(list(self.first_manifest.GetPathMap().keys()))
     for path in sorted(all_paths):
+      self.stats.total_paths += 1
+
       first_path_info = self.first_manifest.GetPathInfo(path)
       second_path_info = self.second_manifest.GetPathInfo(path)
 
       itemized = PathInfo.GetItemizedDiff(second_path_info, first_path_info)
       has_diffs = itemized.HasDiffs(ignore_uid_diffs=self.ignore_uid_diffs, ignore_gid_diffs=self.ignore_gid_diffs)
+
+      if has_diffs:
+        self.stats.total_mismatched_paths += 1
+        self.stats.total_mismatched_size += max(
+          first_path_info and first_path_info.size or 0, second_path_info and second_path_info.size or 0)
+
+      else:
+        self.stats.total_matched_paths += 1
+        if first_path_info.size:
+          self.stats.total_matched_size += first_path_info.size
 
       if has_diffs or self.verbose:
         dup_analyze_result = None
@@ -2347,6 +2369,9 @@ class ManifestDiffDumper(object):
               print(line, file=self.output)
 
     return True
+
+  def GetStats(self):
+    return self.stats
 
 
 class ManifestVerifierStats(object):
