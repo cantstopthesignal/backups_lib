@@ -47,6 +47,7 @@ from .lib_test_util import DoVerifyManifest
 from .lib_test_util import GetManifestItemized
 from .lib_test_util import HandleGetPass
 from .lib_test_util import HandleGoogleDriveRemoteFiles
+from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 
@@ -1149,19 +1150,23 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
 
     file3 = CreateFile(parent1, 'f3', contents='def')
 
-    with HandleGetPass(
-        expected_prompts=['Enter password to access "1.sparseimage": ',
-                          'Enter password to access "1.sparseimage": ',
-                          'Enter a new password to secure "2.sparseimage": ',
-                          'Re-enter new password: ',
-                          'Enter password to access "2.sparseimage": ',
-                          'Enter password to access "2.sparseimage": '],
-        returned_passwords=['DIFFERENT', 'abc', 'def', 'def', 'DIFFERENT', 'def']):
-      checkpoint2, manifest2 = DoCreate(
-        src_root, checkpoints_dir, '2', encrypt=True, last_checkpoint_path=checkpoint1.GetImagePath(),
-        expected_output=['>f+++++++ par!/f3',
-                         'Transferring 1 of 4 paths (3b of 6b)'])
-    checkpoint2.Close()
+    with InteractiveCheckerReadyResults(
+        lib.EncryptionManager.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1.sparseimage": ',
+                            'Enter password to access "1.sparseimage": ',
+                            'Enter a new password to secure "2.sparseimage": ',
+                            'Re-enter new password: ',
+                            'Enter password to access "2.sparseimage": ',
+                            'Enter password to access "2.sparseimage": '],
+          returned_passwords=['DIFFERENT', 'abc', 'def', 'def', 'DIFFERENT', 'def']):
+        checkpoint2, manifest2 = DoCreate(
+          src_root, checkpoints_dir, '2', encrypt=True, last_checkpoint_path=checkpoint1.GetImagePath(),
+          expected_output=['New password does not match any previous passwords, continue? (y/N): y',
+                           '>f+++++++ par!/f3',
+                           'Transferring 1 of 4 paths (3b of 6b)'])
+      checkpoint2.Close()
 
     with HandleGetPass(
         expected_prompts=['Enter password to access "2.sparseimage": ',
