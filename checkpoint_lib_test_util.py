@@ -56,7 +56,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_success=True, 
 
 def GetCheckpointData(checkpoint_path, readonly=True, manifest_only=False):
   checkpoint = checkpoint_lib.Checkpoint.Open(
-    checkpoint_path, readonly=readonly, encryption_manager=lib.EncryptionManager())
+    checkpoint_path, readonly=readonly, encryption_manager=lib.EncryptionManager(output=None))
   try:
     manifest_path = os.path.join(checkpoint.GetMetadataPath(), lib.MANIFEST_FILENAME)
     if manifest_only:

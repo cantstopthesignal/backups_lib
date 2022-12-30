@@ -2090,7 +2090,7 @@ def DoCreateBackup(args, output):
 
   creator = BackupCreator(
     config, output=output, name=cmd_args.backup_name, encrypt=cmd_args.encrypt,
-    encryption_manager=lib.EncryptionManager(), checksum_all=cmd_args.checksum_all,
+    encryption_manager=lib.EncryptionManager(output=output), checksum_all=cmd_args.checksum_all,
     dry_run=args.dry_run, verbose=args.verbose)
   return creator.Create()
 
@@ -2106,7 +2106,7 @@ def DoApplyToBackups(args, output):
   config = BackupsConfig.Load(cmd_args.backups_config)
 
   applier = CheckpointsToBackupsApplier(
-    config, output=output, encryption_manager=lib.EncryptionManager(),
+    config, output=output, encryption_manager=lib.EncryptionManager(output=output),
     checksum_all=cmd_args.checksum_all, checksum_hardlinks=cmd_args.checksum_hardlinks,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
     dry_run=args.dry_run, verbose=args.verbose)
@@ -2126,7 +2126,7 @@ def DoCreateBackupsImage(args, output):
 
   creator = BackupsImageCreator(
     config, output=output, volume_name=cmd_args.volume_name, size=cmd_args.size,
-    encrypt=cmd_args.encrypt, encryption_manager=lib.EncryptionManager(),
+    encrypt=cmd_args.encrypt, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return creator.CreateImage()
 
@@ -2139,7 +2139,7 @@ def DoListBackups(args, output):
   config = GetBackupsConfigFromArgs(cmd_args)
 
   lister = BackupsLister(
-    config, output=output, encryption_manager=lib.EncryptionManager(),
+    config, output=output, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return lister.List()
 
@@ -2160,7 +2160,7 @@ def DoVerifyBackups(args, output):
   verifier = BackupsVerifier(
     config, output=output, min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     full=cmd_args.full, continue_on_error=cmd_args.continue_on_error,
-    hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(),
+    hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(output=output),
     checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
   return verifier.Verify()
 
@@ -2179,7 +2179,7 @@ def DoDeDuplicateBackups(args, output):
   deduplicator = BackupsDeDuplicator(
     config, output=output, min_file_size=cmd_args.min_file_size, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup, match_older_mtimes=cmd_args.match_older_mtimes,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return deduplicator.DeDuplicate()
 
 
@@ -2191,7 +2191,7 @@ def DoAddMissingManifestsToBackups(args, output):
   config = GetBackupsConfigFromArgs(cmd_args)
 
   adder = MissingManifestsToBackupsAdder(
-    config, output=output, encryption_manager=lib.EncryptionManager(),
+    config, output=output, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return adder.AddMissingManifests()
 
@@ -2206,7 +2206,7 @@ def DoCloneBackup(args, output):
 
   cloner = BackupCloner(
     config, output=output, backup_name=cmd_args.backup_name,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return cloner.CloneBackup()
 
 
@@ -2224,7 +2224,7 @@ def DoDeleteBackups(args, output):
 
   deleter = BackupsDeleter(
     config, output=output, backup_names=cmd_args.backup_names,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return deleter.DeleteBackups()
 
 
@@ -2247,7 +2247,7 @@ def DoDeleteBackupsInteractive(args, output):
     config, output=output, backups_matcher=backups_matcher,
     ignore_matching_renames=cmd_args.ignore_matching_renames,
     include_latest_backup=cmd_args.include_latest_backup,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return deleter.DeleteBackupsInteractively()
 
 
@@ -2274,7 +2274,7 @@ def DoDumpUniqueFilesInBackups(args, output):
     config, output=output, backups_matcher=backups_matcher,
     ignore_matching_renames=cmd_args.ignore_matching_renames,
     match_previous_only=cmd_args.match_previous_only, match_next_only=cmd_args.match_next_only,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return dumper.DumpUniqueFiles()
 
 
@@ -2298,7 +2298,7 @@ def DoExtractFromBackups(args, output):
     output_volume_name=cmd_args.output_volume_name, paths=paths,
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size, encrypt=cmd_args.encrypt,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return extractor.ExtractPaths()
 
 
@@ -2317,7 +2317,7 @@ def DoMergeIntoBackups(args, output):
     config, output=output, from_image_path=cmd_args.from_image_path,
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
-    encryption_manager=lib.EncryptionManager(), dry_run=args.dry_run, verbose=args.verbose)
+    encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose)
   return merger.Merge()
 
 
@@ -2334,7 +2334,7 @@ def DoDeleteInBackups(args, output):
 
   deleter = PathsInBackupsDeleter(
     config, output=output, paths=paths, min_backup=cmd_args.min_backup,
-    max_backup=cmd_args.max_backup, encryption_manager=lib.EncryptionManager(),
+    max_backup=cmd_args.max_backup, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return deleter.DeletePaths()
 

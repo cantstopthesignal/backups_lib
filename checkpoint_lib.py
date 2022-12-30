@@ -722,7 +722,7 @@ def DoCreateCheckpoint(args, output):
       raise Exception('Expected filter merge path %r to exist' % cmd_args.filter_merge_path)
     filters.append(lib.FilterRuleMerge(cmd_args.filter_merge_path))
 
-  encryption_manager = lib.EncryptionManager()
+  encryption_manager = lib.EncryptionManager(output=output)
 
   basis_path = cmd_args.last_manifest or cmd_args.last_checkpoint
   if basis_path:
@@ -750,7 +750,7 @@ def DoApplyCheckpoint(args, output):
   checkpoint_applier = CheckpointApplier(
     cmd_args.src_checkpoint_path, cmd_args.dest_root, output, dry_run=args.dry_run, verbose=args.verbose,
     checksum_all=cmd_args.checksum_all, strict_replace=cmd_args.strict_replace,
-    encryption_manager=lib.EncryptionManager())
+    encryption_manager=lib.EncryptionManager(output=output))
   return checkpoint_applier.Apply()
 
 
@@ -764,7 +764,7 @@ def DoStripCheckpoint(args, output):
   checkpoint_stripper = CheckpointStripper(
     cmd_args.checkpoint_path, defragment=cmd_args.defragment,
     defragment_iterations=cmd_args.defragment_iterations, output=output, dry_run=args.dry_run,
-    verbose=args.verbose, encryption_manager=lib.EncryptionManager())
+    verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output))
   return checkpoint_stripper.Strip()
 
 

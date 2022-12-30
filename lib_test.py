@@ -1,6 +1,7 @@
 #!/usr/bin/env python3 -u -B
 
 import argparse
+import io
 import os
 import pty
 import re
@@ -39,7 +40,9 @@ from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import CollapseApfsOperationsInOutput
 from .lib_test_util import CreateGoogleDriveRemoteFile
 from .lib_test_util import GetManifestItemized
+from .lib_test_util import HandleGetPass
 from .lib_test_util import HandleGoogleDriveRemoteFiles
+from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 
@@ -770,6 +773,68 @@ class FilterRuleTestCase(BaseTestCase):
     DoFilterRuleTest(True, 'c?', 'a',  expect_matcher_exception=True)
     DoFilterRuleTest(True, 'c\\\\', 'a',  expect_matcher_exception=True)
     DoFilterRuleTest(True, '[a-b]', 'a',  expect_matcher_exception=True)
+
+
+class EncryptionManagerTestCase(BaseTestCase):
+  def test(self):
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "my.sparseimage": ',
+                          'Re-enter new password: '],
+        returned_passwords=['abc', 'abc']):
+      output = io.StringIO()
+      encryption_manager = lib.EncryptionManager(output)
+      encryption_manager.CreatePassword('my.sparseimage')
+      AssertEquals('', output.getvalue().rstrip())
+
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "my.sparseimage": ',
+                          'Re-enter new password: ',
+                          'Enter a new password to secure "my2.sparseimage": ',
+                          'Re-enter new password: '],
+        returned_passwords=['abc', 'abc', 'abc', 'abc']):
+      output = io.StringIO()
+      encryption_manager = lib.EncryptionManager(output)
+      password = encryption_manager.CreatePassword('my.sparseimage')
+      encryption_manager.SavePassword(password, 'UUID1')
+      encryption_manager.CreatePassword('my2.sparseimage')
+      AssertEquals('', output.getvalue().rstrip())
+
+    with InteractiveCheckerReadyResults(
+        lib.EncryptionManager.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      with HandleGetPass(
+          expected_prompts=['Enter a new password to secure "my.sparseimage": ',
+                            'Re-enter new password: ',
+                            'Enter a new password to secure "my2.sparseimage": ',
+                            'Re-enter new password: '],
+          returned_passwords=['abc', 'abc', 'def', 'def']):
+        output = io.StringIO()
+        encryption_manager = lib.EncryptionManager(output)
+        password = encryption_manager.CreatePassword('my.sparseimage')
+        encryption_manager.SavePassword(password, 'UUID1')
+        encryption_manager.CreatePassword('my2.sparseimage')
+        AssertEquals('New password does not match any previous passwords, continue? (y/N): y',
+                     output.getvalue().rstrip())
+
+    with InteractiveCheckerReadyResults(
+        lib.EncryptionManager.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(False)
+      with HandleGetPass(
+          expected_prompts=['Enter a new password to secure "my.sparseimage": ',
+                            'Re-enter new password: ',
+                            'Enter a new password to secure "my2.sparseimage": '],
+          returned_passwords=['abc', 'abc', 'def']):
+        output = io.StringIO()
+        encryption_manager = lib.EncryptionManager(output)
+        password = encryption_manager.CreatePassword('my.sparseimage')
+        encryption_manager.SavePassword(password, 'UUID1')
+        try:
+          encryption_manager.CreatePassword('my2.sparseimage')
+          raise Exception('Expected a CreatePasswordCancelledError exception')
+        except lib.CreatePasswordCancelledError:
+          pass
+        AssertEquals('New password does not match any previous passwords, continue? (y/N): n',
+                     output.getvalue().rstrip())
 
 
 if __name__ == '__main__':

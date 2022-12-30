@@ -361,7 +361,7 @@ def DoOneoffUpdateIgnoredXattrs(args, output):
     config, output=output, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup, old_ignored_xattrs=cmd_args.old_ignored_xattrs,
     new_ignored_xattrs=cmd_args.new_ignored_xattrs,
-    encryption_manager=lib.EncryptionManager(),
+    encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return updater.Apply()
 
@@ -378,7 +378,7 @@ def DoOneoffAddXattrKeys(args, output):
   updater = OneoffXattrsKeysAdder(
     config, output=output, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup,
-    encryption_manager=lib.EncryptionManager(),
+    encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return updater.Apply()
 
@@ -396,7 +396,7 @@ def DoOneoffUpdateSomeFiles(args, output):
   updater = OneoffSomeFilesUpdater(
     config, output=output, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup, verify=cmd_args.verify,
-    encryption_manager=lib.EncryptionManager(),
+    encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return updater.Apply()
 

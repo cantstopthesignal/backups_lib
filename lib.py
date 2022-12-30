@@ -1517,18 +1517,39 @@ class PasswordsDidNotMatchError(Exception):
     Exception.__init__(self, message)
 
 
+class CreatePasswordCancelledError(Exception):
+  def __init__(self, message):
+    Exception.__init__(self, message)
+
+
 class EncryptionManager(object):
-  def __init__(self):
+  INTERACTIVE_CHECKER = InteractiveChecker()
+
+  def __init__(self, output):
     self.image_uuid_password_map = {}
     self.last_password = None
+    self.output = output
 
   def CreatePassword(self, image_path):
     password = GETPASS_FUNCTION(
       prompt='Enter a new password to secure "%s": ' % os.path.basename(image_path))
+    self._VerifyPasswordMatchesExistingIfPresent(password)
     password2 = GETPASS_FUNCTION(prompt='Re-enter new password: ')
     if password != password2:
       raise PasswordsDidNotMatchError('Entered passwords did not match')
     return password
+
+  def _VerifyPasswordMatchesExistingIfPresent(self, password):
+    if self.last_password is None or not self.image_uuid_password_map:
+      return
+    if password == self.last_password:
+      return
+    for image_uuid, other_password in self.image_uuid_password_map.items():
+      if password == other_password:
+        return
+    if not self.INTERACTIVE_CHECKER.Confirm(
+        'New password does not match any previous passwords, continue?', self.output):
+      raise CreatePasswordCancelledError('*** Cancelled ***')
 
   def SavePassword(self, password, image_uuid):
     self.image_uuid_password_map[image_uuid] = password
@@ -2521,7 +2542,7 @@ def DoCompactImage(args, output):
   image_compactor = ImageCompactor(
     cmd_args.image_path, defragment=cmd_args.defragment,
     defragment_iterations=cmd_args.defragment_iterations, output=output, dry_run=args.dry_run,
-    verbose=args.verbose, encryption_manager=EncryptionManager())
+    verbose=args.verbose, encryption_manager=EncryptionManager(output=output))
   return image_compactor.Compact()
 
 
@@ -2533,7 +2554,7 @@ def DoDumpManifest(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   manifest = ReadManifestFromImageOrPath(
-    cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
+    cmd_args.path, encryption_manager=EncryptionManager(output=output), dry_run=args.dry_run)
   manifest.Dump(output, shorten_sha256=cmd_args.shorten_sha256,
                 shorten_xattr_hash=cmd_args.shorten_xattr_hash)
   return True
@@ -2554,7 +2575,7 @@ def DoDiffManifests(args, output):
     parser.add_argument('--ignore-gid-diffs', dest='ignore_gid_diffs', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
-  encryption_manager = EncryptionManager()
+  encryption_manager = EncryptionManager(output=output)
 
   first_manifest = ReadManifestFromImageOrPath(
     cmd_args.first_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
@@ -2576,7 +2597,7 @@ def DoVerifyManifest(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   manifest = ReadManifestFromImageOrPath(
-    cmd_args.path, encryption_manager=EncryptionManager(), dry_run=args.dry_run)
+    cmd_args.path, encryption_manager=EncryptionManager(output=output), dry_run=args.dry_run)
 
   manifest_verifier = ManifestVerifier(
     manifest, cmd_args.src_root, output,

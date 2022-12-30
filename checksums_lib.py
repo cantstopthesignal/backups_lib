@@ -785,7 +785,7 @@ def DoVerify(args, output):
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
-    verbose=args.verbose, encryption_manager=lib.EncryptionManager(),
+    verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
     hdiutil_verify=cmd_args.hdiutil_verify)
   return checksums_verifier.Verify()
 
@@ -838,7 +838,7 @@ def DoImageFromFolder(args, output):
   image_from_folder_creator = ImageFromFolderCreator(
     cmd_args.root_path, output_path=cmd_args.output_path, volume_name=cmd_args.volume_name,
     compressed=cmd_args.compressed, temp_dir=cmd_args.temp_dir, output=output,
-    dry_run=args.dry_run, verbose=args.verbose, encryption_manager=lib.EncryptionManager(),
+    dry_run=args.dry_run, verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
     encrypt=cmd_args.encrypt)
   return image_from_folder_creator.CreateImage()
 

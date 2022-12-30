@@ -70,7 +70,7 @@ def GetFileTreeManifest(parent_path):
   with open('/dev/null', 'w') as devnull:
     checkpoint_creator = checkpoint_lib.CheckpointCreator(
       src_root_dir=parent_path, checkpoints_root_dir='/dev/null', name='checkpoint',
-      output=devnull, dry_run=True, encryption_manager=lib.EncryptionManager())
+      output=devnull, dry_run=True, encryption_manager=lib.EncryptionManager(output=devnull))
     checkpoint_creator.Create()
     return checkpoint_creator.manifest
 

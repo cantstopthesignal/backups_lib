@@ -239,7 +239,7 @@ def DoVerifyLegacyBackupChecksums(args, output):
   config = backups_manager_lib.BackupsConfig.Load(cmd_args.backups_config)
 
   verifier = LegacyBackupChecksumsVerifier(
-    config, output=output, encryption_manager=lib.EncryptionManager(),
+    config, output=output, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return verifier.Verify()
 
