@@ -6,6 +6,7 @@ import errno
 import io
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -33,11 +34,10 @@ from .test_util import CreateFile
 from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
+from .test_util import OverrideUmask
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
-from .test_util import SetXattr
 from .test_util import TempDir
-from .test_util import Xattr
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import CollapseApfsOperationsInOutput
@@ -50,8 +50,22 @@ from .lib_test_util import HandleGoogleDriveRemoteFiles
 from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
+from .lib_test_util import SetXattr
 
 from .checkpoint_lib_test_util import DoCreate
+
+
+def AssertRsyncLinesEqual(actual_lines, expected_lines):
+  if platform.system() == lib.PLATFORM_LINUX:
+    new_expected_lines = []
+    for expected_line in expected_lines:
+      if expected_line.startswith('*deleting '):
+        new_expected_lines.append(expected_line)
+      else:
+        assert expected_line[11] in ['+', '.']
+        new_expected_lines.append(expected_line[:11] + expected_line[12:])
+    expected_lines = new_expected_lines
+  AssertLinesEqual(actual_lines, expected_lines)
 
 
 def RsyncPaths(from_path, to_path, checksum=True, dry_run=False,
@@ -244,7 +258,10 @@ class CreateDryRunTestCase(BaseTestCase):
       AssertEmptyRsync(src_root, checkpoint1.GetContentRootPath())
     finally:
       checkpoint1.Close()
-    AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
+    if platform.system() == lib.PLATFORM_LINUX:
+      AssertCheckpointsList(checkpoints_dir, ['1.img'])
+    else:
+      AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
 
     SetMTime(file1, None)
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -255,7 +272,10 @@ class CreateDryRunTestCase(BaseTestCase):
     expected_output=['>fcs..... par!/f2',
                      '.f..t.... par!/f_\\r',
                      'Transferring 2 of 5 paths (17b of 17b)'])
-    AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
+    if platform.system() == lib.PLATFORM_LINUX:
+      AssertCheckpointsList(checkpoints_dir, ['1.img'])
+    else:
+      AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
 
 
 class CreateTestCase(BaseTestCase):
@@ -335,14 +355,14 @@ class CreateTestCase(BaseTestCase):
     try:
       VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
       AssertLinesEqual(GetManifestDiffItemized(manifest1, manifest2), [])
-      AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                       ['.d..t....... ./',
-                        '>f++++++++++ .staged_backup_filter',
-                        'cd++++++++++ par!/',
-                        '>f++++++++++ par!/f2',
-                        '>f++++++++++ par!/f3',
-                        '>f++++++++++ par!/f_\r',
-                        '>f++++++++++ par!/file6_from'])
+      AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
+                            ['.d..t....... ./',
+                             '>f++++++++++ .staged_backup_filter',
+                             'cd++++++++++ par!/',
+                             '>f++++++++++ par!/f2',
+                             '>f++++++++++ par!/f3',
+                             '>f++++++++++ par!/f_\r',
+                             '>f++++++++++ par!/file6_from'])
       AssertBasisInfoFileEquals(checkpoint2.GetMetadataPath(), checkpoint1.GetImagePath())
       DoVerifyManifest(src_root, manifest2.GetPath(),
                        expected_success=False,
@@ -381,16 +401,16 @@ class CreateTestCase(BaseTestCase):
                                         '>f+++++++ par!/file6_from'])
       checkpoint2 = checkpoint_lib.Checkpoint.Open(checkpoint2.GetImagePath(), readonly=False)
       try:
-        AssertLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
-                         ['.d........x. ./',
-                          '>fcs........ par!/f2',
-                          '.f..t....... par!/f_\r'])
+        AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint2.GetContentRootPath()),
+                              ['.d........x. ./',
+                               '>fcs........ par!/f2',
+                               '.f..t....... par!/f_\r'])
       finally:
         checkpoint2.Close()
-      AssertLinesEqual(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
-                       ['>f++++++++++ .staged_backup_filter',
-                        '>f++++++++++ par!/f3',
-                        '>f++++++++++ par!/file6_from'])
+      AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint3.GetContentRootPath()),
+                            ['>f++++++++++ .staged_backup_filter',
+                             '>f++++++++++ par!/f3',
+                             '>f++++++++++ par!/file6_from'])
     finally:
       checkpoint3.Close()
 
@@ -451,10 +471,10 @@ class CreateTestCase(BaseTestCase):
                           '>f+++++++ par!/file6_to3',
                           '>d+++++++ par2',
                           '>f+++++++ par2/f2b'])
-        AssertLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
-                         ['>f++++++++++ .staged_backup_filter',
-                          '>f++++++++++ par!/f3',
-                          '>f++++++++++ par!/f_\r'])
+        AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint4.GetContentRootPath()),
+                              ['>f++++++++++ .staged_backup_filter',
+                               '>f++++++++++ par!/f3',
+                               '>f++++++++++ par!/f_\r'])
         AssertBasisInfoFileEquals(checkpoint4.GetMetadataPath(), checkpoint3.GetImagePath())
         DoVerifyManifest(checkpoint4.GetContentRootPath(), manifest4.GetPath())
       finally:
@@ -500,14 +520,14 @@ class CreateTestCase(BaseTestCase):
                           '>f+++++++ par!/f4',
                           '*f.delete par!/file6_to2',
                           '*f.delete par!/file6_to3'])
-        AssertLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
-                         ['>f++++++++++ .staged_backup_filter',
-                          '>f++++++++++ par!/f2',
-                          '>f++++++++++ par!/f3',
-                          '>f++++++++++ par!/f_\r',
-                          '>f++++++++++ par!/file6_to',
-                          'cd++++++++++ par2/',
-                          '>f++++++++++ par2/f2b'])
+        AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint5.GetContentRootPath()),
+                              ['>f++++++++++ .staged_backup_filter',
+                               '>f++++++++++ par!/f2',
+                               '>f++++++++++ par!/f3',
+                               '>f++++++++++ par!/f_\r',
+                               '>f++++++++++ par!/file6_to',
+                               'cd++++++++++ par2/',
+                               '>f++++++++++ par2/f2b'])
         AssertBasisInfoFileEquals(checkpoint5.GetMetadataPath(), checkpoint4.GetImagePath())
         DoVerifyManifest(checkpoint5.GetContentRootPath(), manifest5.GetPath())
       finally:
@@ -600,8 +620,8 @@ class CreateFromGoogleDriveTestCase(BaseTestCase):
                         '.f....... par/f1.gdoc',
                         '.f....... par/f2'])
       f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1.gdoc')
-      AssertEquals(['com.google.drivefs.item-id#S'], Xattr(f1_checkpoint).keys())
-      AssertEquals(b'FAKE_ID', Xattr(f1_checkpoint)[lib.GOOGLE_DRIVE_FILE_XATTR_KEY])
+      AssertEquals(['com.google.drivefs.item-id#S'], lib.Xattr(f1_checkpoint).keys())
+      AssertEquals(b'FAKE_ID', lib.Xattr(f1_checkpoint)[lib.GOOGLE_DRIVE_FILE_XATTR_KEY])
       f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f2')
       AssertFileContents('abc', f2_checkpoint)
     finally:
@@ -705,7 +725,7 @@ class CreateWithFollowSymlinksTestCase(BaseTestCase):
     try:
       VerifyCheckpointContents(manifest2, checkpoint2.GetContentRootPath(), prev_manifest=manifest1)
       ln2_checkpoint = os.path.join(checkpoint2.GetContentRootPath(), 'ln2')
-      AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+      AssertEquals(b'example_value', lib.Xattr(ln2_checkpoint)['example'])
     finally:
       checkpoint2.Close()
 
@@ -721,7 +741,7 @@ class CreateWithFollowSymlinksTestCase(BaseTestCase):
       ref_file3_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2/d2/f3')
       AssertFileContents('ghi', ref_file3_checkpoint)
       ln2_checkpoint = os.path.join(checkpoint3.GetContentRootPath(), 'ln2')
-      AssertEquals(b'example_value', Xattr(ln2_checkpoint)['example'])
+      AssertEquals(b'example_value', lib.Xattr(ln2_checkpoint)['example'])
     finally:
       checkpoint3.Close()
 
@@ -767,11 +787,11 @@ class ApplyDryRunTestCase(BaseTestCase):
                              '*f.delete del_par!/del',
                              '>d+++++++ par!',
                              '>f+++++++ par!/f_\\r'])
-    AssertLinesEqual(RsyncPaths(src_root, dest_root),
-                     ['*deleting del_par!/',
-                      '*deleting del_par!/del',
-                      'cd++++++++++ par!/',
-                      '>f++++++++++ par!/f_\r'])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root),
+                          ['*deleting del_par!/',
+                           '*deleting del_par!/del',
+                           'cd++++++++++ par!/',
+                           '>f++++++++++ par!/f_\r'])
 
 
 class ApplyTestCase(BaseTestCase):
@@ -852,7 +872,7 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> f_\\r'])
-      AssertEquals(sorted(Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
                    ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint2.Close()
@@ -886,8 +906,8 @@ class ApplyTestCase(BaseTestCase):
 
     DoApply(checkpoint3.GetImagePath(), dest_root,
             expected_output=['.d......x .'])
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['.f........x. f3'])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
+                          ['.f........x. f3'])
 
     # No modifications
 
@@ -909,8 +929,8 @@ class ApplyTestCase(BaseTestCase):
 
     DoApply(checkpoint4.GetImagePath(), dest_root,
             expected_output=[])
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
-                     ['.f........x. f3'])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True),
+                          ['.f........x. f3'])
 
     # Modify some existing files
     file2 = CreateFile(parent1, 'f2', contents='abc')
@@ -936,7 +956,7 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> INVALID'])
-      AssertEquals(sorted(Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
                    ['com.apple.lastuseddate#PS', 'example'])
     finally:
       checkpoint5.Close()
@@ -965,8 +985,8 @@ class ApplyTestCase(BaseTestCase):
 
     DoApply(checkpoint6.GetImagePath(), dest_root)
     AssertEmptyRsync(src_root, dest_root, checksum=False)
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, checksum=True, dry_run=True),
-                     ['>fc......... par!/f2'])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, checksum=True, dry_run=True),
+                          ['>fc......... par!/f2'])
 
     # Now do a sync with checksum all and verify the diffing file gets transferred
 
@@ -991,10 +1011,11 @@ class ApplyTestCase(BaseTestCase):
 
 class ApplyFromGoogleDriveTestCase(BaseTestCase):
   def test(self):
-    with TempDir() as test_dir:
-      with ApplyFakeDiskImageHelperLevel() as should_run:
-        if should_run:
-          self.RunTest(test_dir)
+    with OverrideUmask(0o022):
+      with TempDir() as test_dir:
+        with ApplyFakeDiskImageHelperLevel() as should_run:
+          if should_run:
+            self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
@@ -1020,7 +1041,7 @@ class ApplyFromGoogleDriveTestCase(BaseTestCase):
       DoDumpManifest(
         checkpoint1.GetManifestPath(),
         expected_output=[
-        'dir path=., mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
+          'dir path=., mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
           'dir path=par!, mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
           "file path=par!/f2, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=3, sha256='ba7816'",
           ("file path=par!/g1.gdoc, mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=6, " +
@@ -1033,7 +1054,7 @@ class ApplyFromGoogleDriveTestCase(BaseTestCase):
                              '>f+++++++ par!/f2',
                              '>f+++++++ par!/g1.gdoc'])
     DoVerifyManifest(dest_root, checkpoint1.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
     gdrf2 = CreateGoogleDriveRemoteFile(parent1, 'g2.gsheet', contents='mysheet1')
 
@@ -1056,7 +1077,7 @@ class ApplyFromGoogleDriveTestCase(BaseTestCase):
     DoApply(checkpoint2.GetImagePath(), dest_root,
             expected_output=['>f+++++++ par!/g2.gsheet'])
     DoVerifyManifest(dest_root, checkpoint2.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
     SetMTime(gdrf1, 1510000000)
     SetMTime(file2, 1510000000)
@@ -1082,7 +1103,7 @@ class ApplyFromGoogleDriveTestCase(BaseTestCase):
             expected_output=['.f..t.... par!/f2',
                              '.f..t.... par!/g1.gdoc'])
     DoVerifyManifest(dest_root, checkpoint3.GetImagePath())
-    AssertLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
+    AssertRsyncLinesEqual(RsyncPaths(src_root, dest_root, dry_run=True), [])
 
 
 class ApplyWithEncryptionTestCase(BaseTestCase):
@@ -1101,9 +1122,13 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
     dest_root = CreateDir(test_dir, 'dest')
     file2 = CreateFile(parent1, 'f2', contents='abc')
 
+    image_ext = '.sparseimage'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.luks.img'
+
     try:
       with HandleGetPass(
-          expected_prompts=['Enter a new password to secure "1.sparseimage": ',
+          expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
                             'Re-enter new password: '],
           returned_passwords=['abc',
                               'DIFFERENT']):
@@ -1114,9 +1139,9 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
       pass
 
     with HandleGetPass(
-        expected_prompts=['Enter a new password to secure "1.sparseimage": ',
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
                           'Re-enter new password: ',
-                          'Enter password to access "1.sparseimage": '],
+                          'Enter password to access "1%s": ' % image_ext],
         returned_passwords=['abc', 'abc', 'abc']):
       checkpoint1, manifest1 = DoCreate(
         src_root, checkpoints_dir, '1', encrypt=True,
@@ -1137,13 +1162,13 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
       checkpoint1.Close()
 
     with HandleGetPass(
-        expected_prompts=['Enter password to access "1.sparseimage": '],
+        expected_prompts=['Enter password to access "1%s": ' % image_ext],
         returned_passwords=['abc']):
       DoApply(checkpoint1.GetImagePath(), dest_root,
               expected_output=['>d+++++++ par!',
                                '>f+++++++ par!/f2'])
     with HandleGetPass(
-        expected_prompts=['Enter password to access "1.sparseimage": '],
+        expected_prompts=['Enter password to access "1%s": ' % image_ext],
         returned_passwords=['abc']):
       DoVerifyManifest(dest_root, checkpoint1.GetImagePath())
     AssertEmptyRsync(src_root, dest_root)
@@ -1154,12 +1179,12 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
         lib.EncryptionManager.INTERACTIVE_CHECKER) as interactive_checker:
       interactive_checker.AddReadyResult(True)
       with HandleGetPass(
-          expected_prompts=['Enter password to access "1.sparseimage": ',
-                            'Enter password to access "1.sparseimage": ',
-                            'Enter a new password to secure "2.sparseimage": ',
+          expected_prompts=['Enter password to access "1%s": ' % image_ext,
+                            'Enter password to access "1%s": ' % image_ext,
+                            'Enter a new password to secure "2%s": ' % image_ext,
                             'Re-enter new password: ',
-                            'Enter password to access "2.sparseimage": ',
-                            'Enter password to access "2.sparseimage": '],
+                            'Enter password to access "2%s": ' % image_ext,
+                            'Enter password to access "2%s": ' % image_ext],
           returned_passwords=['DIFFERENT', 'abc', 'def', 'def', 'DIFFERENT', 'def']):
         checkpoint2, manifest2 = DoCreate(
           src_root, checkpoints_dir, '2', encrypt=True, last_checkpoint_path=checkpoint1.GetImagePath(),
@@ -1169,14 +1194,14 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
       checkpoint2.Close()
 
     with HandleGetPass(
-        expected_prompts=['Enter password to access "2.sparseimage": ',
-                          'Enter password to access "2.sparseimage": '],
+        expected_prompts=['Enter password to access "2%s": ' % image_ext,
+                          'Enter password to access "2%s": ' % image_ext],
         returned_passwords=['DIFFERENT', 'def']):
       DoApply(checkpoint2.GetImagePath(), dest_root,
               expected_output=['>f+++++++ par!/f3'])
     with HandleGetPass(
-        expected_prompts=['Enter password to access "2.sparseimage": ',
-                          'Enter password to access "2.sparseimage": '],
+        expected_prompts=['Enter password to access "2%s": ' % image_ext,
+                          'Enter password to access "2%s": ' % image_ext],
         returned_passwords=['DIFFERENT', 'def']):
       DoVerifyManifest(dest_root, checkpoint2.GetImagePath())
     AssertEmptyRsync(src_root, dest_root)
@@ -1184,12 +1209,13 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
 
 class StripTestCase(BaseTestCase):
   def test(self):
-    with ApplyFakeDiskImageHelperLevel(
-        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-      if should_run:
-        with SetHdiutilCompactOnBatteryAllowed(True):
-          with TempDir() as test_dir:
-            self.RunTest(test_dir)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      with ApplyFakeDiskImageHelperLevel(
+          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+        if should_run:
+          with SetHdiutilCompactOnBatteryAllowed(True):
+            with TempDir() as test_dir:
+              self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     def AssertCheckpointStripState(image_path, stripped_expected):

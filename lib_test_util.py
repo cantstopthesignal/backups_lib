@@ -13,7 +13,6 @@ from . import lib
 from .test_util import AssertEquals
 from .test_util import CreateFile
 from .test_util import DoBackupsMain
-from .test_util import Xattr
 
 
 FAKE_DISK_IMAGE_LEVEL_OFF = 'off'
@@ -40,6 +39,11 @@ FAKE_DISK_IMAGE_LEVEL_TO_INDEX = {
 FAKE_DISK_IMAGE_LEVEL = FAKE_DISK_IMAGE_LEVEL_MEDIUM
 
 DEBUG_FAKE_DISK_IMAGE_LEVELS = False
+
+
+def SetXattr(path, key, value):
+  xattr_obj = lib.Xattr(path)
+  xattr_obj[key] = value
 
 
 def GetManifestItemized(manifest):
@@ -137,7 +141,7 @@ class FakeDiskImage(object):
     return image_path + '_FAKE_IMAGE_DATA_UNMOUNTED'
 
   def __init__(self, path):
-    assert os.path.splitext(path)[1] in ['.sparsebundle', '.dmg', '.sparseimage']
+    assert os.path.splitext(path)[1] in ['.sparsebundle', '.dmg', '.sparseimage', '.img']
     self.path = path
     self.metadata = {}
 
@@ -206,7 +210,7 @@ class FakeDiskImage(object):
 
 
 class FakeDiskImageHelper(object):
-  def CreateImage(self, path, size=None, filesystem=None, image_type=None, volume_name=None,
+  def CreateImage(self, path, size=None, filesystem=None, volume_name=None,
                   encryption=False, password=None):
     assert not encryption
     assert not os.path.lexists(path)
@@ -286,7 +290,7 @@ def CreateGoogleDriveRemoteFile(parent_dir, filename, contents='', google_drive_
   _, ext = os.path.splitext(filename)
   assert ext in lib.GOOGLE_DRIVE_FILE_EXTENSIONS_WITH_MISMATCHED_FILE_SIZES
   path = CreateFile(parent_dir, filename, contents=contents)
-  xattr_data = Xattr(path)
+  xattr_data = lib.Xattr(path)
   xattr_data[lib.GOOGLE_DRIVE_FILE_XATTR_KEY] = google_drive_id.encode('ascii')
   return path
 

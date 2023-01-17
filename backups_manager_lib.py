@@ -54,7 +54,7 @@ SUPERSEDED_METADATA_PREFIX = 'superseded-'
 
 class BackupCheckpoint(object):
   BACKUP_CHECKPOINTS_PATTERN = re.compile(
-    '^([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6})(-manifest)?[.]sparseimage$')
+    '^([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6})(-manifest)?[.](sparseimage|img|luks.img)$')
 
   STATE_NEW = 'NEW'
   STATE_IN_PROGRESS = 'IN_PROGRESS'
@@ -915,8 +915,9 @@ class BackupsManager(object):
                hdiutil_verify=True, dry_run=False):
     if (not config.image_path.endswith('.sparsebundle')
         and not config.image_path.endswith('.sparseimage')
-        and not config.image_path.endswith('.dmg')):
-      raise Exception('Expected a sparsebundle, sparseimage, or dmg file')
+        and not config.image_path.endswith('.dmg')
+        and not config.image_path.endswith('.img')):
+      raise Exception('Expected a sparsebundle, sparseimage, dmg, or img file')
     if not os.path.exists(config.image_path):
       raise Exception('Expected %s to exist' % config.image_path)
     self.config = config

@@ -30,9 +30,9 @@ from .test_util import CreateDirs
 from .test_util import CreateFile
 from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
+from .test_util import OverrideUmask
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
-from .test_util import SetXattr
 from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
@@ -42,6 +42,7 @@ from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetMaxDupCounts
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
+from .lib_test_util import SetXattr
 
 from .backups_manager_lib_test_util import CreateBackupsBundle
 from .backups_manager_lib_test_util import CreateConfig
@@ -1660,10 +1661,11 @@ class DeleteBackupsInteractiveTestCase(BaseTestCase):
 
 class DumpUniqueFilesInBackupsTestCase(BaseTestCase):
   def test(self):
-    with ApplyFakeDiskImageHelperLevel() as should_run:
-      if should_run:
-        with TempDir() as test_dir:
-          self.RunTest(test_dir)
+    with OverrideUmask(0):
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     config = CreateConfig(test_dir)
@@ -1781,66 +1783,66 @@ class DumpUniqueFilesInBackupsTestCase(BaseTestCase):
           'Finding unique files in backup Backup<2020-01-01-120000,DONE>...',
           'Compare to next Backup<2020-01-02-120000,DONE>...',
           '>f+++++++ f1',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*L.delete ln1',
-          "  > symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='INVALID'",
+          "  > symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='INVALID'",
           '*L.delete ln2',
-          "  > symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
+          "  > symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
           '*d.delete par!',
-          '  > dir mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
+          '  > dir mode=16895, mtime=1500000000 (2017-07-13 19:40:00)',
           '*f.delete par!/fY',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*f.delete par!/f_\\r \\xc2\\xa9',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           'Paths: 1 unique (0b), 4 total',
           'Finding unique files in backup Backup<2020-01-02-120000,DONE>...',
           'Compare to previous Backup<2020-01-01-120000,DONE> and next Backup<2020-01-03-120000,DONE>...',
           '*f.delete f3',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*f.delete f6',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
           '*f.delete f7',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
           '.Lc...... ln2 -> fX',
-          "  = symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
-          "  > symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fT'",
+          "  = symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
+          "  > symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fT'",
           '*f.delete par!/f4',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '>f+++++++ par!/fY',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*d.delete par2',
-          '  > dir mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
+          '  > dir mode=16895, mtime=1500000000 (2017-07-13 19:40:00)',
           '*f.delete par2/f5',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*f.delete par2/f8',
-          "  > file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
+          "  > file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
           'Paths: 2 unique (0b), 8 total',
           'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
           'Compare to previous Backup<2020-01-02-120000,DONE>...',
           '>f+++++++ f3',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '>f+++++++ f6',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
           '>f+++++++ f7',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
           '.f..t.... fT',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
-          "  = file mode=33188, mtime=1600000000 (2020-09-13 05:26:40), size=0, sha256='e3b0c4'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1600000000 (2020-09-13 05:26:40), size=0, sha256='e3b0c4'",
           '*f.delete fX',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '.Lc...... ln2 -> fT',
-          "  < symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
-          "  = symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fT'",
+          "  < symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fX'",
+          "  = symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='fT'",
           '>f+++++++ par!/f4',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '*f.delete par!/fY',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '>d+++++++ par2',
-          '  = dir mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
+          '  = dir mode=16895, mtime=1500000000 (2017-07-13 19:40:00)',
           '>f+++++++ par2/f5',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=0, sha256='e3b0c4'",
           '>f+++++++ par2/f8',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
           'Paths: 9 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(
@@ -2095,29 +2097,29 @@ class DumpUniqueFilesInBackupsTestCase(BaseTestCase):
           'Finding unique files in backup Backup<2020-01-04-120000,DONE>...',
           'Compare to previous Backup<2020-01-03-120000,DONE>...',
           '*f.delete f6',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='4e2677'",
           '>f+++++++ f6_new_dup',
-          "  = file mode=33188, mtime=1600000000 (2020-09-13 05:26:40), size=1025, sha256='096e63'",
+          "  = file mode=33206, mtime=1600000000 (2020-09-13 05:26:40), size=1025, sha256='096e63'",
           '  replacing similar: .f..t.... f7',
-          "    file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
+          "    file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
           '*f.delete f7',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
           '>f+++++++ f7_renamed',
-          "  = file mode=33188, mtime=1600000000 (2020-09-13 05:26:40), size=1025, sha256='096e63'",
+          "  = file mode=33206, mtime=1600000000 (2020-09-13 05:26:40), size=1025, sha256='096e63'",
           '  replacing similar: .f..t.... f7',
-          "    file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
+          "    file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='096e63'",
           '.Lc...... ln1 -> f3',
-          "  < symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='INVALID'",
-          "  = symlink mode=41453, mtime=1500000000 (2017-07-13 19:40:00), link-dest='f3'",
+          "  < symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='INVALID'",
+          "  = symlink mode=41471, mtime=1500000000 (2017-07-13 19:40:00), link-dest='f3'",
           '>f+++++++ par!/f8',
-          "  = file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
+          "  = file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
           '  replacing duplicate: .f....... par2/f8',
-          "    file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
+          "    file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
           '.d..t.... par2',
-          '  < dir mode=16877, mtime=1500000000 (2017-07-13 19:40:00)',
-          '  = dir mode=16877, mtime=1600000000 (2020-09-13 05:26:40)',
+          '  < dir mode=16895, mtime=1500000000 (2017-07-13 19:40:00)',
+          '  = dir mode=16895, mtime=1600000000 (2020-09-13 05:26:40)',
           '*f.delete par2/f8',
-          "  < file mode=33188, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
+          "  < file mode=33206, mtime=1500000000 (2017-07-13 19:40:00), size=1025, sha256='43ee0e'",
           'Paths: 5 unique (3kb), 13 total'])
 
     DoDumpUniqueFilesInBackups(

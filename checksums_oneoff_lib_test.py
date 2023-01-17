@@ -22,8 +22,9 @@ from .test_util import CreateDirs
 from .test_util import CreateFile
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
-from .test_util import SetXattr
 from .test_util import TempDir
+
+from .lib_test_util import SetXattr
 
 from .checksums_lib_test_util import DoChecksumsMain
 from .checksums_lib_test_util import DoCreate

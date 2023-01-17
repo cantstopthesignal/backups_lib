@@ -1,3 +1,4 @@
+import abc
 import argparse
 import binascii
 import contextlib
@@ -10,6 +11,7 @@ import io
 import json
 import os
 import pipes
+import platform
 import plistlib
 import pwd
 import re
@@ -41,6 +43,9 @@ COMMANDS = [
   COMMAND_COMPACT_IMAGE,
 ]
 
+
+PLATFORM_DARWIN = 'Darwin'
+PLATFORM_LINUX = 'Linux'
 
 MANIFEST_FILENAME = 'manifest.pbdata'
 BASIS_INFO_FILENAME = 'basis_info.json'
@@ -80,7 +85,10 @@ KEYCHAIN_PASSWORDS_ENABLED = True
 
 DISK_IMAGE_HELPER_OVERRIDE = None
 
-DISK_IMAGE_DEFAULT_CAPACITY = '1T'
+if platform.system() == PLATFORM_DARWIN:
+  DISK_IMAGE_DEFAULT_CAPACITY = '1024gb'
+else:
+  DISK_IMAGE_DEFAULT_CAPACITY = '1gb'
 
 TERM_COLOR_BLUE = '1;34m'
 TERM_COLOR_CYAN = '1;36m'
@@ -89,6 +97,13 @@ TERM_COLOR_PURPLE = '1;35m'
 TERM_COLOR_RED = '1;31m'
 TERM_COLOR_YELLOW = '1;33m'
 TERM_COLOR_RESET = '1;m'
+
+FILESYSTEM_APFS = 'APFS'
+FILESYSTEM_EXT4 = 'EXT4'
+
+ENCRYPTION_AES_256 = 'AES-256'
+
+CRYPTSETUP_BIN = '/usr/sbin/cryptsetup'
 
 
 class PathMatcher(object):
@@ -217,9 +232,7 @@ def UnixTimeToSecondsString(unix_time):
 
 
 def GetRsyncBin():
-  home = os.getenv('HOME')
-  assert os.path.exists(home)
-  return os.path.join(home, 'bin/rsync')
+  return 'rsync'
 
 
 def MakeRsyncDirname(dirname, absolute=False):
@@ -586,11 +599,44 @@ def Stat(path, follow_symlinks=False):
     return os.lstat(path)
 
 
+class XattrWrapper:
+  def __init__(self, path, follow_symlinks=False):
+    options = 0
+    if not follow_symlinks:
+      options = xattr.XATTR_NOFOLLOW
+    self.xattr_obj = xattr.xattr(path, options=options)
+
+  def keys(self):
+    if platform.system() == PLATFORM_LINUX:
+      keys = []
+      for key in self.xattr_obj.keys():
+        assert key.startswith('user.')
+        keys.append(key[len('user.'):])
+      return keys
+    return self.xattr_obj.keys()
+
+  def __iter__(self):
+    for key in self.keys():
+      yield key
+
+  def __setitem__(self, key, value):
+    if platform.system() == PLATFORM_LINUX:
+      key = 'user.%s' % key
+    self.xattr_obj[key] = value
+
+  def __getitem__(self, key):
+    if platform.system() == PLATFORM_LINUX:
+      key = 'user.%s' % key
+    return self.xattr_obj[key]
+
+  def __delitem__(self, key):
+    if platform.system() == PLATFORM_LINUX:
+      key = 'user.%s' % key
+    del self.xattr_obj[key]
+
+
 def Xattr(path, follow_symlinks=False):
-  options = 0
-  if not follow_symlinks:
-    options = xattr.XATTR_NOFOLLOW
-  return xattr.xattr(path, options=options)
+  return XattrWrapper(path, follow_symlinks=follow_symlinks)
 
 
 def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
@@ -599,15 +645,19 @@ def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
 
   xattr_data = Xattr(path, follow_symlinks=follow_symlinks)
   xattr_list = []
-  for key in sorted(xattr_data.keys()):
-    if key in ignored_keys:
-      continue
-    try:
-      value = xattr_data[key]
-    except KeyError as e:
-      continue
-    xattr_keys.append(key)
-    xattr_list.append((key, value))
+  try:
+    for key in sorted(xattr_data.keys()):
+      if key in ignored_keys:
+        continue
+      try:
+        value = xattr_data[key]
+      except KeyError as e:
+        continue
+      xattr_keys.append(key)
+      xattr_list.append((key, value))
+  except IOError as e:
+    if e.errno != errno.ENODATA:
+      raise
   if xattr_list:
     hasher = hashlib.sha256()
     byte_str_list = []
@@ -681,11 +731,36 @@ class DiskImageHelperAttachResult:
     self.device = None
 
 
-class DiskImageHelper:
+class DiskImageHelper(abc.ABC):
+  @abc.abstractmethod
+  def CreateImage(self, path, size=None, filesystem=None, volume_name=None,
+                  encryption=None, password=None):
+    pass
+
+  @abc.abstractmethod
+  def AttachImage(self, path, encrypted=False, password=None, mount=False,
+                  random_mount_point=False, mount_point=None,
+                  readonly=True, browseable=False, verify=True):
+    pass
+
+  @abc.abstractmethod
+  def DetachImage(self, device):
+    pass
+
+  @abc.abstractmethod
+  def MoveImage(self, from_path, to_path):
+    pass
+
+  @abc.abstractmethod
+  def GetImageEncryptionDetails(self, image_path):
+    pass
+
+
+class DiskImageHelperDarwin(DiskImageHelper):
   def __init__(self):
     pass
 
-  def CreateImage(self, path, size=None, filesystem=None, image_type=None, volume_name=None,
+  def CreateImage(self, path, size=None, filesystem=None, volume_name=None,
                   encryption=None, password=None):
     assert not os.path.lexists(path)
     if encryption is not None:
@@ -695,8 +770,8 @@ class DiskImageHelper:
       cmd.extend(['-size', size])
     if filesystem is not None:
       cmd.extend(['-fs', filesystem])
-    if image_type is not None:
-      cmd.extend(['-type', image_type])
+    if path.endswith('.sparsebundle'):
+      cmd.extend(['-type', 'SPARSEBUNDLE'])
     if volume_name is not None:
       cmd.extend(['-volname', 'Backups'])
     if encryption is not None:
@@ -818,25 +893,210 @@ class DiskImageHelper:
     return (encrypted, image_uuid)
 
 
+class DiskImageHelperLinux(DiskImageHelper):
+  def CreateImage(self, path, size=None, filesystem=None, volume_name=None,
+                  encryption=None, password=None):
+    assert filesystem == FILESYSTEM_EXT4
+
+    max_sanity_size = '10gb'
+    size_bytes = FileSizeStringToBytes(size)
+    if size_bytes > FileSizeStringToBytes('10gb'):
+      raise Exception('Disk image size of %s requested, which may be too large' % size)
+
+    with open('/dev/null', 'w') as devnull:
+      subprocess.check_call(['dd', 'if=/dev/urandom', 'of=%s' % path, 'bs=%d' % size_bytes, 'count=1'],
+                            stdout=devnull, stderr=devnull)
+
+    device_path = path
+    if encryption is not None:
+      assert encryption == ENCRYPTION_AES_256
+      assert password
+      p = subprocess.Popen(
+        [CRYPTSETUP_BIN, '--cipher', 'aes-xts-plain64', '--hash', 'sha512',
+         '--key-size', '256', '--iter-time', '5000', '--batch-mode',
+         '--key-file', '-', 'luksFormat', path],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p.stdin.write(password.encode('utf8'))
+      p.stdin.close()
+      with p.stdout:
+        output = p.stdout.read()
+      if p.wait():
+        raise Exception('Command failed: %r: %r' % ' '.join(cmd))
+
+      cryptsetup_mapped_device = self._CreateUniqueCryptSetupMappedDevice()
+      self._CryptSetupLuksOpen(path, os.path.basename(cryptsetup_mapped_device), password=password)
+      device_path = cryptsetup_mapped_device
+
+    with open('/dev/null', 'w') as devnull:
+      cmd = ['mkfs.ext4']
+      if volume_name is not None:
+        cmd.extend(['-L', volume_name])
+      cmd.append(device_path)
+      subprocess.check_call(cmd, stdout=devnull, stderr=devnull)
+
+    if encryption is not None:
+      subprocess.check_call([CRYPTSETUP_BIN, 'close', os.path.basename(cryptsetup_mapped_device)])
+
+  def AttachImage(self, path, encrypted=False, password=None, mount=False,
+                  random_mount_point=False, mount_point=None,
+                  readonly=True, browseable=False, verify=True):
+    if not mount:
+      raise Exception('Not Implemented')
+    result = DiskImageHelperAttachResult()
+    result.mount_point = mount_point
+    result.device = None
+    if not random_mount_point and mount_point is None:
+      raise Exception('Mount pount or random mount point expected')
+
+    if encrypted:
+      mount_device = self._CreateUniqueCryptSetupMappedDevice()
+      self._CryptSetupLuksOpen(path, os.path.basename(mount_device), password=password)
+    else:
+      mount_device = path
+
+    mount_is_temporary = False
+    if random_mount_point:
+      result.mount_point = tempfile.mkdtemp()
+      mount_is_temporary = True
+    if not os.path.isdir(result.mount_point):
+      os.mkdir(result.mount_point)
+      mount_is_temporary = True
+    if mount_is_temporary:
+      subprocess.check_call(['touch', '%s.tmpmount' % result.mount_point])
+
+    mount_options = ['loop', 'users', 'user_xattr']
+    if readonly:
+      mount_options.append('ro')
+    else:
+      mount_options.append('rw')
+
+    cmd = ['mount', '-o', ','.join(mount_options), mount_device, result.mount_point]
+    for i in range(5):
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      with p.stdout:
+        output = p.stdout.read()
+      if p.wait():
+        raise Exception('Command failed: %r: %r' % (' '.join(cmd), output))
+      if not output:
+        break
+
+      lines = output.decode('utf8').strip().split('\n')
+      if len(lines) == 1 and lines[0].endswith(
+          'WARNING: source write-protected, mounted read-only.'):
+        time.sleep(1)
+        self._UnmountWithRetries(result.mount_point)
+        time.sleep(1)
+        continue
+      raise Exception('Unexpected output from %r: %r' % (cmd, output))
+    else:
+      raise Exception('Command %r failed after retries' % cmd)
+
+    result.device = result.mount_point
+    return result
+
+  def DetachImage(self, device):
+    df_output = subprocess.check_output(
+      ['df', '-P', device], text=True).strip().split('\n')
+    assert len(df_output) == 2
+    assert df_output[0].split()[0] == 'Filesystem'
+    lo_device = df_output[1].split()[0]
+    assert lo_device.startswith('/dev/loop')
+    lo_output = subprocess.check_output(
+      ['losetup', '-nl', '-O', 'NAME,BACK-FILE', lo_device], text=True).strip().split()
+    assert lo_output[0] == lo_device
+    dm_device = lo_output[1]
+    cryptsetup_mapped_name = None
+    if dm_device.startswith('/dev'):
+      assert dm_device.startswith('/dev/dm-')
+      dm_output = subprocess.check_output(
+        ['dmsetup', 'info', dm_device], text=True).split('\n')
+      for line in dm_output:
+        line_split = line.split()
+        if line_split and line_split[0] == 'Name:':
+          cryptsetup_mapped_name = line_split[1]
+          break
+      assert cryptsetup_mapped_name
+
+    self._UnmountWithRetries(device)
+
+    if os.path.exists('%s.tmpmount' % device):
+      subprocess.check_call(['rm', '%s.tmpmount' % device])
+      if os.path.isdir(device):
+        subprocess.check_call(['rmdir', device])
+
+    if cryptsetup_mapped_name:
+      subprocess.check_call([CRYPTSETUP_BIN, 'close', cryptsetup_mapped_name])
+
+  def MoveImage(self, from_path, to_path):
+    shutil.move(from_path, to_path)
+
+  def GetImageEncryptionDetails(self, image_path):
+    if image_path.endswith('.luks.img'):
+      output = subprocess.check_output(['file', image_path], text=True)
+      m = re.match('^.*: LUKS encrypted file, ver 2 \\[, , sha256\\] UUID: ([a-f0-9-]+)$', output)
+      assert m
+      return (True, m.group(1))
+    return (False, None)
+
+  def _UnmountWithRetries(self, device):
+    cmd = ['umount', device]
+    for i in range(20):
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      with p.stdout:
+        output = p.stdout.read().strip()
+      if not p.wait():
+        break
+      if output.endswith(': not mounted.'):
+        break
+      if not output.endswith('target is busy.'):
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
+      time.sleep(10)
+    else:
+      raise Exception('Command %r failed after retries' % cmd)
+
+  def _CreateUniqueCryptSetupMappedDevice(self):
+    return tempfile.mktemp(prefix='luksmount.', dir='/dev/mapper')
+
+  def _CryptSetupLuksOpen(self, path, cryptsetup_mapped_name, password):
+    cmd = [CRYPTSETUP_BIN, 'open', '--type', 'luks', path, cryptsetup_mapped_name]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT)
+    p.stdin.write(password.encode('utf8'))
+    p.stdin.close()
+    with p.stdout:
+      output = p.stdout.read()
+    if p.wait():
+      lines = output.decode('utf8').strip().split('\n')
+      if len(lines) == 1 and lines[0] == 'No key available with this passphrase.':
+        raise DiskImageHelperAuthenticationError()
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+
 def GetDiskImageHelper():
   if DISK_IMAGE_HELPER_OVERRIDE is not None:
     return DISK_IMAGE_HELPER_OVERRIDE()
+  elif platform.system() == PLATFORM_DARWIN:
+    return DiskImageHelperDarwin()
   else:
-    return DiskImageHelper()
+    return DiskImageHelperLinux()
 
 
 def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACITY,
-                    filesystem='APFS', image_type=None, encrypt=False, encryption_manager=None,
-                    dry_run=False):
+                    encrypt=False, encryption_manager=None, dry_run=False):
   encryption = None
   password = None
   if encrypt:
     password = encryption_manager.CreatePassword(image_path)
-    encryption = 'AES-128'
+    encryption = ENCRYPTION_AES_256
 
   if not dry_run:
+    if platform.system() == PLATFORM_DARWIN:
+      filesystem = FILESYSTEM_APFS
+    else:
+      filesystem = FILESYSTEM_EXT4
     GetDiskImageHelper().CreateImage(
-      image_path, size=size, filesystem=filesystem, image_type=image_type, volume_name=volume_name,
+      image_path, size=size, filesystem=filesystem, volume_name=volume_name,
       encryption=encryption, password=password)
 
     if password is not None:
@@ -897,7 +1157,7 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
 
 def IsLikelyPathToDiskImage(path):
   ext = os.path.splitext(path)[1]
-  if os.path.isfile(path) and ext in ['.dmg', '.sparseimage']:
+  if os.path.isfile(path) and ext in ['.dmg', '.sparseimage', '.img']:
     return True
   if os.path.isdir(path) and ext in ['.sparsebundle']:
     return True
@@ -1562,7 +1822,8 @@ class EncryptionManager(object):
   def GetPassword(self, image_path, image_uuid, try_last_password=False):
     password = self.image_uuid_password_map.get(image_uuid)
     if password is None:
-      password = self._LoadPasswordFromKeychain(image_uuid)
+      if platform.system() == PLATFORM_DARWIN:
+        password = self._LoadPasswordFromKeychain(image_uuid)
       if password is None:
         if try_last_password and self.last_password:
           return self.last_password
@@ -2292,7 +2553,7 @@ class Manifest(object):
 
 
 def ReadManifestFromImageOrPath(path, encryption_manager=None, dry_run=False):
-  if path.endswith('.sparseimage') or path.endswith('.sparsebundle') or path.endswith('.dmg'):
+  if IsLikelyPathToDiskImage(path):
     with ImageAttacher(path, encryption_manager=encryption_manager, readonly=True) as attacher:
       return Manifest.Load(os.path.join(attacher.GetMountPoint(), METADATA_DIR_NAME, MANIFEST_FILENAME))
   elif path.endswith('.pbdata') or path.endswith('.pbdata.bak') or path.endswith('.pbdata.new'):

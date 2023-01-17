@@ -35,7 +35,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_success=True, 
   output_lines = []
   checkpoint_path = None
   for line in output.getvalue().strip().split('\n'):
-    m = re.match('^Created checkpoint at (.+[.]sparseimage)$', line)
+    m = re.match('^Created checkpoint at (.+[.](?:sparseimage|img))$', line)
     if m:
       checkpoint_path = m.group(1)
       continue

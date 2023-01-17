@@ -3,6 +3,7 @@
 import argparse
 import io
 import os
+import platform
 import pty
 import re
 import shutil
@@ -32,9 +33,7 @@ from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
-from .test_util import SetXattr
 from .test_util import TempDir
-from .test_util import Xattr
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import CollapseApfsOperationsInOutput
@@ -45,6 +44,7 @@ from .lib_test_util import HandleGoogleDriveRemoteFiles
 from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetHdiutilCompactOnBatteryAllowed
 from .lib_test_util import SetOmitUidAndGidInPathInfoToString
+from .lib_test_util import SetXattr
 
 from .checkpoint_lib_test_util import DoCreate
 
@@ -120,10 +120,15 @@ class PathInfoTestCase(BaseTestCase):
 
     AssertEquals('>dcs.p... dir1', str(lib.PathInfo.GetItemizedDiff(dir1_path_info, file1_path_info, ignore_paths=True)))
     AssertEquals('.d....... dir1', str(lib.PathInfo.GetItemizedDiff(dir1_path_info, dir1_path_info)))
-    AssertEquals('>dc...... dir1', str(lib.PathInfo.GetItemizedDiff(dir1_path_info, ln1_path_info, ignore_paths=True)))
 
-    AssertEquals('>Lcs.p... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, file1_path_info, ignore_paths=True)))
-    AssertEquals('>Lc...... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
+    if platform.system() == lib.PLATFORM_LINUX:
+      AssertEquals('>dc..p... dir1', str(lib.PathInfo.GetItemizedDiff(dir1_path_info, ln1_path_info, ignore_paths=True)))
+      AssertEquals('>Lcs.p... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, file1_path_info, ignore_paths=True)))
+      AssertEquals('>Lc..p... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
+    else:
+      AssertEquals('>dc...... dir1', str(lib.PathInfo.GetItemizedDiff(dir1_path_info, ln1_path_info, ignore_paths=True)))
+      AssertEquals('>Lcs.p... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, file1_path_info, ignore_paths=True)))
+      AssertEquals('>Lc...... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, dir1_path_info, ignore_paths=True)))
     AssertEquals('.L....... ln1 -> INVALID', str(lib.PathInfo.GetItemizedDiff(ln1_path_info, ln1_path_info)))
 
     AssertEquals('.f.s....x gdrf1.gdoc', str(lib.PathInfo.GetItemizedDiff(gdrf1_path_info, file1_path_info, ignore_paths=True)))
@@ -249,12 +254,13 @@ class ItemizedPathChangeTestCase(BaseTestCase):
 
 class CompactTestCase(BaseTestCase):
   def test(self):
-    with ApplyFakeDiskImageHelperLevel(
-        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-      if should_run:
-        with SetHdiutilCompactOnBatteryAllowed(True):
-          with TempDir() as test_dir:
-            self.RunTest(test_dir)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      with ApplyFakeDiskImageHelperLevel(
+          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+        if should_run:
+          with SetHdiutilCompactOnBatteryAllowed(True):
+            with TempDir() as test_dir:
+              self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')

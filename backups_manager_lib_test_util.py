@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import platform
 import re
 import subprocess
 
@@ -18,7 +19,10 @@ from .test_util import DoBackupsMain
 def CreateConfig(parent_dir, backups_filename_prefix='backups', filter_merge_path=None):
   config_path = os.path.join(parent_dir, '%s.config' % backups_filename_prefix)
   config = backups_manager_lib.BackupsConfig(config_path)
-  config.image_path = os.path.join(parent_dir, '%s.sparsebundle' % backups_filename_prefix)
+  if platform.system() == lib.PLATFORM_LINUX:
+    config.image_path = os.path.join(parent_dir, '%s.img' % backups_filename_prefix)
+  else:
+    config.image_path = os.path.join(parent_dir, '%s.sparsebundle' % backups_filename_prefix)
   config.mount_path = os.path.join(parent_dir, '%s_mount' % backups_filename_prefix)
   config.src_path = CreateDir(parent_dir, '%s_src' % backups_filename_prefix)
   config.checkpoints_dir = CreateDir(parent_dir, '%s_checkpoints' % backups_filename_prefix)
@@ -28,8 +32,7 @@ def CreateConfig(parent_dir, backups_filename_prefix='backups', filter_merge_pat
 
 
 def CreateBackupsBundle(config, create_example_content=True):
-  lib.GetDiskImageHelper().CreateImage(
-    config.image_path, size='10G', filesystem='APFS', image_type='SPARSEBUNDLE', volume_name='Backups')
+  lib.CreateDiskImage(config.image_path, size='1gb', volume_name='Backups')
   with lib.ImageAttacher(config.image_path, config.mount_path, readonly=False,
                          browseable=False) as attacher:
     backups_dir = CreateDir(attacher.GetMountPoint(), backups_manager_lib.BACKUPS_SUBDIR)

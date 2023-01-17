@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ import backups_lib
 __package__ = backups_lib.__package__
 
 from . import checksums_lib
+from . import lib
 from . import lib_test_util
 from . import test_main
 
@@ -31,13 +33,13 @@ from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import RenameFile
 from .test_util import SetMTime
-from .test_util import SetXattr
 from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
+from .lib_test_util import SetXattr
 
 from .checksums_lib_test_util import DoCreate
 from .checksums_lib_test_util import DoDiff
@@ -713,11 +715,12 @@ class RenamePathsTestCase(BaseTestCase):
 
 class ImageFromFolderTestCase(BaseTestCase):
   def test(self):
-    with ApplyFakeDiskImageHelperLevel(
-        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-      if should_run:
-        with TempDir() as test_dir:
-          self.RunTest(test_dir)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      with ApplyFakeDiskImageHelperLevel(
+          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+        if should_run:
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')

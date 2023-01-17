@@ -72,14 +72,6 @@ def SetMTime(path, mtime=1500000000):
   os.utime(path, (mtime, mtime), follow_symlinks=False)
 
 
-def Xattr(path):
-  return xattr.xattr(path, options=xattr.XATTR_NOFOLLOW)
-
-
-def SetXattr(path, key, value):
-  xattr.setxattr(path, key, value, options=xattr.XATTR_NOFOLLOW)
-
-
 def CreateDir(parent_dir, child_dir, mtime=1500000000):
   parent_mtime = os.lstat(parent_dir).st_mtime
   path = os.path.join(parent_dir, child_dir)
@@ -188,3 +180,12 @@ class BaseTestCase(unittest.TestCase):
     run_time = time.time() - self.start_time
     if VERBOSE_TESTS:
       print('ran in %.3fs: ' % run_time, end='')
+
+
+@contextlib.contextmanager
+def OverrideUmask(umask_value):
+  old_umask_value = os.umask(umask_value)
+  try:
+    yield old_umask_value
+  finally:
+    os.umask(old_umask_value)

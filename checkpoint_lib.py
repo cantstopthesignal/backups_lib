@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import tempfile
@@ -27,7 +28,7 @@ STAGED_BACKUP_DEFAULT_FILTERS = [lib.FilterRuleDirMerge(STAGED_BACKUP_DIR_MERGE_
 
 
 class CheckpointPathParts(object):
-  PATTERN = re.compile('^((?:(?!-manifest).)*)(-manifest)?([.]sparseimage)$')
+  PATTERN = re.compile('^((?:(?!-manifest).)*)(-manifest)?([.](?:sparseimage|img|luks.img))$')
 
   @staticmethod
   def IsMatchingPath(path):
@@ -75,13 +76,23 @@ class Checkpoint(object):
     path = os.path.normpath(path)
     base_path = os.path.dirname(path)
     name = os.path.basename(path)
-    if not name.endswith('.sparseimage'):
-      raise Exception('Expected a sparseimage file')
-    name = name[:-len('.sparseimage')]
+    encrypt = False
+    if platform.system() == lib.PLATFORM_DARWIN:
+      if not name.endswith('.sparseimage'):
+        raise Exception('Expected a sparseimage file')
+      name = name[:-len('.sparseimage')]
+    else:
+      if not name.endswith('.img'):
+        raise Exception('Expected an img file')
+      if name.endswith('.luks.img'):
+        name = name[:-len('.luks.img')]
+        encrypt = True
+      else:
+        name = name[:-len('.img')]
     if not os.path.isfile(path):
       raise Exception('Expected %s to exist' % path)
     return Checkpoint(base_path, name, Checkpoint.STATE_DONE, encryption_manager=encryption_manager,
-                      readonly=readonly, dry_run=dry_run)
+                      encrypt=encrypt, readonly=readonly, dry_run=dry_run)
 
   def __init__(self, base_path, name, state, encryption_manager=None, manifest_only=False,
                encrypt=False, readonly=True, dry_run=False):
@@ -108,7 +119,13 @@ class Checkpoint(object):
     return self.name
 
   def GetImagePath(self):
-    return os.path.join(self.base_path, self.name + '.sparseimage')
+    if platform.system() == lib.PLATFORM_LINUX:
+      if self.encrypt:
+        return os.path.join(self.base_path, self.name + '.luks.img')
+      else:
+        return os.path.join(self.base_path, self.name + '.img')
+    else:
+      return os.path.join(self.base_path, self.name + '.sparseimage')
 
   def GetMountPoint(self):
     if self.attacher is not None:

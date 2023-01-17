@@ -32,13 +32,12 @@ from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
-from .test_util import SetXattr
 from .test_util import TempDir
-from .test_util import Xattr
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import DoVerifyManifest
 from .lib_test_util import GetManifestItemized
+from .lib_test_util import SetXattr
 
 from .backups_manager_lib_test_util import CreateConfig
 from .backups_manager_lib_test_util import CreateBackupsBundle
@@ -147,7 +146,7 @@ class OneoffUpdateIgnoredXattrsTestCase(BaseTestCase):
 
       SetXattr(fileX, 'com.apple.quarantine', b'quarantine2')
       SetXattr(file3, 'com.apple.quarantine', b'quarantine3')
-      del Xattr(fileT)['com.apple.quarantine']
+      del lib.Xattr(fileT)['com.apple.quarantine']
       SetXattr(file4, 'example', b'example_value4')
 
       checkpoint_path2 = DoCreateBackup(
