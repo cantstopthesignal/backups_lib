@@ -1082,6 +1082,81 @@ def GetDiskImageHelper():
     return DiskImageHelperLinux()
 
 
+class AppleDoubleParser:
+  TYPE_DATA_FORK = 1
+  TYPE_RESOURCE_FORK = 2
+  TYPE_REAL_NAME = 3
+  TYPE_COMMENT = 4
+  TYPE_ICON_BW = 5
+  TYPE_ICON_COLOR = 6
+  TYPE_FILE_DATES_INFO = 8
+  TYPE_FINDER_INFO = 9
+  TYPE_MACINTOSH_FILE_INFO = 10
+  TYPE_PRODOS_FILE_INFO = 11
+  TYPE_MSDOS_FILE_INFO = 12
+  TYPE_AFP_SHORT_NAME = 13
+  TYPE_AFP_FILE_INFO = 14
+  TYPE_AFP_DIRECTORY_ID = 15
+
+  def __init__(self, path):
+    self.path = path
+    self.xattr_map = {}
+
+  def Parse(self):
+    with open(self.path, 'rb') as in_f:
+      content = in_f.read()
+    magic = int.from_bytes(content[:4], byteorder='big')
+    if magic != 333319:
+      raise IOError('Magic does not match apple double file format')
+    version = int.from_bytes(content[4:8], byteorder='big')
+    reserved = content[8:24]
+    num_entries = int.from_bytes(content[24:26], byteorder='big')
+    offset = 26
+    for i in range(num_entries):
+      offset = self._ParseEntry(content, offset)
+    return self.xattr_map
+
+  def _ParseEntry(self, content, offset):
+    entry_type = int.from_bytes(content[offset:offset+4], byteorder='big')
+    entry_offset = int.from_bytes(content[offset+4:offset+8], byteorder='big')
+    entry_len = int.from_bytes(content[offset+8:offset+12], byteorder='big')
+    entry_data = content[entry_offset:entry_offset+entry_len]
+
+    if entry_type == self.TYPE_FINDER_INFO and entry_len > 32:
+      assert entry_len >= 32
+      finder_info = entry_data[:32]
+      for i in finder_info:
+        if i != 0:
+          self.xattr_map['com.apple.FinderInfo'] = finder_info
+          break
+      if entry_len > 32:
+        attr_content = entry_data[34:]
+        assert(attr_content[:4] == b'ATTR')
+        debug_tag = attr_content[4:8]
+        attr_total_size = int.from_bytes(attr_content[8:12], byteorder='big')
+        attr_data_start = int.from_bytes(attr_content[12:16], byteorder='big')
+        attr_data_len = int.from_bytes(attr_content[16:20], byteorder='big')
+        attr_count = int.from_bytes(attr_content[34:36], byteorder='big')
+        attr_offset = entry_offset + 34 + 36
+        for i in range(attr_count):
+          attr_offset = self._ParseAttr(content, attr_offset)
+    return offset + 12
+
+  def _ParseAttr(self, content, offset):
+    attr_offset = int.from_bytes(content[offset:offset+4], byteorder='big')
+    attr_len = int.from_bytes(content[offset+4:offset+8], byteorder='big')
+    attr_flags = int.from_bytes(content[offset+8:offset+10], byteorder='big')
+    attr_name_len = int.from_bytes(content[offset+10:offset+11], byteorder='big')
+    attr_name = content[offset+11:offset+11+attr_name_len-1]
+    attr_data = content[attr_offset:attr_offset+attr_len]
+    self.xattr_map[attr_name] = attr_data
+    offset += 11 + attr_name_len
+    rem = offset % 4
+    if rem:
+      offset += 4 - rem
+    return offset
+
+
 def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACITY,
                     encrypt=False, encryption_manager=None, dry_run=False):
   encryption = None
