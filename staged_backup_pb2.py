@@ -3,6 +3,7 @@
 # source: staged_backup.proto
 """Generated protocol buffer code."""
 from google.protobuf import descriptor as _descriptor
+from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import message as _message
 from google.protobuf import reflection as _reflection
 from google.protobuf import symbol_database as _symbol_database
@@ -13,196 +14,13 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor.FileDescriptor(
-  name='staged_backup.proto',
-  package='StagedBackup',
-  syntax='proto3',
-  serialized_options=None,
-  create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x13staged_backup.proto\x12\x0cStagedBackup\"\xb4\x02\n\rPathInfoProto\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x37\n\tpath_type\x18\x02 \x01(\x0e\x32$.StagedBackup.PathInfoProto.PathType\x12\x0c\n\x04mode\x18\x03 \x01(\x04\x12\r\n\x05mtime\x18\x04 \x01(\x03\x12\x0c\n\x04size\x18\x05 \x01(\x04\x12\x0b\n\x03uid\x18\x06 \x01(\r\x12\x0b\n\x03gid\x18\x07 \x01(\r\x12\x11\n\tlink_dest\x18\x08 \x01(\t\x12\x0e\n\x06sha256\x18\t \x01(\x0c\x12\x12\n\nxattr_hash\x18\n \x01(\x0c\x12\x12\n\nxattr_keys\x18\x0b \x03(\t\x12 \n\x18google_drive_remote_file\x18\x0c \x01(\x08\"*\n\x08PathType\x12\x07\n\x03\x44IR\x10\x00\x12\x08\n\x04\x46ILE\x10\x01\x12\x0b\n\x07SYMLINK\x10\x02\"@\n\rManifestProto\x12/\n\npath_infos\x18\x01 \x03(\x0b\x32\x1b.StagedBackup.PathInfoProtob\x06proto3'
-)
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13staged_backup.proto\x12\x0cStagedBackup\"\xb4\x02\n\rPathInfoProto\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x37\n\tpath_type\x18\x02 \x01(\x0e\x32$.StagedBackup.PathInfoProto.PathType\x12\x0c\n\x04mode\x18\x03 \x01(\x04\x12\r\n\x05mtime\x18\x04 \x01(\x03\x12\x0c\n\x04size\x18\x05 \x01(\x04\x12\x0b\n\x03uid\x18\x06 \x01(\r\x12\x0b\n\x03gid\x18\x07 \x01(\r\x12\x11\n\tlink_dest\x18\x08 \x01(\t\x12\x0e\n\x06sha256\x18\t \x01(\x0c\x12\x12\n\nxattr_hash\x18\n \x01(\x0c\x12\x12\n\nxattr_keys\x18\x0b \x03(\t\x12 \n\x18google_drive_remote_file\x18\x0c \x01(\x08\"*\n\x08PathType\x12\x07\n\x03\x44IR\x10\x00\x12\x08\n\x04\x46ILE\x10\x01\x12\x0b\n\x07SYMLINK\x10\x02\"@\n\rManifestProto\x12/\n\npath_infos\x18\x01 \x03(\x0b\x32\x1b.StagedBackup.PathInfoProtob\x06proto3')
 
 
 
-_PATHINFOPROTO_PATHTYPE = _descriptor.EnumDescriptor(
-  name='PathType',
-  full_name='StagedBackup.PathInfoProto.PathType',
-  filename=None,
-  file=DESCRIPTOR,
-  create_key=_descriptor._internal_create_key,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='DIR', index=0, number=0,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='FILE', index=1, number=1,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='SYMLINK', index=2, number=2,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-  ],
-  containing_type=None,
-  serialized_options=None,
-  serialized_start=304,
-  serialized_end=346,
-)
-_sym_db.RegisterEnumDescriptor(_PATHINFOPROTO_PATHTYPE)
-
-
-_PATHINFOPROTO = _descriptor.Descriptor(
-  name='PathInfoProto',
-  full_name='StagedBackup.PathInfoProto',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='path', full_name='StagedBackup.PathInfoProto.path', index=0,
-      number=1, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"".decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='path_type', full_name='StagedBackup.PathInfoProto.path_type', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='mode', full_name='StagedBackup.PathInfoProto.mode', index=2,
-      number=3, type=4, cpp_type=4, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='mtime', full_name='StagedBackup.PathInfoProto.mtime', index=3,
-      number=4, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='size', full_name='StagedBackup.PathInfoProto.size', index=4,
-      number=5, type=4, cpp_type=4, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='uid', full_name='StagedBackup.PathInfoProto.uid', index=5,
-      number=6, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='gid', full_name='StagedBackup.PathInfoProto.gid', index=6,
-      number=7, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='link_dest', full_name='StagedBackup.PathInfoProto.link_dest', index=7,
-      number=8, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"".decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='sha256', full_name='StagedBackup.PathInfoProto.sha256', index=8,
-      number=9, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='xattr_hash', full_name='StagedBackup.PathInfoProto.xattr_hash', index=9,
-      number=10, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='xattr_keys', full_name='StagedBackup.PathInfoProto.xattr_keys', index=10,
-      number=11, type=9, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='google_drive_remote_file', full_name='StagedBackup.PathInfoProto.google_drive_remote_file', index=11,
-      number=12, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-    _PATHINFOPROTO_PATHTYPE,
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=38,
-  serialized_end=346,
-)
-
-
-_MANIFESTPROTO = _descriptor.Descriptor(
-  name='ManifestProto',
-  full_name='StagedBackup.ManifestProto',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='path_infos', full_name='StagedBackup.ManifestProto.path_infos', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=348,
-  serialized_end=412,
-)
-
-_PATHINFOPROTO.fields_by_name['path_type'].enum_type = _PATHINFOPROTO_PATHTYPE
-_PATHINFOPROTO_PATHTYPE.containing_type = _PATHINFOPROTO
-_MANIFESTPROTO.fields_by_name['path_infos'].message_type = _PATHINFOPROTO
-DESCRIPTOR.message_types_by_name['PathInfoProto'] = _PATHINFOPROTO
-DESCRIPTOR.message_types_by_name['ManifestProto'] = _MANIFESTPROTO
-_sym_db.RegisterFileDescriptor(DESCRIPTOR)
-
+_PATHINFOPROTO = DESCRIPTOR.message_types_by_name['PathInfoProto']
+_MANIFESTPROTO = DESCRIPTOR.message_types_by_name['ManifestProto']
+_PATHINFOPROTO_PATHTYPE = _PATHINFOPROTO.enum_types_by_name['PathType']
 PathInfoProto = _reflection.GeneratedProtocolMessageType('PathInfoProto', (_message.Message,), {
   'DESCRIPTOR' : _PATHINFOPROTO,
   '__module__' : 'staged_backup_pb2'
@@ -217,5 +35,13 @@ ManifestProto = _reflection.GeneratedProtocolMessageType('ManifestProto', (_mess
   })
 _sym_db.RegisterMessage(ManifestProto)
 
+if _descriptor._USE_C_DESCRIPTORS == False:
 
+  DESCRIPTOR._options = None
+  _PATHINFOPROTO._serialized_start=38
+  _PATHINFOPROTO._serialized_end=346
+  _PATHINFOPROTO_PATHTYPE._serialized_start=304
+  _PATHINFOPROTO_PATHTYPE._serialized_end=346
+  _MANIFESTPROTO._serialized_start=348
+  _MANIFESTPROTO._serialized_end=412
 # @@protoc_insertion_point(module_scope)
