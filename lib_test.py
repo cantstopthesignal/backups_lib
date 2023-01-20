@@ -254,13 +254,12 @@ class ItemizedPathChangeTestCase(BaseTestCase):
 
 class CompactTestCase(BaseTestCase):
   def test(self):
-    if platform.system() == lib.PLATFORM_DARWIN:
-      with ApplyFakeDiskImageHelperLevel(
-          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-        if should_run:
-          with SetHdiutilCompactOnBatteryAllowed(True):
-            with TempDir() as test_dir:
-              self.RunTest(test_dir)
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
@@ -278,85 +277,292 @@ class CompactTestCase(BaseTestCase):
     finally:
       checkpoint1.Close()
 
-    AssertEquals(35655680, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertEquals(35655680, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
-    DoCompact(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
-              expected_output=['Image size 34mb -> 34mb'])
-    DoCompact(checkpoint1.GetImagePath(), defragment=False,
-              expected_output=['Starting to compact…',
-                               'Reclaiming free space…',
-                               'Finishing compaction…',
-                               'Reclaimed 4 MB out of 1023.6 GB possible.',
-                               'Image size 34mb -> 30mb'])
-    AssertEquals(31461376, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+      DoCompact(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+                expected_output=['Image size 34mb -> 34mb'])
+      DoCompact(checkpoint1.GetImagePath(), defragment=False,
+                expected_output=['Starting to compact…',
+                                 'Reclaiming free space…',
+                                 'Finishing compaction…',
+                                 'Reclaimed 4 MB out of 1023.6 GB possible.',
+                                 'Image size 34mb -> 30mb'])
+      AssertEquals(31461376, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+    else:
+      AssertEquals(1073741824, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
-    DoCompact(checkpoint1.GetImagePath(), dry_run=True,
-              expected_output=[
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
-                % checkpoint1.GetImagePath(),
-                'Image size 30mb -> 30mb'])
-    DoCompact(checkpoint1.GetImagePath(),
-              defragment_iterations=1,
-              expected_output=[
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
-                % checkpoint1.GetImagePath(),
-                '<... snip APFS operation ...>',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 12 MB out of 1.5 GB possible.',
-                'Restoring apfs container size to 1023.8gb...',
-                '<... snip APFS operation ...>',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 0 bytes out of 1023.6 GB possible.',
-                'Image size 30mb -> 20mb'])
-    AssertEquals(20975616, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+      DoCompact(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+                expected_output=['Image size 1gb -> 1gb'])
+      DoCompact(checkpoint1.GetImagePath(), defragment=False,
+                expected_output=[
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/65536 files (0.0% non-contiguous), 12957/262144 blocks',
+                  re.compile('^resize2fs .*$'),
+                  'Resizing the filesystem on %s to 12982 (4k) blocks.' % checkpoint1.GetImagePath(),
+                  'The filesystem on %s is now 12982 (4k) blocks long.' % checkpoint1.GetImagePath(),
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/8192 files (0.0% non-contiguous), 8843/12982 blocks',
+                  'Image size 1gb -> 50.7mb'])
+      AssertEquals(53174272, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoCompact(checkpoint1.GetImagePath(), dry_run=True,
+                expected_output=[
+                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
+                  % checkpoint1.GetImagePath(),
+                  'Image size 30mb -> 30mb'])
+      DoCompact(checkpoint1.GetImagePath(),
+                defragment_iterations=1,
+                expected_output=[
+                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
+                  % checkpoint1.GetImagePath(),
+                  '<... snip APFS operation ...>',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  'Reclaimed 12 MB out of 1.5 GB possible.',
+                  'Restoring apfs container size to 1023.8gb...',
+                  '<... snip APFS operation ...>',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  'Reclaimed 0 bytes out of 1023.6 GB possible.',
+                  'Image size 30mb -> 20mb'])
+      AssertEquals(20975616, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+    else:
+      DoCompact(checkpoint1.GetImagePath(), dry_run=True,
+                expected_output=[
+                  'Image size 50.7mb -> 50.7mb'])
+      DoCompact(checkpoint1.GetImagePath(),
+                defragment_iterations=1,
+                expected_output=[
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/8192 files (0.0% non-contiguous), 8843/12982 blocks',
+                  re.compile('^resize2fs .*$'),
+                  'Resizing the filesystem on %s to 8851 (4k) blocks.' % checkpoint1.GetImagePath(),
+                  'The filesystem on %s is now 8851 (4k) blocks long.' % checkpoint1.GetImagePath(),
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/8192 files (7.7% non-contiguous), 8844/8851 blocks',
+                  'Image size 50.7mb -> 34.6mb'])
+      AssertEquals(36253696, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
     image_path2 = os.path.join(test_dir, 'image2.sparsebundle')
     lib.CreateDiskImage(image_path2, volume_name='2')
-    AssertEquals('29.4mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertEquals('29.4mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
+    else:
+      AssertEquals('1gb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
 
     with lib.ImageAttacher(image_path2, readonly=False, browseable=False) as attacher:
       file2 = CreateFile(attacher.GetMountPoint(), 'f2', contents='1' * (1024 * 1024 * 200))
     with lib.ImageAttacher(image_path2, readonly=False, browseable=False) as attacher:
       DeleteFileOrDir(os.path.join(attacher.GetMountPoint(), 'f2'))
-    AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '229.4mb', '229.6mb')
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '229.4mb', '229.6mb')
+    else:
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '1gb', '1gb')
 
-    DoCompact(image_path2, defragment=False,
-              expected_output=['Starting to compact…',
-                               'Reclaiming free space…',
-                               'Finishing compaction…',
-                               'Reclaimed 4.0 MB out of 1023.4 GB possible.',
-                               re.compile('^Image size 229[.]5mb -> 225[.]5mb$')])
-    AssertEquals('225.5mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoCompact(image_path2, defragment=False,
+                expected_output=['Starting to compact…',
+                                 'Reclaiming free space…',
+                                 'Finishing compaction…',
+                                 'Reclaimed 4.0 MB out of 1023.4 GB possible.',
+                                 re.compile('^Image size 229[.]5mb -> 225[.]5mb$')])
+      AssertEquals('225.5mb', lib.FileSizeToString(lib.GetPathTreeSize(image_path2)))
 
-    DoCompact(image_path2, defragment_iterations=5, dry_run=True,
-              expected_output=[
-                'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
-                'Image size 225.5mb -> 225.5mb'])
-    DoCompact(image_path2, defragment_iterations=5,
-              expected_output=[
-                'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
-                '<... snip APFS operation ...>',
-                re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
-                '<... snip APFS operation ...>',
-                'Iteration 3, new apfs min size 1gb...',
-                '<... snip APFS operation ...>',
-                'Iteration 4, new apfs min size 1gb has low savings',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 205.9 MB out of 1.0 GB possible.',
-                'Restoring apfs container size to 1023.8gb...',
-                '<... snip APFS operation ...>',
-                'Starting to compact…',
-                'Reclaiming free space…',
-                'Finishing compaction…',
-                'Reclaimed 0 bytes out of 1023.6 GB possible.',
-                re.compile('^Image size 225[.]5mb -> (42[.][67]|34[.]8)mb$')])
-    AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '34.7mb', '42.7mb')
+      DoCompact(image_path2, defragment_iterations=5, dry_run=True,
+                expected_output=[
+                  'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
+                  'Image size 225.5mb -> 225.5mb'])
+      DoCompact(image_path2, defragment_iterations=5,
+                expected_output=[
+                  'Defragmenting %s; apfs min size 1.9gb, current size 1023.8gb...' % image_path2,
+                  '<... snip APFS operation ...>',
+                  re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                  '<... snip APFS operation ...>',
+                  'Iteration 3, new apfs min size 1gb...',
+                  '<... snip APFS operation ...>',
+                  'Iteration 4, new apfs min size 1gb has low savings',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  'Reclaimed 205.9 MB out of 1.0 GB possible.',
+                  'Restoring apfs container size to 1023.8gb...',
+                  '<... snip APFS operation ...>',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  'Reclaimed 0 bytes out of 1023.6 GB possible.',
+                  re.compile('^Image size 225[.]5mb -> (42[.][67]|34[.]8)mb$')])
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '34.7mb', '42.7mb')
+    else:
+      DoCompact(image_path2, dry_run=True,
+                expected_output=['Image size 1gb -> 1gb'])
+      DoCompact(image_path2,
+                expected_output=[
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '2: 11/65536 files (0.0% non-contiguous), 12955/262144 blocks',
+                  re.compile('^resize2fs .*$'),
+                  'Resizing the filesystem on %s to 12980 (4k) blocks.' % image_path2,
+                  'The filesystem on %s is now 12980 (4k) blocks long.' % image_path2,
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '2: 11/8192 files (0.0% non-contiguous), 8841/12980 blocks',
+                  'Image size 1gb -> 50.7mb'])
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '50.7mb', '50.8mb')
+
+
+class CompactWithEncryptionTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+
+    image_ext = '.sparseimage'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.luks.img'
+
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: ',
+                          'Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc', 'abc', 'abc']):
+      checkpoint1, manifest1 = DoCreate(
+        src_root, checkpoints_dir, '1', encrypt=True,
+        expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+      checkpoint1.Close()
+
+    with HandleGetPass(
+        expected_prompts=['Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc']):
+      checkpoint1 = checkpoint_lib.Checkpoint.Open(
+        checkpoint1.GetImagePath(), readonly=False, encryption_manager=lib.EncryptionManager(output=None))
+      try:
+        shutil.rmtree(checkpoint1.GetContentRootPath())
+      finally:
+        checkpoint1.Close()
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertEquals(35778048, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+
+      DoCompact(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+                expected_output=['Image size 34.1mb -> 34.1mb'])
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoCompact(checkpoint1.GetImagePath(), defragment=False,
+                  expected_output=['Starting to compact…',
+                                   'Reclaiming free space…',
+                                   'Finishing compaction…',
+                                   'Reclaimed 4 MB out of 1023.6 GB possible.',
+                                   'Image size 34.1mb -> 30.1mb'])
+      AssertEquals(31583744, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+    else:
+      AssertEquals(1073741824, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoCompact(checkpoint1.GetImagePath(), dry_run=True,
+                  expected_output=['Image size 1gb -> 1gb'])
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoCompact(checkpoint1.GetImagePath(),
+                  expected_output=[
+                    re.compile('^e2fsck .*$'),
+                    'Pass 1: Checking inodes, blocks, and sizes',
+                    'Pass 2: Checking directory structure',
+                    'Pass 3: Checking directory connectivity',
+                    'Pass 4: Checking reference counts',
+                    'Pass 5: Checking group summary information',
+                    '1: 13/64512 files (0.0% non-contiguous), 8787/258048 blocks',
+                    re.compile('^resize2fs .*$'),
+                    re.compile('^Resizing the filesystem on /dev/mapper/[^ ]+ to 8800 [(]4k[)] blocks[.]$'),
+                    re.compile('^The filesystem on /dev/mapper/[^ ]+ is now 8800 [(]4k[)] blocks long[.]$'),
+                    re.compile('^e2fsck .*$'),
+                    'Pass 1: Checking inodes, blocks, and sizes',
+                    'Pass 2: Checking directory structure',
+                    'Pass 3: Checking directory connectivity',
+                    'Pass 4: Checking reference counts',
+                    'Pass 5: Checking group summary information',
+                    '1: 13/8064 files (0.0% non-contiguous), 4737/8800 blocks',
+                    'Image size 1gb -> 50.4mb'])
+      AssertEquals(52822016, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoCompact(checkpoint1.GetImagePath(), dry_run=True,
+                  expected_output=[
+                    'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...'
+                    % checkpoint1.GetImagePath(),
+                    'Image size 30.1mb -> 30.1mb'])
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoCompact(checkpoint1.GetImagePath(),
+                  defragment_iterations=5,
+                  expected_output=[
+                    'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint1.GetImagePath(),
+                    '<... snip APFS operation ...>',
+                    re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                    '<... snip APFS operation ...>',
+                    'Iteration 3, new apfs min size 1gb...',
+                    '<... snip APFS operation ...>',
+                    'Iteration 4, new apfs min size 1gb has low savings',
+                    'Starting to compact…',
+                    'Reclaiming free space…',
+                    'Finishing compaction…',
+                    'Reclaimed 21 MB out of 1.0 GB possible.',
+                    'Restoring apfs container size to 1023.8gb...',
+                    '<... snip APFS operation ...>',
+                    'Starting to compact…',
+                    'Reclaiming free space…',
+                    'Finishing compaction…',
+                    'Reclaimed 0 bytes out of 1023.6 GB possible.',
+                    re.compile('^Image size 30[.]1mb -> 14[.]1mb$')])
+      AssertEquals(14806528, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
 
 
 class DiffManifestsTestCase(BaseTestCase):

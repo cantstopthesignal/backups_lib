@@ -819,76 +819,17 @@ class ImageFromFolderCreator(object):
 
     old_stat = os.lstat(source_path)
 
-    def RunCommandPrintOnFailure(cmd):
-      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True)
-      with p.stdout:
-        output = p.stdout.read().strip()
-      if not p.wait():
-        return
-      raise Exception('Unexpected output from %r: %r' % (cmd, output))
-
-    new_filesystem_size = None
-    with lib.ImageAttacher(
-        source_path, readonly=False, mount=False,
-        encryption_manager=self.encryption_manager) as attacher:
-      RunCommandPrintOnFailure(['e2fsck', '-f', '-y', attacher.GetDevice()])
-      RunCommandPrintOnFailure(['resize2fs', '-M', attacher.GetDevice()])
-      block_count = None
-      first_block = None
-      block_size = None
-      with open('/dev/null', 'w') as devnull:
-        for line in subprocess.check_output(
-            ['dumpe2fs', '-h', attacher.GetDevice()], text=True, stderr=subprocess.STDOUT).split('\n'):
-          line_pieces = line.split()
-          if len(line_pieces) != 3:
-            continue
-          if line_pieces[:2] == ['Block', 'count:']:
-            block_count = int(line_pieces[2])
-          elif line_pieces[:2] == ['First', 'block:']:
-            first_block = int(line_pieces[2])
-          elif line_pieces[:2] == ['Block', 'size:']:
-            block_size = int(line_pieces[2])
-      assert first_block == 0
-      assert block_size == 4096
-      assert block_count > 0
-      new_filesystem_size = block_count * block_size
-
-    if self.encrypt:
-      new_image_size = self._GetLuksPayloadOffset(source_path) + new_filesystem_size
-      subprocess.check_call(['truncate', '-s', '%d' % new_image_size, source_path])
-
-    new_stat = os.lstat(source_path)
-    if not self.encrypt:
-      assert new_filesystem_size == new_stat.st_size
-
-    if old_stat.st_size != new_stat.st_size:
-      print('Reduced image size from %s to %s'
-            % (lib.FileSizeToString(old_stat.st_size), lib.FileSizeToString(new_stat.st_size)),
-            file=self.output)
+    compactor = lib.ImageCompactor(
+      source_path, output=self.output, dry_run=False, verbose=self.verbose,
+      encryption_manager=self.encryption_manager)
+    if not compactor.Compact():
+      raise Exception('Failed to compact image %r' % source_path)
 
     shutil.copyfile(source_path, output_path)
-
-    with lib.ImageAttacher(
-        output_path, readonly=True, mount=False,
-        encryption_manager=self.encryption_manager) as attacher:
-      RunCommandPrintOnFailure(['e2fsck', '-f', '-n', attacher.GetDevice()])
 
     mode = os.stat(source_path).st_mode
     ro_mask = 0o777 ^ (stat.S_IWRITE | stat.S_IWGRP | stat.S_IWOTH)
     os.chmod(output_path, mode & ro_mask)
-
-  def _GetLuksPayloadOffset(self, image_path):
-    output = subprocess.check_output(['cryptsetup', 'luksDump', image_path], text=True)
-    lines = output.split('\n')
-    for i in range(len(lines)):
-      if lines[i] == 'Data segments:':
-        assert lines[i+1] == '  0: crypt'
-        m = re.match('^\s*offset: ([0-9]+) \\[bytes\\]$', lines[i+2])
-        assert m
-        assert lines[i+3] == '\tlength: (whole device)'
-        return int(m.group(1))
-    raise Exception('Could not find the luks payload offset for %r' % image_path)
 
 
 def DoCreate(args, output):

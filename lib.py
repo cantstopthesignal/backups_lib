@@ -1185,32 +1185,6 @@ def CreateDiskImage(image_path, volume_name=None, size=DISK_IMAGE_DEFAULT_CAPACI
       encryption_manager.SavePassword(password, image_uuid)
 
 
-def CompactImage(image_path, output, encryption_manager=None, encrypted=None, image_uuid=None,
-                 dry_run=False):
-  if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
-
-  cmd = ['hdiutil', 'compact', image_path]
-  if encrypted:
-    cmd.append('-stdinpass')
-  if HDIUTIL_COMPACT_ON_BATTERY_ALLOWED:
-    cmd.append('-batteryallowed')
-
-  if not dry_run:
-    if encrypted:
-      password = encryption_manager.GetPassword(
-        image_path, image_uuid, try_last_password=False)
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, text=True)
-    if encrypted:
-      p.stdin.write(password)
-    p.stdin.close()
-    with p.stdout:
-      output.write(p.stdout.read())
-    if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
-
-
 def ResizeImage(image_path, block_count, output, encryption_manager=None, encrypted=None,
                 image_uuid=None, dry_run=False):
   if encrypted is None or image_uuid is None:
@@ -1375,34 +1349,6 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
             os.unlink(band_path)
 
 
-def CompactImageWithResize(image_path, output, encryption_manager=None, encrypted=None,
-                           image_uuid=None, dry_run=False):
-  if encrypted is None or image_uuid is None:
-    (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
-
-  (current_block_count, min_block_count) = GetDiskImageLimits(
-    image_path, encryption_manager=encryption_manager, encrypted=encrypted, image_uuid=image_uuid)
-
-  print('Resizing image to minimum size: %d -> %d blocks...' % (
-    current_block_count, min_block_count), file=output)
-  ResizeImage(image_path, block_count=min_block_count, output=output,
-              encryption_manager=encryption_manager, encrypted=encrypted,
-              image_uuid=image_uuid, dry_run=dry_run)
-
-  if os.path.normpath(image_path).endswith('.sparsebundle'):
-    CleanFreeSparsebundleBands(
-      image_path, output=output, encryption_manager=encryption_manager, encrypted=encrypted,
-      image_uuid=image_uuid, dry_run=dry_run)
-
-  print('Restoring image size to %d blocks...' % current_block_count, file=output)
-  ResizeImage(image_path, block_count=current_block_count, output=output,
-              encryption_manager=encryption_manager, encrypted=encrypted,
-              image_uuid=image_uuid, dry_run=dry_run)
-
-  CompactImage(image_path, output=output, encryption_manager=encryption_manager, encrypted=encrypted,
-               image_uuid=image_uuid, dry_run=dry_run)
-
-
 def StripUtf8BidiCommandChars(s):
   return s.replace('\u2068', '').replace('\u2069', '')
 
@@ -1488,61 +1434,6 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
   current_blocks = int(current_blocks)
 
   return (current_blocks, min_blocks)
-
-
-def CompactAndDefragmentImage(
-    image_path, output, defragment=False, defragment_iterations=DEFAULT_DEFRAGMENT_ITERATIONS,
-    encryption_manager=None, dry_run=False):
-  (encrypted, image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(image_path)
-
-  if not defragment:
-    CompactImage(image_path, output=output, encryption_manager=encryption_manager,
-                 encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
-    return
-
-  old_apfs_container_size = None
-  with ImageAttacher(image_path, readonly=dry_run, mount=False,
-                     encryption_manager=encryption_manager) as attacher:
-    apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
-    if apfs_device is None:
-      raise Exception('No apfs device found for disk image')
-    old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
-
-    print('Defragmenting %s; apfs min size %s, current size %s...' % (
-      image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size)), file=output)
-    if not dry_run:
-      for i in range(defragment_iterations):
-        if i:
-          _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
-          if new_min_bytes >= min_bytes * 0.95:
-            print('Iteration %d, new apfs min size %s has low savings' % (
-              i+1, FileSizeToString(new_min_bytes)), file=output)
-            break
-          print('Iteration %d, new apfs min size %s...' % (
-            i+1, FileSizeToString(new_min_bytes)), file=output)
-          min_bytes = new_min_bytes
-        ResizeApfsContainer(apfs_device, min_bytes, output=output)
-
-  if DEFRAGMENT_WITH_COMPACT_WITH_RESIZE:
-    CompactImageWithResize(image_path, output=output, encryption_manager=encryption_manager,
-                           encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
-  else:
-    CompactImage(image_path, output=output, encryption_manager=encryption_manager,
-                 encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
-
-  if not dry_run:
-    print('Restoring apfs container size to %s...' % (
-      FileSizeToString(old_apfs_container_size)), file=output)
-    with ImageAttacher(image_path, readonly=dry_run, mount=False,
-                       encryption_manager=encryption_manager) as attacher:
-      apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), output)
-      if apfs_device is None:
-        raise Exception('No apfs device found for disk image, cannot restore to %d bytes'
-                        % old_apfs_container_size)
-      ResizeApfsContainer(apfs_device, old_apfs_container_size, output=output)
-
-  CompactImage(image_path, output=output, encryption_manager=encryption_manager,
-               encrypted=encrypted, image_uuid=image_uuid, dry_run=dry_run)
 
 
 def DecodeRsyncEncodedString(s):
@@ -2658,17 +2549,177 @@ class ImageCompactor(object):
     self.dry_run = dry_run
     self.verbose = verbose
     self.encryption_manager = encryption_manager
+    self.encrypted = None
+    self.image_uuid = None
 
   def Compact(self):
     starting_size = GetPathTreeSize(self.image_path)
-    CompactAndDefragmentImage(
-      self.image_path, output=self.output, defragment=self.defragment,
-      defragment_iterations=self.defragment_iterations, dry_run=self.dry_run,
-      encryption_manager=self.encryption_manager)
+    (self.encrypted, self.image_uuid) = GetDiskImageHelper().GetImageEncryptionDetails(self.image_path)
+
+    if platform.system() == PLATFORM_DARWIN:
+      self._CompactAndDefragmentImageDarwin()
+    else:
+      self._CompactImageLinux()
     ending_size = GetPathTreeSize(self.image_path)
     print("Image size %s -> %s" % (
       FileSizeToString(starting_size), FileSizeToString(ending_size)), file=self.output)
     return True
+
+  def _CompactAndDefragmentImageDarwin(self):
+    if not self.defragment:
+      self._CompactImageDarwin()
+      return
+
+    old_apfs_container_size = None
+    with ImageAttacher(self.image_path, readonly=self.dry_run, mount=False,
+                       encryption_manager=self.encryption_manager) as attacher:
+      apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), self.output)
+      if apfs_device is None:
+        raise Exception('No apfs device found for disk image')
+      old_apfs_container_size, min_bytes = GetApfsDeviceLimits(apfs_device)
+
+      print('Defragmenting %s; apfs min size %s, current size %s...' % (
+        self.image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size)), file=self.output)
+      if not self.dry_run:
+        for i in range(self.defragment_iterations):
+          if i:
+            _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
+            if new_min_bytes >= min_bytes * 0.95:
+              print('Iteration %d, new apfs min size %s has low savings' % (
+                i+1, FileSizeToString(new_min_bytes)), file=self.output)
+              break
+            print('Iteration %d, new apfs min size %s...' % (
+              i+1, FileSizeToString(new_min_bytes)), file=self.output)
+            min_bytes = new_min_bytes
+          ResizeApfsContainer(apfs_device, min_bytes, output=self.output)
+
+    if DEFRAGMENT_WITH_COMPACT_WITH_RESIZE:
+      self._CompactImageWithResizeDarwin()
+    else:
+      self._CompactImageDarwin()
+
+    if not self.dry_run:
+      print('Restoring apfs container size to %s...' % (
+        FileSizeToString(old_apfs_container_size)), file=self.output)
+      with ImageAttacher(self.image_path, readonly=self.dry_run, mount=False,
+                         encryption_manager=self.encryption_manager) as attacher:
+        apfs_device = GetApfsDeviceFromAttachedImageDevice(attacher.GetDevice(), self.output)
+        if apfs_device is None:
+          raise Exception('No apfs device found for disk image, cannot restore to %d bytes'
+                          % old_apfs_container_size)
+        ResizeApfsContainer(apfs_device, old_apfs_container_size, output=self.output)
+
+    self._CompactImageDarwin()
+
+  def _CompactImageDarwin(self):
+    assert self.encrypted is not None
+
+    cmd = ['hdiutil', 'compact', self.image_path]
+    if self.encrypted:
+      cmd.append('-stdinpass')
+    if HDIUTIL_COMPACT_ON_BATTERY_ALLOWED:
+      cmd.append('-batteryallowed')
+
+    if not self.dry_run:
+      if self.encrypted:
+        password = self.encryption_manager.GetPassword(
+          self.image_path, self.image_uuid, try_last_password=False)
+      p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+      if self.encrypted:
+        p.stdin.write(password)
+      p.stdin.close()
+      with p.stdout:
+        self.output.write(p.stdout.read())
+      if p.wait():
+        raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+
+  def _CompactImageWithResizeDarwin(self):
+    assert self.encrypted is not None
+
+    (current_block_count, min_block_count) = GetDiskImageLimits(
+      self.image_path, encryption_manager=self.encryption_manager, encrypted=self.encrypted, image_uuid=self.image_uuid)
+
+    print('Resizing image to minimum size: %d -> %d blocks...' % (
+      current_block_count, min_block_count), file=self.output)
+    ResizeImage(self.image_path, block_count=min_block_count, output=self.output,
+                encryption_manager=self.encryption_manager, encrypted=self.encrypted,
+                image_uuid=self.image_uuid, dry_run=self.dry_run)
+
+    if os.path.normpath(self.image_path).endswith('.sparsebundle'):
+      CleanFreeSparsebundleBands(
+        self.image_path, output=self.output, encryption_manager=self.encryption_manager, encrypted=self.encrypted,
+        image_uuid=self.image_uuid, dry_run=self.dry_run)
+
+    print('Restoring image size to %d blocks...' % current_block_count, file=self.output)
+    ResizeImage(self.image_path, block_count=current_block_count, output=self.output,
+                encryption_manager=self.encryption_manager, encrypted=self.encrypted,
+                image_uuid=self.image_uuid, dry_run=self.dry_run)
+
+    self._CompactImageDarwin()
+
+  def _CompactImageLinux(self):
+    assert self.encrypted is not None
+
+    new_filesystem_size = None
+    with ImageAttacher(
+        self.image_path, readonly=self.dry_run, mount=False,
+        encryption_manager=self.encryption_manager) as attacher:
+      if not self.dry_run:
+        output = subprocess.check_output(['e2fsck', '-f', '-y', attacher.GetDevice()],
+                                         stderr=subprocess.STDOUT, text=True)
+        print(output.rstrip(), file=self.output)
+        output = subprocess.check_output(['resize2fs', '-M', attacher.GetDevice()],
+                                         stderr=subprocess.STDOUT, text=True)
+        print(output.rstrip(), file=self.output)
+        block_count = None
+        first_block = None
+        block_size = None
+        with open('/dev/null', 'w') as devnull:
+          for line in subprocess.check_output(
+              ['dumpe2fs', '-h', attacher.GetDevice()], text=True, stderr=subprocess.STDOUT).split('\n'):
+            line_pieces = line.split()
+            if len(line_pieces) != 3:
+              continue
+            if line_pieces[:2] == ['Block', 'count:']:
+              block_count = int(line_pieces[2])
+            elif line_pieces[:2] == ['First', 'block:']:
+              first_block = int(line_pieces[2])
+            elif line_pieces[:2] == ['Block', 'size:']:
+              block_size = int(line_pieces[2])
+        assert first_block == 0
+        assert block_size == 4096
+        assert block_count > 0
+        new_filesystem_size = block_count * block_size
+
+    if self.dry_run:
+      return
+
+    if self.encrypted:
+      new_image_size = self._GetLuksPayloadOffset(self.image_path) + new_filesystem_size
+      subprocess.check_call(['truncate', '-s', '%d' % new_image_size, self.image_path])
+
+    if not self.encrypted:
+      assert new_filesystem_size == os.lstat(self.image_path).st_size
+
+    with ImageAttacher(
+        self.image_path, readonly=True, mount=False,
+        encryption_manager=self.encryption_manager) as attacher:
+      output = subprocess.check_output(['e2fsck', '-f', '-n', attacher.GetDevice()],
+                                       stderr=subprocess.STDOUT, text=True)
+      print(output.rstrip(), file=self.output)
+
+  def _GetLuksPayloadOffset(self, image_path):
+    output = subprocess.check_output(['cryptsetup', 'luksDump', image_path], text=True)
+    lines = output.split('\n')
+    for i in range(len(lines)):
+      if lines[i] == 'Data segments:':
+        assert lines[i+1] == '  0: crypt'
+        m = re.match('^\s*offset: ([0-9]+) \\[bytes\\]$', lines[i+2])
+        assert m
+        assert lines[i+3] == '\tlength: (whole device)'
+        return int(m.group(1))
+    raise Exception('Could not find the luks payload offset for %r' % image_path)
 
 
 class DiffDumperStats(object):

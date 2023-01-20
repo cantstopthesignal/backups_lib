@@ -1209,13 +1209,12 @@ class ApplyWithEncryptionTestCase(BaseTestCase):
 
 class StripTestCase(BaseTestCase):
   def test(self):
-    if platform.system() == lib.PLATFORM_DARWIN:
-      with ApplyFakeDiskImageHelperLevel(
-          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-        if should_run:
-          with SetHdiutilCompactOnBatteryAllowed(True):
-            with TempDir() as test_dir:
-              self.RunTest(test_dir)
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     def AssertCheckpointStripState(image_path, stripped_expected):
