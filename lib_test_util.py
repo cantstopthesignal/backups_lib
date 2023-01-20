@@ -224,7 +224,7 @@ class FakeDiskImageHelper(object):
     fake_image = FakeDiskImage(path)
     return fake_image.Attach(mount=mount, random_mount_point=random_mount_point, mount_point=mount_point)
 
-  def DetachImage(self, device):
+  def DetachImage(self, device, mount_point):
     fake_image = FakeDiskImage(FakeDiskImage.PathFromDevice(device))
     fake_image.Detach()
 
@@ -343,7 +343,7 @@ def HandleGetPass(expected_prompts=[], returned_passwords=[]):
   returned_passwords = returned_passwords[:]
 
   def GetPass(prompt=''):
-    AssertEquals(expected_prompts[0], prompt)
+    AssertEquals(expected_prompts[0], prompt, allow_regex_match=True)
     del expected_prompts[0]
     returned_password = returned_passwords[0]
     del returned_passwords[0]

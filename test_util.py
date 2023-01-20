@@ -2,7 +2,9 @@ import argparse
 import contextlib
 import io
 import os
+import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +13,7 @@ import unittest
 import xattr
 
 from . import backups_main
+from . import lib
 
 
 VERBOSE_TESTS = False
@@ -28,8 +31,12 @@ def TempDir():
       print('Test: Failed to remove tree %s' % path)
 
 
-def AssertEquals(a, b):
-  if a != b:
+def AssertEquals(a, b, allow_regex_match=False):
+  if allow_regex_match and type(a) == re.Pattern:
+    if not a.match(b):
+      raise Exception('AssertEquals failed: re.compile(%r) does not match %r'
+                      % (a.pattern, b))
+  elif a != b:
     raise Exception('AssertEquals failed: %r != %r' % (a, b))
 
 
@@ -60,10 +67,30 @@ def AssertLinesEqual(a_lines, b_lines):
       RaiseNotEqual('line %r does not match %r' % (a_line, b_line.pattern))
 
 
-def AssertDiskImageFormat(image_format, image_path):
-  output = subprocess.check_output(['hdiutil', 'imageinfo', '-plist', image_path])
-  plist_data = plistlib.loads(output)
-  AssertEquals(image_format, plist_data['Format'])
+def AssertDiskImageFormat(image_format, image_path, password=None):
+  if platform.system() == lib.PLATFORM_DARWIN:
+    cmd = ['hdiutil', 'imageinfo', '-plist']
+    if password is not None:
+      cmd.append('-stdinpass')
+    cmd.append(image_path)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT)
+    with p.stdin:
+      if password is not None:
+        p.stdin.write(password.encode('utf8'))
+    with p.stdout:
+      output = p.stdout.read()
+    if p.wait():
+      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    plist_data = plistlib.loads(output)
+    AssertEquals(image_format, plist_data['Format'])
+    if password is not None:
+      _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(image_path)
+      assert image_uuid
+  else:
+    output = subprocess.check_output(
+      ['blkid', '-o', 'value', '-s', 'TYPE', image_path], text=True)
+    AssertEquals(image_format, output.strip())
 
 
 def SetMTime(path, mtime=1500000000):

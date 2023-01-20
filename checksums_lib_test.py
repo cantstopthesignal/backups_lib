@@ -37,6 +37,7 @@ from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
 from .lib_test_util import GetFileTreeManifest
+from .lib_test_util import HandleGetPass
 from .lib_test_util import InteractiveCheckerReadyResults
 from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 from .lib_test_util import SetXattr
@@ -715,16 +716,20 @@ class RenamePathsTestCase(BaseTestCase):
 
 class ImageFromFolderTestCase(BaseTestCase):
   def test(self):
-    if platform.system() == lib.PLATFORM_DARWIN:
-      with ApplyFakeDiskImageHelperLevel(
-          min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
-        if should_run:
-          with TempDir() as test_dir:
-            self.RunTest(test_dir)
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
 
   def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
-    image_path = os.path.join(test_dir, '1.dmg')
+
+    image_ext = '.dmg'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.img'
+
+    image_path = os.path.join(test_dir, '1%s' % image_ext)
 
     file1 = CreateFile(root_dir, 'f1', contents='ABC')
     parent1 = CreateDir(root_dir, 'par! \r')
@@ -736,28 +741,55 @@ class ImageFromFolderTestCase(BaseTestCase):
 
     DoImageFromFolder(root_dir, output_path=image_path, dry_run=True,
                       expected_output=[])
-    DoImageFromFolder(
-      root_dir, output_path=image_path,
-      expected_output=[
-        'Creating temporary image from folder %s...' % root_dir,
-        '>d+++++++ .',
-        '>f+++++++ f1',
-        '>L+++++++ ln1 -> f1',
-        '>L+++++++ ln2 -> INVALID',
-        '>d+++++++ par! \\r',
-        '>f+++++++ par! \\r/f2',
-        'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
-        'Converting to image %s with format UDZO...' % image_path,
-        'Verifying checksums in %s...' % image_path,
-        'Verifying source tree matches...',
-        re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
-                   % re.escape(image_path))])
-    AssertDiskImageFormat('UDZO', image_path)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoImageFromFolder(
+        root_dir, output_path=image_path,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          '>d+++++++ .',
+          '>f+++++++ f1',
+          '>L+++++++ ln1 -> f1',
+          '>L+++++++ ln2 -> INVALID',
+          '>d+++++++ par! \\r',
+          '>f+++++++ par! \\r/f2',
+          'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
+          'Converting to image %s with format UDZO...' % image_path,
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('UDZO', image_path)
 
-    DoVerify(image_path,
-             expected_output=['Paths: 6 total (1kb)'])
-    DoVerify(image_path, checksum_all=True,
-             expected_output=['Paths: 6 total (1kb), 2 checksummed (1kb)'])
+      DoVerify(image_path,
+               expected_output=['Paths: 6 total (1kb)'])
+      DoVerify(image_path, checksum_all=True,
+               expected_output=['Paths: 6 total (1kb), 2 checksummed (1kb)'])
+    else:
+      DoImageFromFolder(
+        root_dir, output_path=image_path,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          '>d+++++++ .',
+          '>f+++++++ f1',
+          '>L+++++++ ln1 -> f1',
+          '>L+++++++ ln2 -> INVALID',
+          '>d+++++++ lost+found',
+          '>d+++++++ par! \\r',
+          '>f+++++++ par! \\r/f2',
+          'Paths: 7 total (1kb), 7 synced (1kb), 2 checksummed (1kb)',
+          'Converting to read only image %s...' % image_path,
+          'Reduced image size from 100mb to 10.4mb',
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]10[.]4?mb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('ext4', image_path)
+
+      DoVerify(image_path,
+               expected_output=['Paths: 7 total (1kb)'])
+      DoVerify(image_path, checksum_all=True,
+               expected_output=['Paths: 7 total (1kb), 2 checksummed (1kb)'])
+
     DoImageFromFolder(
       root_dir, output_path=image_path, dry_run=True, expected_success=False,
       expected_output=['*** Error: Output path %s already exists' % image_path])
@@ -776,33 +808,258 @@ class ImageFromFolderTestCase(BaseTestCase):
 
     DoImageFromFolder(root_dir, output_path=image_path, dry_run=True,
                       expected_output=[])
-    DoImageFromFolder(
-      root_dir, output_path=image_path,
-      expected_output=[
-        'Creating temporary image from folder %s...' % root_dir,
-        'Using existing manifest from source path',
-        'Converting to image %s with format UDZO...' % image_path,
-        'Verifying checksums in %s...' % image_path,
-        'Verifying source tree matches...',
-        re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
-                   % re.escape(image_path))])
-    AssertDiskImageFormat('UDZO', image_path)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoImageFromFolder(
+        root_dir, output_path=image_path,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          'Using existing manifest from source path',
+          'Converting to image %s with format UDZO...' % image_path,
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('UDZO', image_path)
+    else:
+      DoImageFromFolder(
+        root_dir, output_path=image_path,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          'Using existing manifest from source path',
+          '>d+++++++ lost+found',
+          'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
+          'Converting to read only image %s...' % image_path,
+          'Reduced image size from 100mb to 10.4mb',
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('ext4', image_path)
+
     DeleteFileOrDir(image_path)
-    DoImageFromFolder(
-      root_dir, output_path=image_path, compressed=False,
-      expected_output=[
-        'Creating temporary image from folder %s...' % root_dir,
-        'Using existing manifest from source path',
-        'Converting to image %s with format UDRO...' % image_path,
-        'Verifying checksums in %s...' % image_path,
-        'Verifying source tree matches...',
-        re.compile('^Created image %s [(]5[0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
-                   % re.escape(image_path))])
-    AssertDiskImageFormat('UDRO', image_path)
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoImageFromFolder(
+        root_dir, output_path=image_path, compressed=False,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          'Using existing manifest from source path',
+          'Converting to image %s with format UDRO...' % image_path,
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]5[0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('UDRO', image_path)
+    else:
+      DoImageFromFolder(
+        root_dir, output_path=image_path, compressed=False,
+        expected_output=[
+          'Creating temporary image from folder %s...' % root_dir,
+          'Using existing manifest from source path',
+          '>d+++++++ lost+found',
+          'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
+          'Converting to read only image %s...' % image_path,
+          'Reduced image size from 100mb to 10.4mb',
+          'Verifying checksums in %s...' % image_path,
+          'Verifying source tree matches...',
+          re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
+                     % re.escape(image_path))])
+      AssertDiskImageFormat('ext4', image_path)
+
     DeleteFileOrDir(image_path)
 
     DoImageFromFolder(root_dir, output_path=image_path, temp_dir='/dev/null', expected_success=False,
                       expected_output=['*** Error: Temporary dir /dev/null is not a directory'])
+
+
+class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    root_dir = CreateDir(test_dir, 'root')
+
+    image_ext = '.dmg'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.luks.img'
+
+    image_path = os.path.join(test_dir, '1%s' % image_ext)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='1'*1025)
+    SetXattr(file2, 'example', b'example_value')
+    ln1 = CreateSymlink(root_dir, 'ln1', 'f1')
+    ln2 = CreateSymlink(root_dir, 'ln2', 'INVALID')
+    SetXattr(root_dir, 'example', b'example_value')
+
+    DoImageFromFolder(root_dir, output_path=image_path, encrypt=True, dry_run=True,
+                      expected_output=[])
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: '],
+        returned_passwords=['abc', 'abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            '>d+++++++ .',
+            '>f+++++++ f1',
+            '>L+++++++ ln1 -> f1',
+            '>L+++++++ ln2 -> INVALID',
+            '>d+++++++ par! \\r',
+            '>f+++++++ par! \\r/f2',
+            'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
+            'Converting to image %s with format UDZO...' % image_path,
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(]136([.][0-9])?kb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('UDZO', image_path, password='abc')
+      else:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            '>d+++++++ .',
+            '>f+++++++ f1',
+            '>L+++++++ ln1 -> f1',
+            '>L+++++++ ln2 -> INVALID',
+            '>d+++++++ lost+found',
+            '>d+++++++ par! \\r',
+            '>f+++++++ par! \\r/f2',
+            'Paths: 7 total (1kb), 7 synced (1kb), 2 checksummed (1kb)',
+            'Converting to read only image %s...' % image_path,
+            'Reduced image size from 100mb to 25.4mb',
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(]25[.]4?mb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('crypto_LUKS', image_path)
+
+    with HandleGetPass(
+        expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext),
+                          re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
+        returned_passwords=['def', 'abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoVerify(image_path,
+                 expected_output=['Paths: 6 total (1kb)'])
+      else:
+        DoVerify(image_path,
+                 expected_output=['Paths: 7 total (1kb)'])
+    with HandleGetPass(
+        expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
+        returned_passwords=['abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoVerify(image_path,
+                 expected_output=['Paths: 6 total (1kb)'])
+      else:
+        DoVerify(image_path,
+                 expected_output=['Paths: 7 total (1kb)'])
+    with HandleGetPass(
+        expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
+        returned_passwords=['abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoVerify(image_path, checksum_all=True,
+                 expected_output=['Paths: 6 total (1kb), 2 checksummed (1kb)'])
+      else:
+        DoVerify(image_path, checksum_all=True,
+                 expected_output=['Paths: 7 total (1kb), 2 checksummed (1kb)'])
+
+    DoImageFromFolder(
+      root_dir, output_path=image_path,  encrypt=True, dry_run=True, expected_success=False,
+      expected_output=['*** Error: Output path %s already exists' % image_path])
+    DeleteFileOrDir(image_path)
+
+    DoCreate(root_dir, expected_output=None)
+    DoSync(
+      root_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>L+++++++ ln1 -> f1',
+                       '>L+++++++ ln2 -> INVALID',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)'])
+
+    DoImageFromFolder(root_dir, output_path=image_path,  encrypt=True, dry_run=True,
+                      expected_output=[])
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: '],
+        returned_passwords=['abc', 'abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            'Using existing manifest from source path',
+            'Converting to image %s with format UDZO...' % image_path,
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(]136([.][0-9])?kb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('UDZO', image_path, password='abc')
+      else:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            'Using existing manifest from source path',
+            '>d+++++++ lost+found',
+            'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
+            'Converting to read only image %s...' % image_path,
+            'Reduced image size from 100mb to 25.4mb',
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(]25([.]4)?mb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('crypto_LUKS', image_path)
+
+    DeleteFileOrDir(image_path)
+
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: '],
+        returned_passwords=['abc', 'abc']):
+      if platform.system() == lib.PLATFORM_DARWIN:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True, compressed=False,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            'Using existing manifest from source path',
+            'Converting to image %s with format UDRO...' % image_path,
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(][5-6][0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('UDRO', image_path, password='abc')
+      else:
+        DoImageFromFolder(
+          root_dir, output_path=image_path, encrypt=True, compressed=False,
+          expected_output=[
+            'Creating temporary image from folder %s...' % root_dir,
+            'Using existing manifest from source path',
+            '>d+++++++ lost+found',
+            'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
+            'Converting to read only image %s...' % image_path,
+            'Reduced image size from 100mb to 25.4mb',
+            'Verifying checksums in %s...' % image_path,
+            'Verifying source tree matches...',
+            re.compile('^Created image %s [(]25([.]4)?mb[)]; Source size 1kb$'
+                       % re.escape(image_path))])
+        AssertDiskImageFormat('crypto_LUKS', image_path)
+
+    DeleteFileOrDir(image_path)
+
+    DoImageFromFolder(
+      root_dir, output_path=image_path, temp_dir='/dev/null', encrypt=True,
+      expected_success=False, expected_output=['*** Error: Temporary dir /dev/null is not a directory'])
 
 
 if __name__ == '__main__':

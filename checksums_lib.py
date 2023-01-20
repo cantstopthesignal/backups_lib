@@ -2,7 +2,10 @@ import argparse
 import io
 import os
 import pipes
+import platform
 import re
+import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -599,8 +602,17 @@ class ImageFromFolderCreator(object):
     if self.temp_dir is not None and not os.path.isdir(self.temp_dir):
       print('*** Error: Temporary dir %s is not a directory' % lib.EscapePath(self.temp_dir), file=self.output)
       return False
+    image_ext = lib.SplitImageExt(self.output_path)[1]
+    if platform.system() == lib.PLATFORM_DARWIN:
+      if image_ext not in ['.sparseimage', '.sparsebundle', '.dmg']:
+        raise Exception('Unexpected disk image extension %s' % image_ext)
+    else:
+      if self.encrypt and image_ext != '.luks.img':
+        raise Exception('Encrypted images should have the extension .luks.img')
+      elif not self.encrypt and image_ext != '.img':
+        raise Exception('Non-Encrypted images should have the extension .img')
     tmp = tempfile.NamedTemporaryFile(
-      delete=False, dir=self.temp_dir, suffix=os.path.splitext(self.output_path)[1])
+      delete=False, dir=self.temp_dir, suffix=image_ext)
     try:
       tmp.close()
       return self._CreateImageInner(rw_image_path=tmp.name)
@@ -633,7 +645,7 @@ class ImageFromFolderCreator(object):
           return False
       self._ReSyncSymlinkTimes(attacher.GetMountPoint())
       self._ReSyncRootDirectory(attacher.GetMountPoint())
-      if not has_existing_manifest:
+      if not has_existing_manifest or platform.system() == lib.PLATFORM_LINUX:
         checksums_syncer = ChecksumsSyncer(
           attacher.GetMountPoint(), output=self.output, dry_run=self.dry_run,
           checksum_all=True, verbose=self.verbose)
@@ -682,8 +694,13 @@ class ImageFromFolderCreator(object):
       image_manifest = Checksums.Open(attacher.GetMountPoint()).GetManifest()
 
     print('Verifying source tree matches...', file=self.output)
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_manifest_compare = image_manifest.Clone()
+      image_manifest_compare.RemovePathInfo('lost+found')
+    else:
+      image_manifest_compare = image_manifest
     source_verifier = lib.ManifestVerifier(
-      image_manifest, self.root_path, output=self.output,
+      image_manifest_compare, self.root_path, output=self.output,
       filters=CHECKSUM_FILTERS, checksum_path_matcher=lib.PathMatcherAll(),
       verbose=self.verbose)
     if not source_verifier.Verify():
@@ -697,6 +714,12 @@ class ImageFromFolderCreator(object):
     return True
 
   def _CreateRwImageFromFolder(self, rw_image_path):
+    if platform.system() == lib.PLATFORM_DARWIN:
+      self._CreateRwImageFromFolderDarwin(rw_image_path)
+    else:
+      self._CreateRwImageFromFolderLinux(rw_image_path)
+
+  def _CreateRwImageFromFolderDarwin(self, rw_image_path):
     assert not self.dry_run
     print('Creating temporary image from folder %s...'
           % lib.EscapePath(self.root_path), file=self.output)
@@ -705,7 +728,7 @@ class ImageFromFolderCreator(object):
     if self.volume_name is not None:
       cmd.extend(['-volname', self.volume_name])
     if self.encrypt:
-      cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
+      cmd.extend(['-encryption', lib.ENCRYPTION_AES_256, '-stdinpass'])
     cmd.append(rw_image_path)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
     if self.encrypt:
@@ -718,7 +741,35 @@ class ImageFromFolderCreator(object):
       assert image_uuid
       self.encryption_manager.SavePassword(self.password, image_uuid)
 
+  def _CreateRwImageFromFolderLinux(self, rw_image_path):
+    assert not self.dry_run
+    print('Creating temporary image from folder %s...'
+          % lib.EscapePath(self.root_path), file=self.output)
+    needed_size = (
+      int(lib.GetPathTreeSize(self.root_path) * 1.1)
+      + lib.FileSizeStringToBytes('100mb'))
+    encryption = None
+    if self.encrypt:
+      encryption = lib.ENCRYPTION_AES_256
+    lib.GetDiskImageHelper().CreateImage(
+      rw_image_path, filesystem=lib.FILESYSTEM_EXT4, size='%db' % needed_size, volume_name=self.volume_name,
+      encryption=encryption, password=self.password)
+    if self.encrypt:
+      _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(rw_image_path)
+      assert image_uuid
+      self.encryption_manager.SavePassword(self.password, image_uuid)
+    with lib.ImageAttacher(
+        rw_image_path, readonly=False, encryption_manager=self.encryption_manager) as attacher:
+      lib.Rsync(self.root_path, attacher.GetMountPoint(), output=self.output,
+                dry_run=False, verbose=self.verbose)
+
   def _CreateRoImage(self, source_path, output_path):
+    if platform.system() == lib.PLATFORM_DARWIN:
+      self._CreateRoImageDarwin(source_path, output_path)
+    else:
+      self._CreateRoImageLinux(source_path, output_path)
+
+  def _CreateRoImageDarwin(self, source_path, output_path):
     assert not self.dry_run
     assert not os.path.lexists(output_path)
     image_format = 'UDRO'
@@ -728,18 +779,116 @@ class ImageFromFolderCreator(object):
           % (lib.EscapePath(output_path), image_format), file=self.output)
     cmd = ['hdiutil', 'convert', '-format', image_format, '-quiet', '-o', output_path]
     if self.encrypt:
-      cmd.extend(['-encryption', 'AES-128', '-stdinpass'])
+      cmd.extend(['-encryption', lib.ENCRYPTION_AES_256, '-stdinpass'])
     cmd.append(source_path)
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
-    if self.encrypt:
-      p.stdin.write(self.password)
-    p.stdin.close()
+    p = subprocess.Popen(['expect'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True)
+    with p.stdin:
+      p.stdin.write('set timeout 120\n')
+      p.stdin.write('log_user 0\n')
+      p.stdin.write('spawn %s\n' % ' '.join([pipes.quote(a) for a in cmd]))
+      if self.encrypt:
+        p.stdin.write('expect "Enter disk image passphrase:"\n')
+        p.stdin.write('send "%s\n"\n' % pipes.quote(self.password))
+        p.stdin.write('expect "Enter password to access *"\n')
+        p.stdin.write('send "%s\n"\n' % pipes.quote(self.password))
+      p.stdin.write('expect eof\n')
+      p.stdin.write('lassign [wait] pid spawnid os_error_flag value\n')
+      p.stdin.write('puts "exit status: $value"\n')
+    child_result_code = None
+    with p.stdout:
+      output = p.stdout.read()
+      m = re.match('^exit status: ([0-9]+)$', output.strip())
+      assert m
+      child_result_code = int(m.group(1))
     if p.wait():
+      raise Exception('expect command failed')
+    if child_result_code:
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
     if self.encrypt:
       _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(output_path)
       assert image_uuid
       self.encryption_manager.SavePassword(self.password, image_uuid)
+
+  def _CreateRoImageLinux(self, source_path, output_path):
+    assert not self.dry_run
+    assert not os.path.lexists(output_path)
+
+    print('Converting to read only image %s...'
+          % lib.EscapePath(output_path), file=self.output)
+
+    old_stat = os.lstat(source_path)
+
+    def RunCommandPrintOnFailure(cmd):
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      with p.stdout:
+        output = p.stdout.read().strip()
+      if not p.wait():
+        return
+      raise Exception('Unexpected output from %r: %r' % (cmd, output))
+
+    new_filesystem_size = None
+    with lib.ImageAttacher(
+        source_path, readonly=False, mount=False,
+        encryption_manager=self.encryption_manager) as attacher:
+      RunCommandPrintOnFailure(['e2fsck', '-f', '-y', attacher.GetDevice()])
+      RunCommandPrintOnFailure(['resize2fs', '-M', attacher.GetDevice()])
+      block_count = None
+      first_block = None
+      block_size = None
+      with open('/dev/null', 'w') as devnull:
+        for line in subprocess.check_output(
+            ['dumpe2fs', '-h', attacher.GetDevice()], text=True, stderr=subprocess.STDOUT).split('\n'):
+          line_pieces = line.split()
+          if len(line_pieces) != 3:
+            continue
+          if line_pieces[:2] == ['Block', 'count:']:
+            block_count = int(line_pieces[2])
+          elif line_pieces[:2] == ['First', 'block:']:
+            first_block = int(line_pieces[2])
+          elif line_pieces[:2] == ['Block', 'size:']:
+            block_size = int(line_pieces[2])
+      assert first_block == 0
+      assert block_size == 4096
+      assert block_count > 0
+      new_filesystem_size = block_count * block_size
+
+    if self.encrypt:
+      new_image_size = self._GetLuksPayloadOffset(source_path) + new_filesystem_size
+      subprocess.check_call(['truncate', '-s', '%d' % new_image_size, source_path])
+
+    new_stat = os.lstat(source_path)
+    if not self.encrypt:
+      assert new_filesystem_size == new_stat.st_size
+
+    if old_stat.st_size != new_stat.st_size:
+      print('Reduced image size from %s to %s'
+            % (lib.FileSizeToString(old_stat.st_size), lib.FileSizeToString(new_stat.st_size)),
+            file=self.output)
+
+    shutil.copyfile(source_path, output_path)
+
+    with lib.ImageAttacher(
+        output_path, readonly=True, mount=False,
+        encryption_manager=self.encryption_manager) as attacher:
+      RunCommandPrintOnFailure(['e2fsck', '-f', '-n', attacher.GetDevice()])
+
+    mode = os.stat(source_path).st_mode
+    ro_mask = 0o777 ^ (stat.S_IWRITE | stat.S_IWGRP | stat.S_IWOTH)
+    os.chmod(output_path, mode & ro_mask)
+
+  def _GetLuksPayloadOffset(self, image_path):
+    output = subprocess.check_output(['cryptsetup', 'luksDump', image_path], text=True)
+    lines = output.split('\n')
+    for i in range(len(lines)):
+      if lines[i] == 'Data segments:':
+        assert lines[i+1] == '  0: crypt'
+        m = re.match('^\s*offset: ([0-9]+) \\[bytes\\]$', lines[i+2])
+        assert m
+        assert lines[i+3] == '\tlength: (whole device)'
+        return int(m.group(1))
+    raise Exception('Could not find the luks payload offset for %r' % image_path)
 
 
 def DoCreate(args, output):

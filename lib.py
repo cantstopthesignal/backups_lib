@@ -9,11 +9,13 @@ import getpass
 import hashlib
 import io
 import json
+import math
 import os
 import pipes
 import platform
 import plistlib
 import pwd
+import random
 import re
 import select
 import shutil
@@ -744,7 +746,7 @@ class DiskImageHelper(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def DetachImage(self, device):
+  def DetachImage(self, device, mount_point):
     pass
 
   @abc.abstractmethod
@@ -841,7 +843,7 @@ class DiskImageHelperDarwin(DiskImageHelper):
       raise Exception('Unexpected output from hdiutil attach:\n%s' % output.decode('utf8'))
     return result
 
-  def DetachImage(self, device):
+  def DetachImage(self, device, mount_point):
     cmd = ['hdiutil', 'detach', device]
     for i in range(20):
       p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -903,25 +905,35 @@ class DiskImageHelperLinux(DiskImageHelper):
     if size_bytes > FileSizeStringToBytes('10gb'):
       raise Exception('Disk image size of %s requested, which may be too large' % size)
 
+    dd_block_size = 1024 * 1024
+    dd_block_count = math.ceil(size_bytes / dd_block_size)
+
     with open('/dev/null', 'w') as devnull:
-      subprocess.check_call(['dd', 'if=/dev/urandom', 'of=%s' % path, 'bs=%d' % size_bytes, 'count=1'],
+      subprocess.check_call(['dd', 'if=/dev/urandom', 'of=%s' % path, 'bs=%d' % dd_block_size, 'count=%d' % dd_block_count],
                             stdout=devnull, stderr=devnull)
+    subprocess.check_call(['truncate', '-s', '%d' % size_bytes, path])
 
     device_path = path
     if encryption is not None:
       assert encryption == ENCRYPTION_AES_256
       assert password
-      p = subprocess.Popen(
-        [CRYPTSETUP_BIN, '--cipher', 'aes-xts-plain64', '--hash', 'sha512',
+      cmd = [CRYPTSETUP_BIN, '--cipher', 'aes-xts-plain64', '--hash', 'sha512',
          '--key-size', '256', '--iter-time', '5000', '--batch-mode',
-         '--key-file', '-', 'luksFormat', path],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-      p.stdin.write(password.encode('utf8'))
-      p.stdin.close()
-      with p.stdout:
-        output = p.stdout.read()
-      if p.wait():
-        raise Exception('Command failed: %r: %r' % ' '.join(cmd))
+         '--key-file', '-', 'luksFormat', path]
+      for i in range(20):
+        p = subprocess.Popen(
+          cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p.stdin.write(password.encode('utf8'))
+        p.stdin.close()
+        with p.stdout:
+          output = p.stdout.read()
+        if not p.wait():
+          break
+        if output:
+          raise Exception('Unexpected output from %r: %r' % (' '.join(cmd), output))
+        time.sleep(random.random() * 10 + 5)
+      else:
+        raise Exception('Command %r failed after retries' % cmd)
 
       cryptsetup_mapped_device = self._CreateUniqueCryptSetupMappedDevice()
       self._CryptSetupLuksOpen(path, os.path.basename(cryptsetup_mapped_device), password=password)
@@ -940,92 +952,79 @@ class DiskImageHelperLinux(DiskImageHelper):
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
                   readonly=True, browseable=False, verify=True):
-    if not mount:
-      raise Exception('Not Implemented')
     result = DiskImageHelperAttachResult()
-    result.mount_point = mount_point
-    result.device = None
     if not random_mount_point and mount_point is None:
       raise Exception('Mount pount or random mount point expected')
 
     if encrypted:
-      mount_device = self._CreateUniqueCryptSetupMappedDevice()
-      self._CryptSetupLuksOpen(path, os.path.basename(mount_device), password=password)
+      result.device = self._CreateUniqueCryptSetupMappedDevice()
+      self._CryptSetupLuksOpen(path, os.path.basename(result.device), password=password)
     else:
-      mount_device = path
+      result.device = path
 
-    mount_is_temporary = False
-    if random_mount_point:
-      result.mount_point = tempfile.mkdtemp()
-      mount_is_temporary = True
-    if not os.path.isdir(result.mount_point):
-      os.mkdir(result.mount_point)
-      mount_is_temporary = True
-    if mount_is_temporary:
-      subprocess.check_call(['touch', '%s.tmpmount' % result.mount_point])
+    if mount:
+      result.mount_point = mount_point
 
-    mount_options = ['loop', 'users', 'user_xattr']
-    if readonly:
-      mount_options.append('ro')
-    else:
-      mount_options.append('rw')
+      mount_is_temporary = False
+      if random_mount_point:
+        result.mount_point = tempfile.mkdtemp()
+        mount_is_temporary = True
+      if not os.path.isdir(result.mount_point):
+        os.mkdir(result.mount_point)
+        mount_is_temporary = True
+      if mount_is_temporary:
+        subprocess.check_call(['touch', '%s.tmpmount' % result.mount_point])
 
-    cmd = ['mount', '-o', ','.join(mount_options), mount_device, result.mount_point]
-    for i in range(5):
-      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-      with p.stdout:
-        output = p.stdout.read()
-      if p.wait():
-        raise Exception('Command failed: %r: %r' % (' '.join(cmd), output))
-      if not output:
-        break
+      mount_options = ['loop', 'users', 'user_xattr']
+      if readonly:
+        mount_options.append('ro')
+      else:
+        mount_options.append('rw')
 
-      lines = output.decode('utf8').strip().split('\n')
-      if len(lines) == 1 and lines[0].endswith(
-          'WARNING: source write-protected, mounted read-only.'):
-        time.sleep(1)
-        self._UnmountWithRetries(result.mount_point)
-        time.sleep(1)
-        continue
-      raise Exception('Unexpected output from %r: %r' % (cmd, output))
-    else:
-      raise Exception('Command %r failed after retries' % cmd)
+      cmd = ['mount', '-o', ','.join(mount_options), result.device, result.mount_point]
+      for i in range(5):
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        with p.stdout:
+          output = p.stdout.read()
+        if p.wait():
+          raise Exception('Command failed: %r: %r' % (' '.join(cmd), output))
+        if not output:
+          break
 
-    result.device = result.mount_point
+        lines = output.decode('utf8').strip().split('\n')
+        if len(lines) == 1 and lines[0].endswith(
+            'WARNING: source write-protected, mounted read-only.'):
+          time.sleep(1)
+          self._UnmountWithRetries(result.mount_point)
+          time.sleep(1)
+          continue
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
+      else:
+        raise Exception('Command %r failed after retries' % cmd)
     return result
 
-  def DetachImage(self, device):
-    df_output = subprocess.check_output(
-      ['df', '-P', device], text=True).strip().split('\n')
-    assert len(df_output) == 2
-    assert df_output[0].split()[0] == 'Filesystem'
-    lo_device = df_output[1].split()[0]
-    assert lo_device.startswith('/dev/loop')
-    lo_output = subprocess.check_output(
-      ['losetup', '-nl', '-O', 'NAME,BACK-FILE', lo_device], text=True).strip().split()
-    assert lo_output[0] == lo_device
-    dm_device = lo_output[1]
-    cryptsetup_mapped_name = None
-    if dm_device.startswith('/dev'):
-      assert dm_device.startswith('/dev/dm-')
-      dm_output = subprocess.check_output(
-        ['dmsetup', 'info', dm_device], text=True).split('\n')
-      for line in dm_output:
-        line_split = line.split()
-        if line_split and line_split[0] == 'Name:':
-          cryptsetup_mapped_name = line_split[1]
-          break
-      assert cryptsetup_mapped_name
+  def DetachImage(self, device, mount_point=None):
+    if mount_point:
+      self._UnmountWithRetries(mount_point)
 
-    self._UnmountWithRetries(device)
+      if os.path.exists('%s.tmpmount' % mount_point):
+        subprocess.check_call(['rm', '%s.tmpmount' % mount_point])
+        if os.path.isdir(mount_point):
+          subprocess.check_call(['rmdir', mount_point])
 
-    if os.path.exists('%s.tmpmount' % device):
-      subprocess.check_call(['rm', '%s.tmpmount' % device])
-      if os.path.isdir(device):
-        subprocess.check_call(['rmdir', device])
-
-    if cryptsetup_mapped_name:
-      subprocess.check_call([CRYPTSETUP_BIN, 'close', cryptsetup_mapped_name])
+    if device.startswith('/dev/mapper/'):
+      cryptsetup_mapped_name = device[len('/dev/mapper/'):]
+      cmd = [CRYPTSETUP_BIN, 'close', cryptsetup_mapped_name]
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+      with p.stdout:
+        output = p.stdout.read().strip()
+      if p.wait():
+        raise Exception('Command %r failed: %r' % (cmd, output))
+      if output and output != (
+          'device-mapper: remove ioctl on %s ' % cryptsetup_mapped_name
+          + ' failed: Device or resource busy'):
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
 
   def MoveImage(self, from_path, to_path):
     shutil.move(from_path, to_path)
@@ -1051,7 +1050,7 @@ class DiskImageHelperLinux(DiskImageHelper):
         break
       if not output.endswith('target is busy.'):
         raise Exception('Unexpected output from %r: %r' % (cmd, output))
-      time.sleep(10)
+      time.sleep(2)
     else:
       raise Exception('Command %r failed after retries' % cmd)
 
@@ -1060,17 +1059,23 @@ class DiskImageHelperLinux(DiskImageHelper):
 
   def _CryptSetupLuksOpen(self, path, cryptsetup_mapped_name, password):
     cmd = [CRYPTSETUP_BIN, 'open', '--type', 'luks', path, cryptsetup_mapped_name]
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    p.stdin.write(password.encode('utf8'))
-    p.stdin.close()
-    with p.stdout:
-      output = p.stdout.read()
-    if p.wait():
+    for i in range(20):
+      p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
+      with p.stdin:
+        p.stdin.write(password.encode('utf8'))
+      with p.stdout:
+        output = p.stdout.read()
+      if not p.wait():
+        return
       lines = output.decode('utf8').strip().split('\n')
       if len(lines) == 1 and lines[0] == 'No key available with this passphrase.':
         raise DiskImageHelperAuthenticationError()
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      if output:
+        raise Exception('Unexpected output from %r: %r' % (cmd, output))
+      time.sleep(random.random() * 10 + 5)
+    else:
+      raise Exception('Command %r failed after retries' % cmd)
 
 
 def GetDiskImageHelper():
@@ -1230,9 +1235,15 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
       raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
 
 
+def SplitImageExt(path):
+  if path.endswith('.luks.img'):
+    return (path[:-len('.luks.img')], path[-len('.luks.img'):])
+  return os.path.splitext(path)
+
+
 def IsLikelyPathToDiskImage(path):
-  ext = os.path.splitext(path)[1]
-  if os.path.isfile(path) and ext in ['.dmg', '.sparseimage', '.img']:
+  ext = SplitImageExt(path)[1]
+  if os.path.isfile(path) and ext in ['.dmg', '.sparseimage', '.img', '.luks.img']:
     return True
   if os.path.isdir(path) and ext in ['.sparsebundle']:
     return True
@@ -1969,7 +1980,7 @@ class ImageAttacher(object):
   def Close(self):
     assert self.attached
     assert self.device is not None
-    GetDiskImageHelper().DetachImage(self.device)
+    GetDiskImageHelper().DetachImage(self.device, self.mount_point)
     if self.mount:
       for i in range(10):
         if not os.path.exists(self.mount_point):
