@@ -1319,5 +1319,48 @@ class StripTestCase(BaseTestCase):
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
+class CheckpointPathPartsTestCase(BaseTestCase):
+  def test(self):
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.sparseimage'))
+    AssertEquals(False, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.sparsebundle'))
+    AssertEquals(False, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.dmg'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.img'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.luks.img'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('2022-01-01-000000.luks.img'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('2022-01-01-000000.sparseimage'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('2022-01-01-000000-manifest.luks.img'))
+    AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('2022-01-01-000000-manifest.sparseimage'))
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000.luks.img')
+    AssertEquals('2022-01-01-000000.luks.img', cpp.GetPath())
+    AssertEquals(False, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000-manifest.luks.img', cpp.SetIsManifestOnly(True).GetPath())
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000-manifest.luks.img')
+    AssertEquals('2022-01-01-000000-manifest.luks.img', cpp.GetPath())
+    AssertEquals(True, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000.luks.img', cpp.SetIsManifestOnly(False).GetPath())
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000.sparseimage')
+    AssertEquals('2022-01-01-000000.sparseimage', cpp.GetPath())
+    AssertEquals(False, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000-manifest.sparseimage', cpp.SetIsManifestOnly(True).GetPath())
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000-manifest.sparseimage')
+    AssertEquals('2022-01-01-000000-manifest.sparseimage', cpp.GetPath())
+    AssertEquals(True, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000.sparseimage', cpp.SetIsManifestOnly(False).GetPath())
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000.img')
+    AssertEquals('2022-01-01-000000.img', cpp.GetPath())
+    AssertEquals(False, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000-manifest.img', cpp.SetIsManifestOnly(True).GetPath())
+
+    cpp = checkpoint_lib.CheckpointPathParts('2022-01-01-000000-manifest.img')
+    AssertEquals('2022-01-01-000000-manifest.img', cpp.GetPath())
+    AssertEquals(True, cpp.IsManifestOnly())
+    AssertEquals('2022-01-01-000000.img', cpp.SetIsManifestOnly(False).GetPath())
+
+
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()

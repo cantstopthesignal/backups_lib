@@ -28,19 +28,18 @@ STAGED_BACKUP_DEFAULT_FILTERS = [lib.FilterRuleDirMerge(STAGED_BACKUP_DIR_MERGE_
 
 
 class CheckpointPathParts(object):
-  PATTERN = re.compile('^((?:(?!-manifest).)*)(-manifest)?([.](?:sparseimage|img|luks.img))$')
-
   @staticmethod
   def IsMatchingPath(path):
-    return CheckpointPathParts.PATTERN.match(os.path.basename(path)) is not None
+    prefix, ext = lib.SplitImageExt(path)
+    return prefix and ext in ['.sparseimage', '.img', '.luks.img']
 
   def __init__(self, path):
-    m = CheckpointPathParts.PATTERN.match(path)
-    if not m:
+    if not self.IsMatchingPath(path):
       raise Exception('Invalid checkpint path %s' % path)
-    self.prefix = m.group(1)
-    self.is_manifest_only = m.group(2) is not None
-    self.extension = m.group(3)
+    self.prefix, self.extension = lib.SplitImageExt(path)
+    self.is_manifest_only = self.prefix.endswith('-manifest')
+    if self.is_manifest_only:
+      self.prefix = self.prefix[:-len('-manifest')]
 
   def GetPath(self):
     path = self.prefix
@@ -54,6 +53,7 @@ class CheckpointPathParts(object):
 
   def SetIsManifestOnly(self, is_manifest_only):
     self.is_manifest_only = is_manifest_only
+    return self
 
 
 class Checkpoint(object):
