@@ -36,6 +36,7 @@ from .test_util import SetPacificTimezone
 from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
+from .lib_test_util import AssertFileSizeInRange
 from .lib_test_util import CollapseApfsOperationsInOutput
 from .lib_test_util import CreateGoogleDriveRemoteFile
 from .lib_test_util import GetManifestItemized
@@ -47,19 +48,6 @@ from .lib_test_util import SetOmitUidAndGidInPathInfoToString
 from .lib_test_util import SetXattr
 
 from .checkpoint_lib_test_util import DoCreate
-
-
-def AssertFileSizeInRange(actual_size, min_expected, max_expected):
-  if type(actual_size) == str:
-    actual_size = lib.FileSizeStringToBytes(actual_size)
-  if type(min_expected) == str:
-    min_expected = lib.FileSizeStringToBytes(min_expected)
-  if type(max_expected) == str:
-    max_expected = lib.FileSizeStringToBytes(max_expected)
-  if actual_size < min_expected or actual_size > max_expected:
-    raise Exception('File size %s outside of range [%s, %s]' % (
-      lib.FileSizeToString(actual_size), lib.FileSizeToString(min_expected),
-      lib.FileSizeToString(max_expected)))
 
 
 def DoDiffManifests(manifest1_path, manifest2_path, ignore_matching_renames=False,

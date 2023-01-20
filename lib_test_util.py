@@ -41,6 +41,19 @@ FAKE_DISK_IMAGE_LEVEL = FAKE_DISK_IMAGE_LEVEL_MEDIUM
 DEBUG_FAKE_DISK_IMAGE_LEVELS = False
 
 
+def AssertFileSizeInRange(actual_size, min_expected, max_expected):
+  if type(actual_size) == str:
+    actual_size = lib.FileSizeStringToBytes(actual_size)
+  if type(min_expected) == str:
+    min_expected = lib.FileSizeStringToBytes(min_expected)
+  if type(max_expected) == str:
+    max_expected = lib.FileSizeStringToBytes(max_expected)
+  if actual_size < min_expected or actual_size > max_expected:
+    raise Exception('File size %s outside of range [%s, %s]' % (
+      lib.FileSizeToString(actual_size), lib.FileSizeToString(min_expected),
+      lib.FileSizeToString(max_expected)))
+
+
 def SetXattr(path, key, value):
   xattr_obj = lib.Xattr(path)
   xattr_obj[key] = value

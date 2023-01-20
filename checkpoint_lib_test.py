@@ -1245,47 +1245,78 @@ class StripTestCase(BaseTestCase):
     checkpoint2_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint2_path)
     shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
-    AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
-    DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
-            expected_output=['Checkpoint stripped',
-                             'Image size 34mb -> 34mb'])
-    DoStrip(checkpoint1.GetImagePath(), defragment=False,
-            expected_output=['Checkpoint stripped',
-                             'Starting to compact…',
-                             'Reclaiming free space…',
-                             'Finishing compaction…',
-                             'Reclaimed 4 MB out of 1023.6 GB possible.',
-                             'Image size 34mb -> 30mb'])
-    checkpoint1_path_parts.SetIsManifestOnly(True)
-    AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
-    AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
+      DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+              expected_output=['Checkpoint stripped',
+                               'Image size 34mb -> 34mb'])
+      DoStrip(checkpoint1.GetImagePath(), defragment=False,
+              expected_output=['Checkpoint stripped',
+                               'Starting to compact…',
+                               'Reclaiming free space…',
+                               'Finishing compaction…',
+                               'Reclaimed 4 MB out of 1023.6 GB possible.',
+                               'Image size 34mb -> 30mb'])
+      checkpoint1_path_parts.SetIsManifestOnly(True)
+      AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
+    else:
+      AssertEquals(1073741824, os.lstat(checkpoint1.GetImagePath()).st_size)
+      DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+              expected_output=['Checkpoint stripped',
+                               'Image size 1gb -> 1gb'])
+      checkpoint1_path_parts.SetIsManifestOnly(True)
+      DoStrip(checkpoint1.GetImagePath(), defragment=False,
+              expected_output=[
+                'Checkpoint stripped',
+                re.compile('^e2fsck .*$'),
+                'Pass 1: Checking inodes, blocks, and sizes',
+                'Pass 2: Checking directory structure',
+                'Pass 3: Checking directory connectivity',
+                'Pass 4: Checking reference counts',
+                'Pass 5: Checking group summary information',
+                '1: 13/65536 files (0.0% non-contiguous), 12957/262144 blocks',
+                re.compile('^resize2fs .*$'),
+                'Resizing the filesystem on %s to 12982 (4k) blocks.' % checkpoint1_path_parts.GetPath(),
+                'The filesystem on %s is now 12982 (4k) blocks long.' % checkpoint1_path_parts.GetPath(),
+                re.compile('^e2fsck .*$'),
+                'Pass 1: Checking inodes, blocks, and sizes',
+                'Pass 2: Checking directory structure',
+                'Pass 3: Checking directory connectivity',
+                'Pass 4: Checking reference counts',
+                'Pass 5: Checking group summary information',
+                '1: 13/8192 files (0.0% non-contiguous), 8843/12982 blocks',
+                'Image size 1gb -> 50.7mb'])
+      AssertEquals(53174272, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
 
-    DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
-            expected_output=[
-              'Checkpoint stripped',
-              'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
-              'Image size 34mb -> 34mb'])
-    checkpoint2_path_parts.SetIsManifestOnly(True)
-    DoStrip(checkpoint2_path, defragment_iterations=2,
-            expected_output=[
-              'Checkpoint stripped',
-              'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
-              '<... snip APFS operation ...>',
-              re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
-              '<... snip APFS operation ...>',
-              'Starting to compact…',
-              'Reclaiming free space…',
-              'Finishing compaction…',
-              'Reclaimed 13 MB out of 1.2 GB possible.',
-              'Restoring apfs container size to 1023.8gb...',
-              '<... snip APFS operation ...>',
-              'Starting to compact…',
-              'Reclaiming free space…',
-              'Finishing compaction…',
-              'Reclaimed 4 MB out of 1023.6 GB possible.',
-              'Image size 34mb -> 20mb'])
-    AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
-    AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
+    if platform.system() == lib.PLATFORM_DARWIN:
+      DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
+              expected_output=[
+                'Checkpoint stripped',
+                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
+                'Image size 34mb -> 34mb'])
+      checkpoint2_path_parts.SetIsManifestOnly(True)
+      DoStrip(checkpoint2_path, defragment_iterations=2,
+              expected_output=[
+                'Checkpoint stripped',
+                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
+                '<... snip APFS operation ...>',
+                re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                '<... snip APFS operation ...>',
+                'Starting to compact…',
+                'Reclaiming free space…',
+                'Finishing compaction…',
+                'Reclaimed 13 MB out of 1.2 GB possible.',
+                'Restoring apfs container size to 1023.8gb...',
+                '<... snip APFS operation ...>',
+                'Starting to compact…',
+                'Reclaiming free space…',
+                'Finishing compaction…',
+                'Reclaimed 4 MB out of 1023.6 GB possible.',
+                'Image size 34mb -> 20mb'])
+      AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
 if __name__ == '__main__':

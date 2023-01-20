@@ -36,6 +36,7 @@ from .test_util import SetMTime
 from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
+from .lib_test_util import AssertFileSizeInRange
 from .lib_test_util import GetFileTreeManifest
 from .lib_test_util import HandleGetPass
 from .lib_test_util import InteractiveCheckerReadyResults
@@ -759,6 +760,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('UDZO', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17kb')
 
       DoVerify(image_path,
                expected_output=['Paths: 6 total (1kb)'])
@@ -778,12 +780,30 @@ class ImageFromFolderTestCase(BaseTestCase):
           '>f+++++++ par! \\r/f2',
           'Paths: 7 total (1kb), 7 synced (1kb), 2 checksummed (1kb)',
           'Converting to read only image %s...' % image_path,
-          'Reduced image size from 100mb to 10.4mb',
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/25602 blocks'),
+          re.compile('^resize2fs .*$'),
+          re.compile('^Resizing the filesystem on [^ ]+[.]img to 2670 [(]4k[)] blocks.$'),
+          re.compile('^The filesystem on [^ ]+[.]img is now 2670 [(]4k[)] blocks long.$'),
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/2670 blocks'),
+          'Image size 100mb -> 10.4mb',
           'Verifying checksums in %s...' % image_path,
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]10[.]4?mb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('ext4', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '10mb', '11mb')
 
       DoVerify(image_path,
                expected_output=['Paths: 7 total (1kb)'])
@@ -820,6 +840,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('UDZO', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '18kb')
     else:
       DoImageFromFolder(
         root_dir, output_path=image_path,
@@ -829,12 +850,30 @@ class ImageFromFolderTestCase(BaseTestCase):
           '>d+++++++ lost+found',
           'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
           'Converting to read only image %s...' % image_path,
-          'Reduced image size from 100mb to 10.4mb',
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/25603 blocks'),
+          re.compile('^resize2fs .*$'),
+          re.compile('^Resizing the filesystem on [^ ]+[.]img to 2670 [(]4k[)] blocks.$'),
+          re.compile('^The filesystem on [^ ]+[.]img is now 2670 [(]4k[)] blocks long.$'),
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/2670 blocks'),
+          'Image size 100mb -> 10.4mb',
           'Verifying checksums in %s...' % image_path,
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('ext4', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '10mb', '11mb')
 
     DeleteFileOrDir(image_path)
 
@@ -850,6 +889,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           re.compile('^Created image %s [(]5[0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('UDRO', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '500kb', '600kb')
     else:
       DoImageFromFolder(
         root_dir, output_path=image_path, compressed=False,
@@ -859,12 +899,30 @@ class ImageFromFolderTestCase(BaseTestCase):
           '>d+++++++ lost+found',
           'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
           'Converting to read only image %s...' % image_path,
-          'Reduced image size from 100mb to 10.4mb',
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/25603 blocks'),
+          re.compile('^resize2fs .*$'),
+          re.compile('^Resizing the filesystem on [^ ]+[.]img to 2670 [(]4k[)] blocks.$'),
+          re.compile('^The filesystem on [^ ]+[.]img is now 2670 [(]4k[)] blocks long.$'),
+          re.compile('^e2fsck .*$'),
+          'Pass 1: Checking inodes, blocks, and sizes',
+          'Pass 2: Checking directory structure',
+          'Pass 3: Checking directory connectivity',
+          'Pass 4: Checking reference counts',
+          'Pass 5: Checking group summary information',
+          re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/2670 blocks'),
+          'Image size 100mb -> 10.4mb',
           'Verifying checksums in %s...' % image_path,
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('ext4', image_path)
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '10mb', '11mb')
 
     DeleteFileOrDir(image_path)
 
@@ -921,6 +979,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             re.compile('^Created image %s [(]136([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('UDZO', image_path, password='abc')
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
       else:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True,
@@ -935,12 +994,30 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             '>f+++++++ par! \\r/f2',
             'Paths: 7 total (1kb), 7 synced (1kb), 2 checksummed (1kb)',
             'Converting to read only image %s...' % image_path,
-            'Reduced image size from 100mb to 25.4mb',
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/21506 blocks'),
+            re.compile('^resize2fs .*$'),
+            re.compile('^Resizing the filesystem on /dev/mapper/[^ ]+ to 2412 [(]4k[)] blocks.$'),
+            re.compile('^The filesystem on /dev/mapper/[^ ]+ is now 2412 [(]4k[)] blocks long.$'),
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/2412 blocks'),
+            'Image size 100mb -> 25.4mb',
             'Verifying checksums in %s...' % image_path,
             'Verifying source tree matches...',
             re.compile('^Created image %s [(]25[.]4?mb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('crypto_LUKS', image_path)
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '25mb', '26mb')
 
     with HandleGetPass(
         expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext),
@@ -1002,9 +1079,10 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Converting to image %s with format UDZO...' % image_path,
             'Verifying checksums in %s...' % image_path,
             'Verifying source tree matches...',
-            re.compile('^Created image %s [(]136([.][0-9])?kb[)]; Source size 1kb$'
+            re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('UDZO', image_path, password='abc')
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
       else:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True,
@@ -1014,12 +1092,30 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             '>d+++++++ lost+found',
             'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
             'Converting to read only image %s...' % image_path,
-            'Reduced image size from 100mb to 25.4mb',
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/21507 blocks'),
+            re.compile('^resize2fs .*$'),
+            re.compile('^Resizing the filesystem on /dev/mapper/[^ ]+ to 2412 [(]4k[)] blocks.$'),
+            re.compile('^The filesystem on /dev/mapper/[^ ]+ is now 2412 [(]4k[)] blocks long.$'),
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/2412 blocks'),
+            'Image size 100mb -> 25.4mb',
             'Verifying checksums in %s...' % image_path,
             'Verifying source tree matches...',
             re.compile('^Created image %s [(]25([.]4)?mb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('crypto_LUKS', image_path)
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '25mb', '26mb')
 
     DeleteFileOrDir(image_path)
 
@@ -1039,6 +1135,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             re.compile('^Created image %s [(][5-6][0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('UDRO', image_path, password='abc')
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '500kb', '700kb')
       else:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True, compressed=False,
@@ -1048,12 +1145,30 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             '>d+++++++ lost+found',
             'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
             'Converting to read only image %s...' % image_path,
-            'Reduced image size from 100mb to 25.4mb',
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/21507 blocks'),
+            re.compile('^resize2fs .*$'),
+            re.compile('^Resizing the filesystem on /dev/mapper/[^ ]+ to 2412 [(]4k[)] blocks.$'),
+            re.compile('^The filesystem on /dev/mapper/[^ ]+ is now 2412 [(]4k[)] blocks long.$'),
+            re.compile('^e2fsck .*$'),
+            'Pass 1: Checking inodes, blocks, and sizes',
+            'Pass 2: Checking directory structure',
+            'Pass 3: Checking directory connectivity',
+            'Pass 4: Checking reference counts',
+            'Pass 5: Checking group summary information',
+            re.compile('^/dev/mapper/[^ ]+: 18/21520 files [(]5.6% non-contiguous[)], 2394/2412 blocks'),
+            'Image size 100mb -> 25.4mb',
             'Verifying checksums in %s...' % image_path,
             'Verifying source tree matches...',
             re.compile('^Created image %s [(]25([.]4)?mb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('crypto_LUKS', image_path)
+        AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '25mb', '26mb')
 
     DeleteFileOrDir(image_path)
 
