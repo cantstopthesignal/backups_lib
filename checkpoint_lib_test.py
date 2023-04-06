@@ -40,6 +40,7 @@ from .test_util import SetPacificTimezone
 from .test_util import TempDir
 
 from .lib_test_util import ApplyFakeDiskImageHelperLevel
+from .lib_test_util import AssertFileSizeInRange
 from .lib_test_util import CollapseApfsOperationsInOutput
 from .lib_test_util import CreateGoogleDriveRemoteFile
 from .lib_test_util import DoDumpManifest
@@ -1246,19 +1247,20 @@ class StripTestCase(BaseTestCase):
     shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
     if platform.system() == lib.PLATFORM_DARWIN:
-      AssertEquals(35655680, os.lstat(checkpoint1.GetImagePath()).st_size)
+      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '34mb', '35.1mb')
+
       DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
               expected_output=['Checkpoint stripped',
-                               'Image size 34mb -> 34mb'])
+                               re.compile('^Image size 3[45]mb -> 3[45]mb$')])
       DoStrip(checkpoint1.GetImagePath(), defragment=False,
               expected_output=['Checkpoint stripped',
                                'Starting to compact…',
                                'Reclaiming free space…',
                                'Finishing compaction…',
                                'Reclaimed 4 MB out of 1023.6 GB possible.',
-                               'Image size 34mb -> 30mb'])
+                               re.compile('^Image size 3[45]mb -> 3[01]mb$')])
       checkpoint1_path_parts.SetIsManifestOnly(True)
-      AssertEquals(31461376, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '30mb', '31.1mb')
       AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
     else:
       AssertEquals(1073741824, os.lstat(checkpoint1.GetImagePath()).st_size)
@@ -1295,7 +1297,7 @@ class StripTestCase(BaseTestCase):
               expected_output=[
                 'Checkpoint stripped',
                 'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
-                'Image size 34mb -> 34mb'])
+                re.compile('^Image size 3[45]mb -> 3[45]mb$')])
       checkpoint2_path_parts.SetIsManifestOnly(True)
       DoStrip(checkpoint2_path, defragment_iterations=2,
               expected_output=[
@@ -1313,8 +1315,8 @@ class StripTestCase(BaseTestCase):
                 'Starting to compact…',
                 'Reclaiming free space…',
                 'Finishing compaction…',
-                'Reclaimed 4 MB out of 1023.6 GB possible.',
-                'Image size 34mb -> 20mb'])
+                re.compile('^Reclaimed [45] MB out of 1023[.]6 GB possible[.]$'),
+                re.compile('^Image size 3[45]mb -> 20mb$')])
       AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 

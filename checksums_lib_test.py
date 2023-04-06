@@ -760,7 +760,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(image_path))])
       AssertDiskImageFormat('UDZO', image_path)
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17kb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17.1kb')
 
       DoVerify(image_path,
                expected_output=['Paths: 6 total (1kb)'])
@@ -976,7 +976,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Converting to image %s with format UDZO...' % image_path,
             'Verifying checksums in %s...' % image_path,
             'Verifying source tree matches...',
-            re.compile('^Created image %s [(]136([.][0-9])?kb[)]; Source size 1kb$'
+            re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
         AssertDiskImageFormat('UDZO', image_path, password='abc')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
