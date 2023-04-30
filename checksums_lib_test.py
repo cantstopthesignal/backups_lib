@@ -730,7 +730,7 @@ class ImageFromFolderTestCase(BaseTestCase):
     if platform.system() == lib.PLATFORM_LINUX:
       image_ext = '.img'
 
-    image_path = os.path.join(test_dir, '1%s' % image_ext)
+    image_path = os.path.join(test_dir, '1 $ " [ \\%s' % image_ext)
 
     file1 = CreateFile(root_dir, 'f1', contents='ABC')
     parent1 = CreateDir(root_dir, 'par! \r')
@@ -754,11 +754,11 @@ class ImageFromFolderTestCase(BaseTestCase):
           '>d+++++++ par! \\r',
           '>f+++++++ par! \\r/f2',
           'Paths: 6 total (1kb), 6 synced (1kb), 2 checksummed (1kb)',
-          'Converting to image %s with format UDZO...' % image_path,
-          'Verifying checksums in %s...' % image_path,
+          'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
+          'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
-                     % re.escape(image_path))])
+                     % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDZO', image_path)
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17.1kb')
 
@@ -812,7 +812,7 @@ class ImageFromFolderTestCase(BaseTestCase):
 
     DoImageFromFolder(
       root_dir, output_path=image_path, dry_run=True, expected_success=False,
-      expected_output=['*** Error: Output path %s already exists' % image_path])
+      expected_output=['*** Error: Output path %s already exists' % lib.EscapePath(image_path)])
     DeleteFileOrDir(image_path)
 
     DoCreate(root_dir, expected_output=None)
@@ -834,11 +834,11 @@ class ImageFromFolderTestCase(BaseTestCase):
         expected_output=[
           'Creating temporary image from folder %s...' % root_dir,
           'Using existing manifest from source path',
-          'Converting to image %s with format UDZO...' % image_path,
-          'Verifying checksums in %s...' % image_path,
+          'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
+          'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
-                     % re.escape(image_path))])
+                     % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDZO', image_path)
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '18kb')
     else:
@@ -849,7 +849,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Using existing manifest from source path',
           '>d+++++++ lost+found',
           'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
-          'Converting to read only image %s...' % image_path,
+          'Converting to read only image %s...' % lib.EscapePath(image_path),
           re.compile('^e2fsck .*$'),
           'Pass 1: Checking inodes, blocks, and sizes',
           'Pass 2: Checking directory structure',
@@ -868,10 +868,10 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Pass 5: Checking group summary information',
           re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/2670 blocks'),
           'Image size 100mb -> 10.4mb',
-          'Verifying checksums in %s...' % image_path,
+          'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
-                     % re.escape(image_path))])
+                     % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('ext4', image_path)
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '10mb', '11mb')
 
@@ -883,11 +883,11 @@ class ImageFromFolderTestCase(BaseTestCase):
         expected_output=[
           'Creating temporary image from folder %s...' % root_dir,
           'Using existing manifest from source path',
-          'Converting to image %s with format UDRO...' % image_path,
-          'Verifying checksums in %s...' % image_path,
+          'Converting to image %s with format UDRO...' % lib.EscapePath(image_path),
+          'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]5[0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
-                     % re.escape(image_path))])
+                     % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDRO', image_path)
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '500kb', '600kb')
     else:
@@ -898,7 +898,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Using existing manifest from source path',
           '>d+++++++ lost+found',
           'Paths: 7 total (1kb), 1 synced (0b), 2 checksummed (1kb)',
-          'Converting to read only image %s...' % image_path,
+          'Converting to read only image %s...' % lib.EscapePath(image_path),
           re.compile('^e2fsck .*$'),
           'Pass 1: Checking inodes, blocks, and sizes',
           'Pass 2: Checking directory structure',
@@ -917,10 +917,10 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Pass 5: Checking group summary information',
           re.compile('^[^ ]+[.]img: 18/25616 files [(]5.6% non-contiguous[)], 2652/2670 blocks'),
           'Image size 100mb -> 10.4mb',
-          'Verifying checksums in %s...' % image_path,
+          'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
           re.compile('^Created image %s [(]10([.]4)?mb[)]; Source size 1kb$'
-                     % re.escape(image_path))])
+                     % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('ext4', image_path)
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '10mb', '11mb')
 
@@ -960,7 +960,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
     with HandleGetPass(
         expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
                           'Re-enter new password: '],
-        returned_passwords=['abc', 'abc']):
+        returned_passwords=['abc $ [ "', 'abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True,
@@ -978,7 +978,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Verifying source tree matches...',
             re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
-        AssertDiskImageFormat('UDZO', image_path, password='abc')
+        AssertDiskImageFormat('UDZO', image_path, password='abc $ [ "')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
       else:
         DoImageFromFolder(
@@ -1022,7 +1022,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
     with HandleGetPass(
         expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext),
                           re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
-        returned_passwords=['def', 'abc']):
+        returned_passwords=['def', 'abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoVerify(image_path,
                  expected_output=['Paths: 6 total (1kb)'])
@@ -1031,7 +1031,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
                  expected_output=['Paths: 7 total (1kb)'])
     with HandleGetPass(
         expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
-        returned_passwords=['abc']):
+        returned_passwords=['abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoVerify(image_path,
                  expected_output=['Paths: 6 total (1kb)'])
@@ -1040,7 +1040,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
                  expected_output=['Paths: 7 total (1kb)'])
     with HandleGetPass(
         expected_prompts=[re.compile('^Enter password to access "[^"]+%s": $' % image_ext)],
-        returned_passwords=['abc']):
+        returned_passwords=['abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoVerify(image_path, checksum_all=True,
                  expected_output=['Paths: 6 total (1kb), 2 checksummed (1kb)'])
@@ -1069,7 +1069,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
     with HandleGetPass(
         expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
                           'Re-enter new password: '],
-        returned_passwords=['abc', 'abc']):
+        returned_passwords=['abc $ [ "', 'abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True,
@@ -1081,7 +1081,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Verifying source tree matches...',
             re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
-        AssertDiskImageFormat('UDZO', image_path, password='abc')
+        AssertDiskImageFormat('UDZO', image_path, password='abc $ [ "')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
       else:
         DoImageFromFolder(
@@ -1122,7 +1122,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
     with HandleGetPass(
         expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
                           'Re-enter new password: '],
-        returned_passwords=['abc', 'abc']):
+        returned_passwords=['abc $ [ "', 'abc $ [ "']):
       if platform.system() == lib.PLATFORM_DARWIN:
         DoImageFromFolder(
           root_dir, output_path=image_path, encrypt=True, compressed=False,
@@ -1134,7 +1134,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Verifying source tree matches...',
             re.compile('^Created image %s [(][5-6][0-9][0-9]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(image_path))])
-        AssertDiskImageFormat('UDRO', image_path, password='abc')
+        AssertDiskImageFormat('UDRO', image_path, password='abc $ [ "')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '500kb', '700kb')
       else:
         DoImageFromFolder(

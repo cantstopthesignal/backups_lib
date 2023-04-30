@@ -786,12 +786,14 @@ class ImageFromFolderCreator(object):
     with p.stdin:
       p.stdin.write('set timeout 120\n')
       p.stdin.write('log_user 0\n')
-      p.stdin.write('spawn %s\n' % ' '.join([pipes.quote(a) for a in cmd]))
+      p.stdin.write('spawn %s\n' % ' '.join([self._QuoteTclString(a) for a in cmd]))
       if self.encrypt:
         p.stdin.write('expect "Enter disk image passphrase:"\n')
-        p.stdin.write('send "%s\n"\n' % pipes.quote(self.password))
+        p.stdin.write('send %s\n' % self._QuoteTclString(self.password))
+        p.stdin.write('send "\n"\n')
         p.stdin.write('expect "Enter password to access *"\n')
-        p.stdin.write('send "%s\n"\n' % pipes.quote(self.password))
+        p.stdin.write('send %s\n' % self._QuoteTclString(self.password))
+        p.stdin.write('send "\n"\n')
       p.stdin.write('expect eof\n')
       p.stdin.write('lassign [wait] pid spawnid os_error_flag value\n')
       p.stdin.write('puts "exit status: $value"\n')
@@ -809,6 +811,9 @@ class ImageFromFolderCreator(object):
       _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(output_path)
       assert image_uuid
       self.encryption_manager.SavePassword(self.password, image_uuid)
+
+  def _QuoteTclString(self, s):
+    return '"%s"' % s.replace('\\', '\\\\').replace('[', '\\[').replace('$', '\\$').replace('"', '\\"')
 
   def _CreateRoImageLinux(self, source_path, output_path):
     assert not self.dry_run
