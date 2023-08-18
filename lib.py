@@ -693,8 +693,13 @@ def GetCorrectedGoogleDriveFileSize(path_stat, path):
     return size
 
 
-def GetPathTreeSize(path, files_only=False, excludes=[]):
-  path_stat = os.lstat(path)
+def GetPathTreeSize(path, files_only=False, excludes=[], allow_missing=False):
+  try:
+    path_stat = os.lstat(path)
+  except FileNotFoundError:
+    if allow_missing:
+      return 0
+    raise
   if stat.S_ISDIR(path_stat.st_mode):
     if files_only:
       total_size = 0
