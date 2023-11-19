@@ -683,14 +683,17 @@ def GetCorrectedGoogleDriveFileSize(path_stat, path):
   _, ext = os.path.splitext(path)
   if ext not in GOOGLE_DRIVE_FILE_EXTENSIONS_WITH_MISMATCHED_FILE_SIZES:
     return path_stat.st_size
-  with OPEN_CONTENT_FUNCTION(path, 'rb') as in_f:
-    in_f.seek(0, io.SEEK_END)
-    size = in_f.tell()
-    buf = in_f.read(BLOCKSIZE)
-    while len(buf) > 0:
-      size += len(buf)
-      buf = in_f.read(BLOCKSIZE)
-    return size
+  while True:
+    try:
+      with OPEN_CONTENT_FUNCTION(path, 'rb') as in_f:
+        size = 0
+        buf = in_f.read(BLOCKSIZE)
+        while len(buf) > 0:
+          size += len(buf)
+          buf = in_f.read(BLOCKSIZE)
+        return size
+    except TimeoutError:
+      time.sleep(0.1)
 
 
 def GetPathTreeSize(path, files_only=False, excludes=[], allow_missing=False):
