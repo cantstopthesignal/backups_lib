@@ -1321,6 +1321,151 @@ class StripTestCase(BaseTestCase):
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
+class StripWithEncryptionTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    def AssertCheckpointStripState(image_path, stripped_expected):
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "%s": ' % os.path.basename(image_path)],
+          returned_passwords=['abc']):
+        checkpoint = checkpoint_lib.Checkpoint.Open(image_path, encryption_manager=lib.EncryptionManager(output=None))
+        try:
+          AssertEquals(True, os.path.exists(checkpoint.GetMetadataPath()))
+          AssertEquals(not stripped_expected, os.path.exists(checkpoint.GetContentRootPath()))
+        finally:
+          checkpoint.Close()
+
+    image_ext = '.sparseimage'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.luks.img'
+
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: ',
+                          'Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc', 'abc', 'abc']):
+      checkpoint1, manifest1 = DoCreate(
+        src_root, checkpoints_dir, '1', encrypt=True,
+        expected_output=['>d+++++++ .',
+                         '>f+++++++ f1',
+                         'Transferring 2 paths (20mb)'])
+    try:
+      AssertLinesEqual(GetManifestItemized(manifest1),
+                       ['.d....... .',
+                        '.f....... f1'])
+    finally:
+      checkpoint1.Close()
+    checkpoint1_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint1.GetImagePath())
+    AssertCheckpointStripState(checkpoint1.GetImagePath(), False)
+
+    checkpoint2_path = os.path.join(checkpoints_dir, '2.sparseimage')
+    checkpoint2_path_parts = checkpoint_lib.CheckpointPathParts(checkpoint2_path)
+    shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '34mb', '35.2mb')
+
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+                expected_output=['Checkpoint stripped',
+                                 re.compile('^Image size 3[45]([.]1)?mb -> 3[45]([.]1)?mb$')])
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint1.GetImagePath(), defragment=False,
+                expected_output=['Checkpoint stripped',
+                                 'Starting to compact…',
+                                 'Reclaiming free space…',
+                                 'Finishing compaction…',
+                                 'Reclaimed 4 MB out of 1023.6 GB possible.',
+                                 re.compile('^Image size 3[45]([.]1)?mb -> 3[01]([.]1)?mb$')])
+      checkpoint1_path_parts.SetIsManifestOnly(True)
+      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '30mb', '31.2mb')
+      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
+    else:
+      AssertEquals(1073741824, os.lstat(checkpoint1.GetImagePath()).st_size)
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
+                expected_output=['Checkpoint stripped',
+                                 'Image size 1gb -> 1gb'])
+      checkpoint1_path_parts.SetIsManifestOnly(True)
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "1%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint1.GetImagePath(), defragment=False,
+                expected_output=[
+                  'Checkpoint stripped',
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/65536 files (0.0% non-contiguous), 12957/262144 blocks',
+                  re.compile('^resize2fs .*$'),
+                  'Resizing the filesystem on %s to 12982 (4k) blocks.' % checkpoint1_path_parts.GetPath(),
+                  'The filesystem on %s is now 12982 (4k) blocks long.' % checkpoint1_path_parts.GetPath(),
+                  re.compile('^e2fsck .*$'),
+                  'Pass 1: Checking inodes, blocks, and sizes',
+                  'Pass 2: Checking directory structure',
+                  'Pass 3: Checking directory connectivity',
+                  'Pass 4: Checking reference counts',
+                  'Pass 5: Checking group summary information',
+                  '1: 13/8192 files (0.0% non-contiguous), 8843/12982 blocks',
+                  'Image size 1gb -> 50.7mb'])
+      AssertEquals(53174272, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
+
+    if platform.system() == lib.PLATFORM_DARWIN:
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "2%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
+                expected_output=[
+                  'Checkpoint stripped',
+                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
+                  re.compile('^Image size 3[45]([.]1)?mb -> 3[45]([.]1)?mb$')])
+      checkpoint2_path_parts.SetIsManifestOnly(True)
+      with HandleGetPass(
+          expected_prompts=['Enter password to access "2%s": ' % image_ext],
+          returned_passwords=['abc']):
+        DoStrip(checkpoint2_path, defragment_iterations=2,
+                expected_output=[
+                  'Checkpoint stripped',
+                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
+                  '<... snip APFS operation ...>',
+                  re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                  '<... snip APFS operation ...>',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  'Reclaimed 13 MB out of 1.2 GB possible.',
+                  'Restoring apfs container size to 1023.8gb...',
+                  '<... snip APFS operation ...>',
+                  'Starting to compact…',
+                  'Reclaiming free space…',
+                  'Finishing compaction…',
+                  re.compile('^Reclaimed [45] MB out of 1023[.]6 GB possible[.]$'),
+                  re.compile('^Image size 3[45]([.]1)?mb -> 20([.]1)?mb$')])
+      AssertEquals(21097984, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+      AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
+
+
 class CheckpointPathPartsTestCase(BaseTestCase):
   def test(self):
     AssertEquals(True, checkpoint_lib.CheckpointPathParts.IsMatchingPath('1.sparseimage'))
