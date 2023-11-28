@@ -1416,19 +1416,19 @@ class StripWithEncryptionTestCase(BaseTestCase):
                   'Pass 3: Checking directory connectivity',
                   'Pass 4: Checking reference counts',
                   'Pass 5: Checking group summary information',
-                  '1: 13/65536 files (0.0% non-contiguous), 12957/262144 blocks',
+                  '1: 13/64512 files (0.0% non-contiguous), 8787/258048 blocks',
                   re.compile('^resize2fs .*$'),
-                  'Resizing the filesystem on %s to 12982 (4k) blocks.' % checkpoint1_path_parts.GetPath(),
-                  'The filesystem on %s is now 12982 (4k) blocks long.' % checkpoint1_path_parts.GetPath(),
+                  re.compile('^Resizing the filesystem on /dev/mapper/[^ ]+ to 8800 [(]4k[)] blocks[.]$'),
+                  re.compile('^The filesystem on /dev/mapper/[^ ]+ is now 8800 [(]4k[)] blocks long[.]$'),
                   re.compile('^e2fsck .*$'),
                   'Pass 1: Checking inodes, blocks, and sizes',
                   'Pass 2: Checking directory structure',
                   'Pass 3: Checking directory connectivity',
                   'Pass 4: Checking reference counts',
                   'Pass 5: Checking group summary information',
-                  '1: 13/8192 files (0.0% non-contiguous), 8843/12982 blocks',
-                  'Image size 1gb -> 50.7mb'])
-      AssertEquals(53174272, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
+                  '1: 13/8064 files (0.0% non-contiguous), 4737/8800 blocks',
+                  'Image size 1gb -> 50.4mb'])
+      AssertEquals(52822016, os.lstat(checkpoint1_path_parts.GetPath()).st_size)
       AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
 
     if platform.system() == lib.PLATFORM_DARWIN:
