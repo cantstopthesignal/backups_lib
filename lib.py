@@ -2737,14 +2737,17 @@ class DiffDumperStats(object):
     self.total_matched_size = 0
     self.total_mismatched_paths = 0
     self.total_mismatched_size = 0
+    self.total_skipped_paths = 0
 
 
 class ManifestDiffDumper(object):
-  def __init__(self, first_manifest, second_manifest, output, ignore_matching_renames=False,
-               ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False):
+  def __init__(self, first_manifest, second_manifest, output, path_matcher=PathMatcherAll(),
+               ignore_matching_renames=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
+               ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False):
     self.first_manifest = first_manifest
     self.second_manifest = second_manifest
     self.output = output
+    self.path_matcher = path_matcher
     self.ignore_matching_renames = ignore_matching_renames
     self.ignore_uid_diffs = ignore_uid_diffs
     self.ignore_gid_diffs = ignore_gid_diffs
@@ -2759,6 +2762,10 @@ class ManifestDiffDumper(object):
     all_paths.update(list(self.first_manifest.GetPathMap().keys()))
     for path in sorted(all_paths):
       self.stats.total_paths += 1
+
+      if not self.path_matcher.Matches(path):
+        self.stats.total_skipped_paths += 1
+        continue
 
       first_path_info = self.first_manifest.GetPathInfo(path)
       second_path_info = self.second_manifest.GetPathInfo(path)
@@ -2970,6 +2977,7 @@ def DoDiffManifests(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('first_path', metavar='first_manifest_or_image_path')
   parser.add_argument('second_path', metavar='second_manifest_or_image_path')
+  AddPathsArgs(parser)
   parser.add_argument('--ignore-matching-renames', action='store_true')
   if IGNORE_UID_DIFFS:
     parser.add_argument('--no-ignore-uid-diffs', dest='ignore_uid_diffs', action='store_false')
@@ -2987,10 +2995,11 @@ def DoDiffManifests(args, output):
     cmd_args.first_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   second_manifest = ReadManifestFromImageOrPath(
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
+  path_matcher = GetPathMatcherFromArgs(cmd_args)
 
   manifest_diff_dumper = ManifestDiffDumper(
     first_manifest=first_manifest, second_manifest=second_manifest, output=output, verbose=args.verbose,
-    ignore_matching_renames=cmd_args.ignore_matching_renames,
+    path_matcher=path_matcher, ignore_matching_renames=cmd_args.ignore_matching_renames,
     ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs)
   return manifest_diff_dumper.DumpDiff()
 
