@@ -73,6 +73,16 @@ def DoCompact(checkpoint_path, defragment=True, defragment_iterations=None,
   AssertLinesEqual(output_lines, expected_output)
 
 
+def DoMountImageInteractive(image_path, readonly=True,
+                            dry_run=False, expected_output=[]):
+  cmd_args = ['mount-image-interactive',
+              '--image-path', image_path]
+  if not readonly:
+    cmd_args.append('--no-readonly')
+  output_lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=None)
+  AssertLinesEqual(output_lines, expected_output)
+
+
 class PathInfoTestCase(BaseTestCase):
   def test(self):
     with TempDir() as test_dir:
@@ -551,6 +561,129 @@ class CompactWithEncryptionTestCase(BaseTestCase):
                     re.compile('^Reclaimed (0 bytes|1 MB) out of 1023[.]6 GB possible[.]$'),
                     re.compile('^Image size 3[01][.]1mb -> 14[.]1mb$')])
       AssertEquals(14806528, lib.GetPathTreeSize(checkpoint1.GetImagePath()))
+
+
+class MountImageInteractiveTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+
+    checkpoint1, manifest1 = DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+    checkpoint1.Close()
+
+    with InteractiveCheckerReadyResults(
+        lib.InteractiveImageMounter.INTERACTIVE_CHECKER) as interactive_checker:
+      def InteractiveCallback(context):
+        AssertEquals(True, isinstance(context, lib.ImageAttacher))
+        AssertEquals(True, os.path.isdir(context.GetMountPoint()))
+        AssertEquals(True, context.readonly)
+        if platform.system() == lib.PLATFORM_DARWIN:
+          AssertEquals(['.metadata', 'Root'], sorted(os.listdir(context.GetMountPoint())))
+        else:
+          AssertEquals(['.metadata', 'Root', 'lost+found'], sorted(os.listdir(context.GetMountPoint())))
+      interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
+      DoMountImageInteractive(
+        checkpoint1.GetImagePath(), readonly=True,
+        expected_output=[re.compile('Mounted as /[^\s]+'),
+                         'Press enter to unmount: ENTER',
+                         'Unmounted'])
+
+    with InteractiveCheckerReadyResults(
+        lib.InteractiveImageMounter.INTERACTIVE_CHECKER) as interactive_checker:
+      def InteractiveCallback(context):
+        AssertEquals(True, isinstance(context, lib.ImageAttacher))
+        AssertEquals(True, os.path.isdir(context.GetMountPoint()))
+        AssertEquals(False, context.readonly)
+        if platform.system() == lib.PLATFORM_DARWIN:
+          AssertEquals(['.metadata', 'Root'], sorted(os.listdir(context.GetMountPoint())))
+        else:
+          AssertEquals(['.metadata', 'Root', 'lost+found'], sorted(os.listdir(context.GetMountPoint())))
+      interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
+      DoMountImageInteractive(
+        checkpoint1.GetImagePath(), readonly=False,
+        expected_output=[re.compile('Mounted as /[^\s]+'),
+                         'Press enter to unmount: ENTER',
+                         'Unmounted'])
+
+
+class MountImageInteractiveWithEncryptionTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+
+    image_ext = '.sparseimage'
+    if platform.system() == lib.PLATFORM_LINUX:
+      image_ext = '.luks.img'
+
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
+                          'Re-enter new password: ',
+                          'Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc', 'abc', 'abc']):
+      checkpoint1, manifest1 = DoCreate(
+        src_root, checkpoints_dir, '1', encrypt=True,
+        expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+      checkpoint1.Close()
+
+    with HandleGetPass(
+        expected_prompts=['Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc']):
+      with InteractiveCheckerReadyResults(
+          lib.InteractiveImageMounter.INTERACTIVE_CHECKER) as interactive_checker:
+        def InteractiveCallback(context):
+          AssertEquals(True, isinstance(context, lib.ImageAttacher))
+          AssertEquals(True, os.path.isdir(context.GetMountPoint()))
+          AssertEquals(True, context.readonly)
+          if platform.system() == lib.PLATFORM_DARWIN:
+            AssertEquals(['.metadata', 'Root'], sorted(os.listdir(context.GetMountPoint())))
+          else:
+            AssertEquals(['.metadata', 'Root', 'lost+found'], sorted(os.listdir(context.GetMountPoint())))
+        interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
+        DoMountImageInteractive(
+          checkpoint1.GetImagePath(), readonly=True,
+          expected_output=[re.compile('Mounted as /[^\s]+'),
+                           'Press enter to unmount: ENTER',
+                           'Unmounted'])
+
+    with HandleGetPass(
+        expected_prompts=['Enter password to access "1%s": ' % image_ext],
+        returned_passwords=['abc']):
+      with InteractiveCheckerReadyResults(
+          lib.InteractiveImageMounter.INTERACTIVE_CHECKER) as interactive_checker:
+        def InteractiveCallback(context):
+          AssertEquals(True, isinstance(context, lib.ImageAttacher))
+          AssertEquals(True, os.path.isdir(context.GetMountPoint()))
+          AssertEquals(False, context.readonly)
+          if platform.system() == lib.PLATFORM_DARWIN:
+            AssertEquals(['.metadata', 'Root'], sorted(os.listdir(context.GetMountPoint())))
+          else:
+            AssertEquals(['.metadata', 'Root', 'lost+found'], sorted(os.listdir(context.GetMountPoint())))
+        interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
+        DoMountImageInteractive(
+          checkpoint1.GetImagePath(), readonly=False,
+          expected_output=[re.compile('Mounted as /[^\s]+'),
+                           'Press enter to unmount: ENTER',
+                           'Unmounted'])
 
 
 class DiffManifestsTestCase(BaseTestCase):

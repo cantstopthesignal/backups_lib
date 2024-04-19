@@ -34,12 +34,14 @@ from . import staged_backup_pb2
 
 
 COMMAND_COMPACT_IMAGE = 'compact-image'
+COMMAND_MOUNT_IMAGE_INTERACTIVE = 'mount-image-interactive'
 COMMAND_DUMP_MANIFEST = 'dump-manifest'
 COMMAND_DIFF_MANIFESTS = 'diff-manifests'
 COMMAND_VERIFY_MANIFEST = 'verify-manifest'
 
 COMMANDS = [
   COMMAND_DUMP_MANIFEST,
+  COMMAND_MOUNT_IMAGE_INTERACTIVE,
   COMMAND_DIFF_MANIFESTS,
   COMMAND_VERIFY_MANIFEST,
   COMMAND_COMPACT_IMAGE,
@@ -407,21 +409,36 @@ class InteractiveChecker:
   def __init__(self):
     self.ready_results = []
 
-  def AddReadyResult(self, result):
-    self.ready_results.append(result)
+  def AddReadyResult(self, result, callback=None):
+    self.ready_results.append((result, callback))
 
   def ClearReadyResults(self):
     self.ready_results = []
 
-  def Confirm(self, message, output):
+  def Confirm(self, message, output, context=None):
     if self.ready_results:
-      result = self.ready_results[0]
+      (result, callback) = self.ready_results[0]
       del self.ready_results[0]
+      if callback:
+        callback(context=context)
       print('%s (y/N): %s' % (message, result and 'y' or 'n'), file=output)
       return result
 
     print('%s (y/N):' % message, end=' ', file=output)
     return input() == 'y'
+
+  def WaitForEnter(self, message, output, context=None):
+    if self.ready_results:
+      (result, callback) = self.ready_results[0]
+      if callback:
+        callback(context=context)
+      del self.ready_results[0]
+      print('%s: %s' % (message, result), file=output)
+      return result
+
+    print('%s:' % message, end=' ', file=output)
+    input()
+    return
 
 
 class MtimePreserver(object):
@@ -2945,6 +2962,26 @@ class ManifestVerifier(object):
       del missing_paths[0]
 
 
+class InteractiveImageMounter(object):
+  INTERACTIVE_CHECKER = InteractiveChecker()
+
+  def __init__(self, image_path, encryption_manager, output, readonly=True, dry_run=True):
+    self.image_path = image_path
+    self.encryption_manager = encryption_manager
+    self.output = output
+    self.readonly = readonly or dry_run
+    self.dry_run = dry_run
+
+  def MountInteractively(self):
+    with ImageAttacher(self.image_path, encryption_manager=self.encryption_manager,
+                       readonly=self.readonly) as attacher:
+      print('Mounted as %s' % EscapePath(attacher.GetMountPoint()), file=self.output)
+      print(file=self.output)
+      self.INTERACTIVE_CHECKER.WaitForEnter('Press enter to unmount', output=self.output, context=attacher)
+    print('Unmounted', file=self.output)
+    return True
+
+
 def DoCompactImage(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--image-path', required=True)
@@ -2957,6 +2994,18 @@ def DoCompactImage(args, output):
     defragment_iterations=cmd_args.defragment_iterations, output=output, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=EncryptionManager(output=output))
   return image_compactor.Compact()
+
+
+def DoMountImageInteractive(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--image-path', required=True)
+  parser.add_argument('--no-readonly', dest='readonly', action='store_false')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  interactive_image_mounter = InteractiveImageMounter(
+    image_path=cmd_args.image_path, encryption_manager=EncryptionManager(output=output),
+    output=output, readonly=cmd_args.readonly, dry_run=args.dry_run)
+  return interactive_image_mounter.MountInteractively()
 
 
 def DoDumpManifest(args, output):
@@ -3023,6 +3072,8 @@ def DoVerifyManifest(args, output):
 def DoCommand(args, output):
   if args.command == COMMAND_COMPACT_IMAGE:
     return DoCompactImage(args, output=output)
+  elif args.command == COMMAND_MOUNT_IMAGE_INTERACTIVE:
+    return DoMountImageInteractive(args, output=output)
   elif args.command == COMMAND_DUMP_MANIFEST:
     return DoDumpManifest(args, output=output)
   elif args.command == COMMAND_DIFF_MANIFESTS:
