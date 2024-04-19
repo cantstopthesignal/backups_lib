@@ -292,6 +292,11 @@ def CollapseApfsOperationsInOutput(output_lines):
       assert in_apfs_operation
       in_apfs_operation = False
       continue
+    elif line.startswith('Error: -69742: The requested size change for the target disk or a related disk is too small'):
+      new_output_lines.append(line)
+      assert in_apfs_operation
+      in_apfs_operation = False
+      continue
     elif in_apfs_operation:
       continue
     new_output_lines.append(line)

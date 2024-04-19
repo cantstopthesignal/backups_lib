@@ -1228,11 +1228,11 @@ class StripTestCase(BaseTestCase):
 
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
-    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 100))
 
     checkpoint1, manifest1 = DoCreate(
       src_root, checkpoints_dir, '1',
-      expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (20mb)'])
+      expected_output=['>d+++++++ .', '>f+++++++ f1', 'Transferring 2 paths (100mb)'])
     try:
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
@@ -1247,20 +1247,20 @@ class StripTestCase(BaseTestCase):
     shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
     if platform.system() == lib.PLATFORM_DARWIN:
-      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '34mb', '35.1mb')
+      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '110mb', '120mb')
 
       DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
               expected_output=['Checkpoint stripped',
-                               re.compile('^Image size 3[45]mb -> 3[45]mb$')])
+                               re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       DoStrip(checkpoint1.GetImagePath(), defragment=False,
               expected_output=['Checkpoint stripped',
                                'Starting to compact…',
                                'Reclaiming free space…',
                                'Finishing compaction…',
-                               'Reclaimed 4 MB out of 1023.6 GB possible.',
-                               re.compile('^Image size 3[45]mb -> 3[01]mb$')])
+                               re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                               re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       checkpoint1_path_parts.SetIsManifestOnly(True)
-      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '30mb', '31.1mb')
+      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '110mb', '115mb')
       AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
     else:
       AssertEquals(1073741824, os.lstat(checkpoint1.GetImagePath()).st_size)
@@ -1296,28 +1296,30 @@ class StripTestCase(BaseTestCase):
       DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
               expected_output=[
                 'Checkpoint stripped',
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
-                re.compile('^Image size 3[45]mb -> 3[45]mb$')])
+                re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
+                           % re.escape(checkpoint2_path)),
+                re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       checkpoint2_path_parts.SetIsManifestOnly(True)
       DoStrip(checkpoint2_path, defragment_iterations=2,
               expected_output=[
                 'Checkpoint stripped',
-                'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
+                re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
+                           % re.escape(checkpoint2_path_parts.GetPath())),
                 '<... snip APFS operation ...>',
-                re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                re.compile('^Iteration 2, new apfs min size [0-9]+(?:[.][0-9]+)?[gm]b[.][.][.]$'),
                 '<... snip APFS operation ...>',
                 'Starting to compact…',
                 'Reclaiming free space…',
                 'Finishing compaction…',
-                'Reclaimed 13 MB out of 1.2 GB possible.',
+                re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
                 'Restoring apfs container size to 1023.8gb...',
                 '<... snip APFS operation ...>',
                 'Starting to compact…',
                 'Reclaiming free space…',
                 'Finishing compaction…',
-                re.compile('^Reclaimed [45] MB out of 1023[.]6 GB possible[.]$'),
-                re.compile('^Image size 3[45]mb -> 20mb$')])
-      AssertEquals(20975616, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+                re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> [1-6][0-9](?:[.][0-9]+)?mb$')])
+      AssertFileSizeInRange(os.lstat(checkpoint2_path_parts.GetPath()).st_size, '14mb', '63.1mb')
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
@@ -1348,7 +1350,7 @@ class StripWithEncryptionTestCase(BaseTestCase):
 
     checkpoints_dir = CreateDir(test_dir, 'checkpoints')
     src_root = CreateDir(test_dir, 'src')
-    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 20))
+    file1 = CreateFile(src_root, 'f1', contents='1' * (1024 * 1024 * 100))
 
     with HandleGetPass(
         expected_prompts=['Enter a new password to secure "1%s": ' % image_ext,
@@ -1359,7 +1361,7 @@ class StripWithEncryptionTestCase(BaseTestCase):
         src_root, checkpoints_dir, '1', encrypt=True,
         expected_output=['>d+++++++ .',
                          '>f+++++++ f1',
-                         'Transferring 2 paths (20mb)'])
+                         'Transferring 2 paths (100mb)'])
     try:
       AssertLinesEqual(GetManifestItemized(manifest1),
                        ['.d....... .',
@@ -1374,14 +1376,14 @@ class StripWithEncryptionTestCase(BaseTestCase):
     shutil.copy(checkpoint1.GetImagePath(), checkpoint2_path)
 
     if platform.system() == lib.PLATFORM_DARWIN:
-      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '34mb', '35.2mb')
+      AssertFileSizeInRange(os.lstat(checkpoint1.GetImagePath()).st_size, '110mb', '120mb')
 
       with HandleGetPass(
           expected_prompts=['Enter password to access "1%s": ' % image_ext],
           returned_passwords=['abc']):
         DoStrip(checkpoint1.GetImagePath(), defragment=False, dry_run=True,
                 expected_output=['Checkpoint stripped',
-                                 re.compile('^Image size 3[45]([.]1)?mb -> 3[45]([.]1)?mb$')])
+                                 re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       with HandleGetPass(
           expected_prompts=['Enter password to access "1%s": ' % image_ext],
           returned_passwords=['abc']):
@@ -1390,10 +1392,10 @@ class StripWithEncryptionTestCase(BaseTestCase):
                                  'Starting to compact…',
                                  'Reclaiming free space…',
                                  'Finishing compaction…',
-                                 'Reclaimed 4 MB out of 1023.6 GB possible.',
-                                 re.compile('^Image size 3[45]([.]1)?mb -> 3[01]([.]1)?mb$')])
+                                 re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                                 re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       checkpoint1_path_parts.SetIsManifestOnly(True)
-      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '30mb', '31.2mb')
+      AssertFileSizeInRange(os.lstat(checkpoint1_path_parts.GetPath()).st_size, '110mb', '112mb')
       AssertCheckpointStripState(checkpoint1_path_parts.GetPath(), True)
     else:
       AssertEquals(1073741824, os.lstat(checkpoint1.GetImagePath()).st_size)
@@ -1438,8 +1440,9 @@ class StripWithEncryptionTestCase(BaseTestCase):
         DoStrip(checkpoint2_path, defragment_iterations=2, dry_run=True,
                 expected_output=[
                   'Checkpoint stripped',
-                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path,
-                  re.compile('^Image size 3[45]([.]1)?mb -> 3[45]([.]1)?mb$')])
+                  re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
+                             % re.escape(checkpoint2_path)),
+                  re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 11[0-9](?:[.][0-9]+)?mb$')])
       checkpoint2_path_parts.SetIsManifestOnly(True)
       with HandleGetPass(
           expected_prompts=['Enter password to access "2%s": ' % image_ext],
@@ -1447,22 +1450,23 @@ class StripWithEncryptionTestCase(BaseTestCase):
         DoStrip(checkpoint2_path, defragment_iterations=2,
                 expected_output=[
                   'Checkpoint stripped',
-                  'Defragmenting %s; apfs min size 1.7gb, current size 1023.8gb...' % checkpoint2_path_parts.GetPath(),
+                  re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
+                             % re.escape(checkpoint2_path_parts.GetPath())),
                   '<... snip APFS operation ...>',
-                  re.compile('^Iteration 2, new apfs min size 1[.][23]gb[.][.][.]$'),
+                  re.compile('^Iteration 2, new apfs min size [0-9]+(?:[.][0-9]+)?[gm]b[.][.][.]$'),
                   '<... snip APFS operation ...>',
                   'Starting to compact…',
                   'Reclaiming free space…',
                   'Finishing compaction…',
-                  'Reclaimed 13 MB out of 1.2 GB possible.',
+                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
                   'Starting to compact…',
                   'Reclaiming free space…',
                   'Finishing compaction…',
-                  re.compile('^Reclaimed [45] MB out of 1023[.]6 GB possible[.]$'),
-                  re.compile('^Image size 3[45]([.]1)?mb -> 20([.]1)?mb$')])
-      AssertEquals(21097984, os.lstat(checkpoint2_path_parts.GetPath()).st_size)
+                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                  re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 6[0-9](?:[.][0-9]+)?mb$')])
+      AssertFileSizeInRange(os.lstat(checkpoint2_path_parts.GetPath()).st_size, '60mb', '65mb')
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 

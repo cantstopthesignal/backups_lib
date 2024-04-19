@@ -1423,11 +1423,17 @@ def ResizeApfsContainer(apfs_device, new_size, output):
   cmd = ['diskutil', 'apfs', 'resizeContainer', apfs_device, str(new_size)]
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
+  size_change_too_small = False
   with p.stdout:
     for line in p.stdout:
+      if line.startswith('Error: -69742: The requested size change for the target disk or a related disk is too small'):
+        size_change_too_small = True
       print(line.rstrip(), file=output)
   if p.wait():
+    if size_change_too_small:
+      return False
     raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+  return True
 
 
 def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uuid=None):
@@ -2606,17 +2612,19 @@ class ImageCompactor(object):
       print('Defragmenting %s; apfs min size %s, current size %s...' % (
         self.image_path, FileSizeToString(min_bytes), FileSizeToString(old_apfs_container_size)), file=self.output)
       if not self.dry_run:
+        min_savings_bytes = FileSizeStringToBytes('10mb')
         for i in range(self.defragment_iterations):
           if i:
             _, new_min_bytes = GetApfsDeviceLimits(apfs_device)
-            if new_min_bytes >= min_bytes * 0.95:
+            if new_min_bytes >= min_bytes - min_savings_bytes:
               print('Iteration %d, new apfs min size %s has low savings' % (
                 i+1, FileSizeToString(new_min_bytes)), file=self.output)
               break
             print('Iteration %d, new apfs min size %s...' % (
               i+1, FileSizeToString(new_min_bytes)), file=self.output)
             min_bytes = new_min_bytes
-          ResizeApfsContainer(apfs_device, min_bytes, output=self.output)
+          if not ResizeApfsContainer(apfs_device, min_bytes, output=self.output):
+            break
 
     if DEFRAGMENT_WITH_COMPACT_WITH_RESIZE:
       self._CompactImageWithResizeDarwin()
