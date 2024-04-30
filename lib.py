@@ -387,6 +387,7 @@ IGNORED_XATTR_KEYS = [
   'com.apple.diskimages.recentcksum',
   'com.apple.lastuseddate#PS',
   'com.apple.macl',
+  'com.apple.provenance',
   'com.apple.quarantine',
   'user.drive.can_manage_team_drive_members',
   'user.drive.md5',
