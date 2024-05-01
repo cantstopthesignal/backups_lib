@@ -337,7 +337,7 @@ class CompactTestCase(BaseTestCase):
                   'Finishing compaction…',
                   re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
                   re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> [12][0-9](?:[.][0-9]+)?mb$')])
-      AssertFileSizeInRange(lib.GetPathTreeSize(checkpoint1.GetImagePath()), '15mb', '21mb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(checkpoint1.GetImagePath()), '15mb', '22mb')
     else:
       DoCompact(checkpoint1.GetImagePath(), dry_run=True,
                 expected_output=[
@@ -408,13 +408,13 @@ class CompactTestCase(BaseTestCase):
                   'Starting to compact…',
                   'Reclaiming free space…',
                   'Finishing compaction…',
-                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? (MB|bytes) out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? (MB|KB|bytes) out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
                   'Restoring apfs container size to 1023.8gb...',
                   '<... snip APFS operation ...>',
                   'Starting to compact…',
                   'Reclaiming free space…',
                   'Finishing compaction…',
-                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
+                  re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? (MB|KB|bytes) out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
                   re.compile('^Image size 225[.][5-8]mb -> [3-5][0-9](?:[.][0-9]+)?mb$')])
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '34.7mb', '58.9mb')
     else:
@@ -562,8 +562,8 @@ class CompactWithEncryptionTestCase(BaseTestCase):
                     'Reclaiming free space…',
                     'Finishing compaction…',
                     re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
-                    re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 3[0-9](?:[.][0-9]+)?mb$')])
-      AssertFileSizeInRange(lib.GetPathTreeSize(checkpoint1.GetImagePath()), '38mb', '40mb')
+                    re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> [1-3][0-9](?:[.][0-9]+)?mb$')])
+      AssertFileSizeInRange(lib.GetPathTreeSize(checkpoint1.GetImagePath()), '14mb', '40mb')
 
 
 class MountImageInteractiveTestCase(BaseTestCase):

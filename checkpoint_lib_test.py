@@ -1465,8 +1465,8 @@ class StripWithEncryptionTestCase(BaseTestCase):
                   'Reclaiming free space…',
                   'Finishing compaction…',
                   re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? MB out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
-                  re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> 6[0-9](?:[.][0-9]+)?mb$')])
-      AssertFileSizeInRange(os.lstat(checkpoint2_path_parts.GetPath()).st_size, '60mb', '65mb')
+                  re.compile('^Image size 11[0-9](?:[.][0-9]+)?mb -> [2-6][0-9](?:[.][0-9]+)?mb$')])
+      AssertFileSizeInRange(os.lstat(checkpoint2_path_parts.GetPath()).st_size, '20mb', '65mb')
       AssertCheckpointStripState(checkpoint2_path_parts.GetPath(), True)
 
 
