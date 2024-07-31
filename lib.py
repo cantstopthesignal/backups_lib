@@ -2752,7 +2752,7 @@ class ImageCompactor(object):
     for i in range(len(lines)):
       if lines[i] == 'Data segments:':
         assert lines[i+1] == '  0: crypt'
-        m = re.match('^\s*offset: ([0-9]+) \\[bytes\\]$', lines[i+2])
+        m = re.match('^\\s*offset: ([0-9]+) \\[bytes\\]$', lines[i+2])
         assert m
         assert lines[i+3] == '\tlength: (whole device)'
         return int(m.group(1))

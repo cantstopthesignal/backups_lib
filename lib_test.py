@@ -598,7 +598,7 @@ class MountImageInteractiveTestCase(BaseTestCase):
       interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
       DoMountImageInteractive(
         checkpoint1.GetImagePath(), readonly=True,
-        expected_output=[re.compile('Mounted as /[^\s]+'),
+        expected_output=[re.compile('Mounted as /[^\\s]+'),
                          'Press enter to unmount: ENTER',
                          'Unmounted'])
 
@@ -615,7 +615,7 @@ class MountImageInteractiveTestCase(BaseTestCase):
       interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
       DoMountImageInteractive(
         checkpoint1.GetImagePath(), readonly=False,
-        expected_output=[re.compile('Mounted as /[^\s]+'),
+        expected_output=[re.compile('Mounted as /[^\\s]+'),
                          'Press enter to unmount: ENTER',
                          'Unmounted'])
 
@@ -664,7 +664,7 @@ class MountImageInteractiveWithEncryptionTestCase(BaseTestCase):
         interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
         DoMountImageInteractive(
           checkpoint1.GetImagePath(), readonly=True,
-          expected_output=[re.compile('Mounted as /[^\s]+'),
+          expected_output=[re.compile('Mounted as /[^\\s]+'),
                            'Press enter to unmount: ENTER',
                            'Unmounted'])
 
@@ -684,7 +684,7 @@ class MountImageInteractiveWithEncryptionTestCase(BaseTestCase):
         interactive_checker.AddReadyResult('ENTER', InteractiveCallback)
         DoMountImageInteractive(
           checkpoint1.GetImagePath(), readonly=False,
-          expected_output=[re.compile('Mounted as /[^\s]+'),
+          expected_output=[re.compile('Mounted as /[^\\s]+'),
                            'Press enter to unmount: ENTER',
                            'Unmounted'])
 
