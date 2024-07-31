@@ -2317,6 +2317,9 @@ class PathEnumerator(object):
     def GetPath(self):
       return self.path
 
+    def GetPathStat(self):
+      return self.path_stat
+
     def GetFollowSymlinks(self):
       return self.follow_symlinks
 
