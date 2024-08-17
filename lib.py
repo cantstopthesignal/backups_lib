@@ -2398,10 +2398,10 @@ class PathEnumerator(object):
         merge_file_path = os.path.join(root_dir, path, a_filter.GetPath())
         new_filters.extend(self._ParseFilterMergeFile(merge_file_path, path))
       elif isinstance(a_filter, FilterRuleDirMerge):
+        new_filters.append(a_filter)
         for child_entry in child_entries:
           if a_filter.filename == child_entry.name:
             new_filters.extend(self._ParseFilterMergeFile(child_entry.path, path))
-        new_filters.append(a_filter)
       else:
         new_filters.append(a_filter)
     return new_filters

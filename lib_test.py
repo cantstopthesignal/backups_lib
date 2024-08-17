@@ -1022,6 +1022,25 @@ class PathEnumeratorTestCase(BaseTestCase):
                              'd2/f3',
                              'f1'])
 
+      CreateFile(test_dir, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                 contents=['include /**',
+                           'exclude *'])
+
+      DoEnumeratePathsTest(test_dir, filters=checkpoint_lib.STAGED_BACKUP_DEFAULT_FILTERS,
+                           expected_paths=[
+                             '.',
+                             '.staged_backup_filter',
+                             '1.skp',
+                             'SKIP1',
+                             'd2',
+                             'd2/.staged_backup_filter',
+                             'd2/2.skp',
+                             'd2/d3',
+                             'd2/d3/mayskip',
+                             'd2/f1',
+                             'd2/f3',
+                             'f1'])
+
     with TempDir() as test_dir2:
       with TempDir() as test_dir:
         file1 = CreateFile(test_dir, 'f1')
