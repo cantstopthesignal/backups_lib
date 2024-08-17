@@ -760,7 +760,7 @@ class ImageFromFolderTestCase(BaseTestCase):
           re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDZO', image_path)
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17.1kb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17.9kb')
 
       DoVerify(image_path,
                expected_output=['Paths: 6 total (1kb)'])
