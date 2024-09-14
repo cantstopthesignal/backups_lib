@@ -946,8 +946,16 @@ class BackupsManager(object):
   def GetBackupsRootDir(self):
     return os.path.join(self.GetPath(), BACKUPS_SUBDIR)
 
+  def Reopen(self, readonly=True):
+    if self.readonly == readonly:
+      return
+    self.Close()
+    self.readonly = readonly
+    self._Open()
+
   def Close(self):
     self.attacher.Close()
+    self.attacher = None
 
   def GetBackupList(self):
     return list(self.backups)
@@ -1027,15 +1035,10 @@ class BackupsManager(object):
         raise Exception('Unexpected backup state: %s' % self.backups[i])
 
   def _Open(self):
-    attacher = lib.ImageAttacher.Open(
+    self.attacher = lib.ImageAttacher.Open(
       self.GetImagePath(), mount_point=self.config.mount_path,
       encryption_manager=self.encryption_manager, readonly=(self.readonly or self.dry_run),
       browseable=self.browseable, hdiutil_verify=self.hdiutil_verify)
-    try:
-      self.attacher = attacher
-    except:
-      attacher.Close()
-      raise
 
   def _LoadBackupsList(self):
     self.backups = []
@@ -1639,7 +1642,7 @@ class BackupsInteractiveDeleter(object):
 
   def DeleteBackupsInteractively(self):
     self.manager = BackupsManager.Open(
-      self.config, encryption_manager=self.encryption_manager, readonly=self.dry_run,
+      self.config, encryption_manager=self.encryption_manager, readonly=True,
       dry_run=self.dry_run)
     try:
       for backup in self.manager.GetBackupList():
@@ -1663,7 +1666,11 @@ class BackupsInteractiveDeleter(object):
         if not self.INTERACTIVE_CHECKER.Confirm('Delete backup?', self.output):
           print('*** Skipping backup %s ***' % backup, file=self.output)
           continue
+        if not self.dry_run:
+          self.manager.Reopen(readonly=False)
         self.manager.DeleteBackup(backup, output=self.output, dry_run=self.dry_run)
+        if not self.dry_run:
+          self.manager.Reopen(readonly=True)
     finally:
       self.manager.Close()
 
