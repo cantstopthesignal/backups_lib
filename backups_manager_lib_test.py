@@ -59,6 +59,7 @@ from .backups_manager_lib_test_util import DoDeleteInBackups
 from .backups_manager_lib_test_util import DoDumpUniqueFilesInBackups
 from .backups_manager_lib_test_util import DoExtractFromBackups
 from .backups_manager_lib_test_util import DoListBackups
+from .backups_manager_lib_test_util import DoMarkBackupsNotPruneable
 from .backups_manager_lib_test_util import DoMergeIntoBackups
 from .backups_manager_lib_test_util import DoVerifyBackups
 from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
@@ -394,7 +395,7 @@ class ListBackupsTestCase(BaseTestCase):
     config = CreateConfig(test_dir)
     CreateBackupsBundle(config)
 
-    DoListBackups(config, expected_backups=['2020-01-01-120000'])
+    DoListBackups(config, expected_output=['2020-01-01-120000'])
 
 
 class VerifyBackupsTestCase(BaseTestCase):
@@ -1078,10 +1079,10 @@ class DeleteBackupsTestCase(BaseTestCase):
                        'Verifying 2020-01-04-120000...',
                        'Paths: 4 total (0b), 3 checksummed (0b)'])
 
-    DoListBackups(config, expected_backups=['2020-01-01-120000',
-                                            '2020-01-02-120000',
-                                            '2020-01-03-120000',
-                                            '2020-01-04-120000'])
+    DoListBackups(config, expected_output=['2020-01-01-120000',
+                                           '2020-01-02-120000',
+                                           '2020-01-03-120000',
+                                           '2020-01-04-120000'])
 
     DoDeleteBackups(
       config, backup_names=[],
@@ -1100,9 +1101,9 @@ class DeleteBackupsTestCase(BaseTestCase):
       expected_output=[
         'Deleting Backup<2020-01-01-120000,DONE>: Backup<2020-01-02-120000,DONE> supersedes it...'])
 
-    DoListBackups(config, expected_backups=['2020-01-02-120000',
-                                            '2020-01-03-120000',
-                                            '2020-01-04-120000'])
+    DoListBackups(config, expected_output=['2020-01-02-120000',
+                                           '2020-01-03-120000',
+                                           '2020-01-04-120000'])
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
@@ -1139,7 +1140,7 @@ class DeleteBackupsTestCase(BaseTestCase):
         'Deleting Backup<2020-01-02-120000,DONE>: Backup<2020-01-03-120000,DONE> supersedes it...',
         'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...'])
 
-    DoListBackups(config, expected_backups=['2020-01-04-120000'])
+    DoListBackups(config, expected_output=['2020-01-04-120000'])
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       config, readonly=True, browseable=False)
@@ -1167,7 +1168,7 @@ class DeleteBackupsTestCase(BaseTestCase):
       config, backup_names=['2020-01-04-120000'],
       expected_output=['Deleting Backup<2020-01-04-120000,DONE>...'])
 
-    DoListBackups(config, expected_backups=[])
+    DoListBackups(config, expected_output=[])
 
 
 class DeleteBackupsInteractiveTestCase(BaseTestCase):
@@ -2879,6 +2880,148 @@ class DeleteInBackupsTestCase(BaseTestCase):
                         '.L....... Latest -> 2020-01-04-120000'])
     finally:
       backups_manager.Close()
+
+
+class MarkBackupsNotPruneableTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    config = CreateConfig(test_dir)
+    CreateBackupsBundle(config)
+    latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
+
+    fileX = CreateFile(config.src_path, 'fX')
+    fileT = CreateFile(config.src_path, 'fT')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-02-120000',
+      expected_output=['*f.delete f1'])
+
+    file2 = CreateFile(config.src_path, 'f2')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000',
+      expected_output=['>f+++++++ f2',
+                       'Transferring 1 of 4 paths (0b of 0b)'])
+
+    file3 = CreateFile(config.src_path, 'f3')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-04-120000',
+      expected_output=['>f+++++++ f3',
+                       'Transferring 1 of 5 paths (0b of 0b)'])
+
+    DoApplyToBackups(
+      config,
+      expected_output=[
+        'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        '*f.delete f1',
+        'Copying paths: 3 to copy, 2 to hard link, 3 total in source, 3 total in result...',
+        'Verifying 2020-01-02-120000...',
+        'Paths: 3 total (0b), 2 checksummed (0b)',
+        'Applying 2020-01-03-120000 onto 2020-01-02-120000...',
+        '>f+++++++ f2',
+        'Copying paths: 4 to copy, 2 to hard link, 4 total in source, 4 total in result...',
+        'Verifying 2020-01-03-120000...',
+        'Paths: 4 total (0b), 3 checksummed (0b)',
+        'Applying 2020-01-04-120000 onto 2020-01-03-120000...',
+        '>f+++++++ f3',
+        'Copying paths: 5 to copy, 3 to hard link, 5 total in source, 5 total in result...',
+        'Verifying 2020-01-04-120000...',
+        'Paths: 5 total (0b), 4 checksummed (0b)'])
+
+    DoListBackups(config, expected_output=['2020-01-01-120000',
+                                           '2020-01-02-120000',
+                                           '2020-01-03-120000',
+                                           '2020-01-04-120000'])
+
+    DoListBackups(config, verbose=True,
+                  expected_output=['2020-01-01-120000',
+                                   '2020-01-02-120000',
+                                   '2020-01-03-120000',
+                                   '2020-01-04-120000'])
+
+    DoMarkBackupsNotPruneable(
+      config, dry_run=True, max_backup='2020-01-02-120000',
+      expected_output=[
+        'Marking backup Backup<2020-01-01-120000,DONE> as not pruneable',
+        'Marking backup Backup<2020-01-02-120000,DONE> as not pruneable'])
+
+    DoListBackups(config, verbose=True,
+                  expected_output=['2020-01-01-120000',
+                                   '2020-01-02-120000',
+                                   '2020-01-03-120000',
+                                   '2020-01-04-120000'])
+    DoMarkBackupsNotPruneable(
+      config, max_backup='2020-01-02-120000',
+      expected_output=[
+        'Marking backup Backup<2020-01-01-120000,DONE> as not pruneable',
+        'Marking backup Backup<2020-01-02-120000,DONE> as not pruneable'])
+    DoListBackups(config, verbose=True,
+                  expected_output=['2020-01-01-120000 (pruneable=False)',
+                                   '2020-01-02-120000 (pruneable=False)',
+                                   '2020-01-03-120000',
+                                   '2020-01-04-120000'])
+
+    DoMarkBackupsNotPruneable(
+      config, max_backup='2020-01-02-120000',
+      expected_output=[
+        'Backup Backup<2020-01-01-120000,DONE> is already not pruneable',
+        'Backup Backup<2020-01-02-120000,DONE> is already not pruneable'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      DoDeleteBackupsInteractive(
+        config, dry_run=True,
+        expected_output=[
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
+          'Paths: 0 unique (0b), 4 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...',
+          '*** Skipping latest backup Backup<2020-01-04-120000,DONE> ***'])
+
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      DoDeleteBackupsInteractive(
+        config, dry_run=True, min_backup='2020-01-01-120000',
+        expected_output=[
+          '*** Skipping backup Backup<2020-01-01-120000,DONE>: marked as not pruneable ***',
+          '*** Skipping backup Backup<2020-01-02-120000,DONE>: marked as not pruneable ***',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
+          'Paths: 0 unique (0b), 4 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...',
+          '*** Skipping latest backup Backup<2020-01-04-120000,DONE> ***'])
+    with InteractiveCheckerReadyResults(
+        backups_manager_lib.BackupsInteractiveDeleter.INTERACTIVE_CHECKER) as interactive_checker:
+      interactive_checker.AddReadyResult(True)
+      DoDeleteBackupsInteractive(
+        config, min_backup='2020-01-01-120000',
+        expected_output=[
+          '*** Skipping backup Backup<2020-01-01-120000,DONE>: marked as not pruneable ***',
+          '*** Skipping backup Backup<2020-01-02-120000,DONE>: marked as not pruneable ***',
+          'Finding unique files in backup Backup<2020-01-03-120000,DONE>...',
+          'Compare to previous Backup<2020-01-02-120000,DONE> and next Backup<2020-01-04-120000,DONE>...',
+          'Paths: 0 unique (0b), 4 total',
+          'Delete backup? (y/N): y',
+          'Deleting Backup<2020-01-03-120000,DONE>: Backup<2020-01-04-120000,DONE> supersedes it...',
+          '*** Skipping latest backup Backup<2020-01-04-120000,DONE> ***'])
+    DoListBackups(config, verbose=True,
+                  expected_output=['2020-01-01-120000 (pruneable=False)',
+                                   '2020-01-02-120000 (pruneable=False)',
+                                   '2020-01-04-120000'])
+    DoMarkBackupsNotPruneable(
+      config, backup_names=['2020-01-04-120000'],
+      expected_output=[
+        'Marking backup Backup<2020-01-04-120000,DONE> as not pruneable'])
 
 
 if __name__ == '__main__':

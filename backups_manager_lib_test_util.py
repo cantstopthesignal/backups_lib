@@ -165,10 +165,10 @@ def DoApplyToBackups(config, dry_run=False, deduplicate_min_file_size=1024,
                 expected_output=expected_output)
 
 
-def DoListBackups(config, dry_run=False, expected_backups=[]):
+def DoListBackups(config, dry_run=False, verbose=False, expected_output=[]):
   cmd_args = ['list-backups',
               '--backups-config', config.path]
-  DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=expected_backups)
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_output=expected_output)
 
 
 def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
@@ -316,4 +316,18 @@ def DoDeleteInBackups(config, dry_run=False, min_backup=None, max_backup=None,
   for path in paths:
     cmd_args.extend(['--path', path])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
+
+
+def DoMarkBackupsNotPruneable(config, backup_names=[], min_backup=None, max_backup=None,
+                              dry_run=False, verbose=False, expected_success=True, expected_output=[]):
+  cmd_args = ['mark-backups-not-pruneable',
+              '--backups-config', config.path]
+  for backup_name in backup_names:
+    cmd_args.extend(['--backup-name', backup_name])
+  if min_backup is not None:
+    cmd_args.extend(['--min-backup', min_backup])
+  if max_backup is not None:
+    cmd_args.extend(['--max-backup', max_backup])
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
                 expected_output=expected_output)

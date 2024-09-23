@@ -26,6 +26,7 @@ COMMAND_DUMP_UNIQUE_FILES_IN_BACKUPS = 'dump-unique-files-in-backups'
 COMMAND_EXTRACT_FROM_BACKUPS = 'extract-from-backups'
 COMMAND_MERGE_INTO_BACKUPS = 'merge-into-backups'
 COMMAND_DELETE_IN_BACKUPS = 'delete-in-backups'
+COMMAND_MARK_BACKUPS_NOT_PRUNEABLE = 'mark-backups-not-pruneable'
 
 COMMANDS = [
   COMMAND_CREATE_BACKUP,
@@ -42,6 +43,7 @@ COMMANDS = [
   COMMAND_EXTRACT_FROM_BACKUPS,
   COMMAND_MERGE_INTO_BACKUPS,
   COMMAND_DELETE_IN_BACKUPS,
+  COMMAND_MARK_BACKUPS_NOT_PRUNEABLE,
 ]
 
 
@@ -50,6 +52,8 @@ BACKUPS_SUBDIR = 'Backups'
 DEDUP_MIN_FILE_SIZE = 100 * 1024
 
 SUPERSEDED_METADATA_PREFIX = 'superseded-'
+
+NOT_PRUNEABLE_FILENAME = 'prune.SKIP'
 
 
 class BackupCheckpoint(object):
@@ -661,6 +665,9 @@ class BackupsMatcher(object):
     self.max_backup = max_backup
     self.backup_names = list(backup_names)
 
+  def IsDefault(self):
+    return self.min_backup is None and self.max_backup is None and not self.backup_names
+
   def Matches(self, backup_name):
     if self.min_backup is not None and backup_name < self.min_backup:
       return False
@@ -883,6 +890,18 @@ class Backup(object):
       if os.path.lexists(to_path):
         raise Exception('Cannot replace %r with %r' % (to_path, from_path))
       subprocess.check_call(['cp', '-a', from_path, to_path])
+
+  def IsPruneable(self):
+    return not os.path.isfile(os.path.join(self.GetMetadataPath(), NOT_PRUNEABLE_FILENAME))
+
+  def MarkPruneable(self, pruneable, dry_run=False):
+    not_pruneable_file_path = os.path.join(self.GetMetadataPath(), NOT_PRUNEABLE_FILENAME)
+    if pruneable:
+      if os.path.isfile(not_pruneable_file_path) and not dry_run:
+        os.unlink(not_pruneable_file_path)
+    elif not os.path.isfile(not_pruneable_file_path) and not dry_run:
+      with open(not_pruneable_file_path, 'w'):
+        pass
 
   def Delete(self, dry_run=False):
     path = self.GetPath()
@@ -1200,7 +1219,11 @@ class BackupsLister(object):
       dry_run=self.dry_run)
     try:
       for backup in backups_manager.GetBackupList():
-        print(backup.GetName(), file=self.output)
+        msg = backup.GetName()
+        if self.verbose:
+          if not backup.IsPruneable():
+            msg += ' (pruneable=False)'
+        print(msg, file=self.output)
     finally:
       backups_manager.Close()
     return True
@@ -1645,6 +1668,17 @@ class BackupsInteractiveDeleter(object):
       self.config, encryption_manager=self.encryption_manager, readonly=True,
       dry_run=self.dry_run)
     try:
+      if self.backups_matcher.IsDefault():
+        # Start after the last not pruneable backup by default
+        min_backup = None
+        for backup in reversed(self.manager.GetBackupList()):
+          if not backup.IsPruneable():
+            if min_backup is None:
+              print('*** The latest backup %s is not pruneable ***' % backup, file=self.output)
+              return
+            break
+          min_backup = backup.GetName()
+        self.backups_matcher = BackupsMatcher(min_backup=min_backup)
       for backup in self.manager.GetBackupList():
         if not self.backups_matcher.Matches(backup.GetName()):
           continue
@@ -1660,6 +1694,10 @@ class BackupsInteractiveDeleter(object):
           continue
         if self.match_previous_only:
           next_backup = None
+
+        if not backup.IsPruneable():
+          print('*** Skipping backup %s: marked as not pruneable ***' % backup, file=self.output)
+          continue
 
         self._DumpUniqueFilesInternal(backup, previous_backup, next_backup)
 
@@ -2086,6 +2124,35 @@ class PathsInBackupsDeleter(object):
     print('Paths: %d deleted, %d total' % (len(paths_to_delete), num_paths), file=self.output)
 
 
+class BackupNotPruneableMarker(object):
+  def __init__(self, config, output, backups_matcher=BackupsMatcher(),
+               encryption_manager=None, dry_run=False, verbose=False):
+    self.config = config
+    self.output = output
+    self.backups_matcher = backups_matcher
+    self.encryption_manager = encryption_manager
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.manager = None
+
+  def MarkBackupsNotPruneable(self):
+    self.manager = BackupsManager.Open(
+      self.config, encryption_manager=self.encryption_manager, readonly=False,
+      dry_run=self.dry_run)
+    try:
+      for backup in self.manager.GetBackupList():
+        if not self.backups_matcher.Matches(backup.GetName()):
+          continue
+        if backup.IsPruneable():
+          print('Marking backup %s as not pruneable' % backup, file=self.output)
+          backup.MarkPruneable(pruneable=False, dry_run=self.dry_run)
+        else:
+          print('Backup %s is already not pruneable' % backup, file=self.output)
+    finally:
+      self.manager.Close()
+    return True
+
+
 def DoCreateBackup(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
@@ -2347,6 +2414,26 @@ def DoDeleteInBackups(args, output):
   return deleter.DeletePaths()
 
 
+def DoMarkBackupsNotPruneable(args, output):
+  parser = argparse.ArgumentParser()
+  AddBackupsConfigArgs(parser)
+  AddBackupsMatcherArgs(parser)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  config = GetBackupsConfigFromArgs(cmd_args)
+  try:
+    backups_matcher = GetBackupsMatcherFromArgs(cmd_args)
+  except BackupsMatcherArgsError as e:
+    print('*** Error:', e.args[0], file=output)
+    return False
+
+  marker = BackupNotPruneableMarker(
+    config, output=output, backups_matcher=backups_matcher,
+    encryption_manager=lib.EncryptionManager(output=output),
+    dry_run=args.dry_run, verbose=args.verbose)
+  return marker.MarkBackupsNotPruneable()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE_BACKUP:
     return DoCreateBackup(args, output=output)
@@ -2376,6 +2463,8 @@ def DoCommand(args, output):
     return DoMergeIntoBackups(args, output=output)
   elif args.command == COMMAND_DELETE_IN_BACKUPS:
     return DoDeleteInBackups(args, output=output)
+  elif args.command == COMMAND_MARK_BACKUPS_NOT_PRUNEABLE:
+    return DoMarkBackupsNotPruneable(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False
