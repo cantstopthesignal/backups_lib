@@ -925,7 +925,9 @@ class SafeCopyOrMover(object):
 
     lib.Rsync(abs_from_path, abs_to_path, output=self.output,
               force_directories=os.path.isdir(abs_from_path),
-              dry_run=self.dry_run, verbose=self.verbose)
+              dry_run=self.dry_run, verbose=True)
+
+    print('Syncing checksums...', file=self.output)
 
     checksums_syncer = ChecksumsSyncer(
       to_root_path, output=self.output, dry_run=self.dry_run,

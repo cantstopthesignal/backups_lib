@@ -1617,9 +1617,6 @@ def Rsync(src_path, dest_path, output, dry_run=False, verbose=False, link_dest=N
   cmd.append(src_path)
   cmd.append(dest_path)
 
-  if verbose:
-    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
-    print('(%d paths)' % len(paths), file=output)
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
   with p.stdout:

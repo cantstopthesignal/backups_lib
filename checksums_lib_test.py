@@ -1210,6 +1210,8 @@ class SafeCopyTestCase(BaseTestCase):
     DoSafeCopy(file1, file1_copy, dry_run=True,
                expected_output=['Verifying manifest for from root %s...' % root_dir,
                                 'Copying %s to %s...' % (file1, file1_copy),
+                                '>f++++++++++ f1',
+                                'Syncing checksums...',
                                 'Paths: 1 total (0b), 4 skipped'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
@@ -1219,6 +1221,8 @@ class SafeCopyTestCase(BaseTestCase):
       DoSafeCopy(file1, file1_copy, dry_run=False,
                expected_output=['Verifying manifest for from root %s...' % root_dir,
                                 'Copying %s to %s...' % (file1, file1_copy),
+                                '>f++++++++++ f1',
+                                'Syncing checksums...',
                                 '.d..t.... .',
                                 '>f+++++++ f1.copy',
                                 '  replacing duplicate: .f....... f1',
@@ -1256,6 +1260,8 @@ class SafeCopyTestCase(BaseTestCase):
                expected_output=['Verifying manifest for from root %s...' % root_dir,
                                 'Verifying manifest for to root %s...' % root2_dir,
                                 'Copying %s to %s...' % (file1, root2_file1_copy),
+                                '>f++++++++++ f1',
+                                'Syncing checksums...',
                                 'Paths: 1 total (0b), 4 skipped'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
@@ -1268,6 +1274,8 @@ class SafeCopyTestCase(BaseTestCase):
                  expected_output=['Verifying manifest for from root %s...' % root_dir,
                                   'Verifying manifest for to root %s...' % root2_dir,
                                   'Copying %s to %s...' % (file1, root2_file1_copy),
+                                  '>f++++++++++ f1',
+                                  'Syncing checksums...',
                                   '.d..t.... .',
                                   '>f+++++++ f1.copy',
                                   'Paths: 2 total (3b), 2 synced (3b), 1 checksummed (3b), 4 skipped',
@@ -1316,6 +1324,11 @@ class SafeCopyTestCase(BaseTestCase):
                expected_output=['Verifying manifest for from root %s...' % root_dir,
                                 'Verifying manifest for to root %s...' % root2_dir,
                                 'Copying %s to %s...' % (lib.EscapePath(parent1), lib.EscapePath(root2_parent_copy)),
+                                re.compile('^created directory .*$'),
+                                'cd++++++++++ ./',
+                                '>f++++++++++ f2',
+                                '>f++++++++++ f3',
+                                'Syncing checksums...',
                                 'Paths: 1 total (0b), 5 skipped'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
@@ -1328,6 +1341,11 @@ class SafeCopyTestCase(BaseTestCase):
                  expected_output=['Verifying manifest for from root %s...' % root_dir,
                                   'Verifying manifest for to root %s...' % root2_dir,
                                   'Copying %s to %s...' % (lib.EscapePath(parent1), lib.EscapePath(root2_parent_copy)),
+                                  re.compile('^created directory .*$'),
+                                  'cd++++++++++ ./',
+                                  '>f++++++++++ f2',
+                                  '>f++++++++++ f3',
+                                  'Syncing checksums...',
                                   '.d..t.... .',
                                   '>d+++++++ par! \\r copy',
                                   '>f+++++++ par! \\r copy/f2',
@@ -1351,7 +1369,8 @@ class SafeCopyTestCase(BaseTestCase):
                                 % lib.EscapePath(os.path.join(root2_dir, '.metadata', os.path.basename(parent1)))])
     DoSafeCopy(os.path.join(root_dir, '.metadata/manifest.pbdata'), os.path.join(root2_dir, 'manifestcopy'), dry_run=True,
                expected_success=False,
-               expected_output=['*** Error: From path %s cannot be within metadata dir' % os.path.join(root_dir, '.metadata/manifest.pbdata')])
+               expected_output=['*** Error: From path %s cannot be within metadata dir'
+                                % os.path.join(root_dir, '.metadata/manifest.pbdata')])
     DoSafeCopy(file1, os.path.join(root2_dir, '.metadata/manifest.pbdata'), dry_run=True,
                expected_success=False,
                expected_output=['*** Error: To path %s cannot be within metadata dir'
@@ -1361,6 +1380,8 @@ class SafeCopyTestCase(BaseTestCase):
       DoSafeCopy(os.path.basename(file1), 'f1.copy2', dry_run=True,
                  expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
                                   'Copying f1 to f1.copy2...',
+                                  '>f++++++++++ f1',
+                                  'Syncing checksums...',
                                   'Paths: 1 total (0b), 5 skipped'])
 
     with lib.MtimePreserver() as mtime_preserver:
@@ -1369,6 +1390,8 @@ class SafeCopyTestCase(BaseTestCase):
         DoSafeCopy(os.path.basename(file1), 'f1.copy2', dry_run=False,
                    expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
                                     'Copying f1 to f1.copy2...',
+                                    '>f++++++++++ f1',
+                                    'Syncing checksums...',
                                     '.d..t.... .',
                                     '>f+++++++ f1.copy2',
                                     '  replacing duplicate: .f....... f1.copy',
@@ -1388,6 +1411,8 @@ class SafeCopyTestCase(BaseTestCase):
                  expected_output=['Verifying manifest for from root %s...' % root_dir,
                                   'Verifying manifest for to root %s...' % os.getcwd(),
                                   'Copying %s to f1.copy3...' % file1,
+                                  '>f++++++++++ f1',
+                                  'Syncing checksums...',
                                   'Paths: 1 total (0b), 8 skipped'])
 
     with lib.MtimePreserver() as mtime_preserver:
@@ -1397,6 +1422,8 @@ class SafeCopyTestCase(BaseTestCase):
                    expected_output=['Verifying manifest for from root %s...' % root_dir,
                                     'Verifying manifest for to root %s...' % os.getcwd(),
                                     'Copying %s to f1.copy3...' % file1,
+                                    '>f++++++++++ f1',
+                                    'Syncing checksums...',
                                     '.d..t.... .',
                                     '>f+++++++ f1.copy3',
                                     '  replacing duplicate: .f....... f1.copy',
