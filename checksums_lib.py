@@ -561,7 +561,7 @@ class ChecksumsPathRenamer(object):
       new_path = self.path_regex_from.sub(self.path_regex_to, path)
       if new_path != path:
         if manifest.HasPath(new_path):
-          print('*** Error: renamed to path %s already in manifest' % lib.EscapePath(new_path), file=self.output)
+          print('*** Error: Renamed to path %s already in manifest' % lib.EscapePath(new_path), file=self.output)
           return False
 
         print(path_info.GetItemized(), file=self.output)

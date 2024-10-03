@@ -684,7 +684,7 @@ class RenamePathsTestCase(BaseTestCase):
     DoRenamePaths(root_dir, dry_run=True,
                   path_regex_from='f2', path_regex_to='f3',
                   expected_success=False,
-                  expected_output=['*** Error: renamed to path par! \\r/f3 already in manifest'])
+                  expected_output=['*** Error: Renamed to path par! \\r/f3 already in manifest'])
 
     DoRenamePaths(root_dir, dry_run=True,
                   path_regex_from='^par[!] \\r/', path_regex_to='',
