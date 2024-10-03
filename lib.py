@@ -160,6 +160,17 @@ class PathMatcherPathsAndPrefix(PathMatcher):
     return False
 
 
+class PathMatcherOr(PathMatcher):
+  def __init__(self, *matchers):
+    self.matchers = matchers
+
+  def Matches(self, path):
+    for matcher in self.matchers:
+      if matcher.Matches(path):
+        return True
+    return False
+
+
 def AddPathsArgs(parser):
   parser.add_argument('--path', dest='paths', action='append', default=[])
   parser.add_argument('--paths-from')
@@ -1583,7 +1594,12 @@ def RsyncList(src_path, output, filters=None, verbose=False):
     raise Exception('Rsync failed')
 
 
-def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, link_dest=None):
+def Rsync(src_path, dest_path, output, dry_run=False, verbose=False, link_dest=None,
+          force_directories=True):
+  if force_directories:
+    src_path = MakeRsyncDirname(src_path)
+    dest_path = MakeRsyncDirname(dest_path)
+
   cmd = [GetRsyncBin(),
          '-aX',
          '--numeric-ids',
@@ -1598,8 +1614,8 @@ def Rsync(src_root_path, dest_root_path, output, dry_run=False, verbose=False, l
   if link_dest is not None:
     cmd.append('--link-dest=%s' % MakeRsyncDirname(link_dest))
 
-  cmd.append(MakeRsyncDirname(src_root_path))
-  cmd.append(MakeRsyncDirname(dest_root_path))
+  cmd.append(src_path)
+  cmd.append(dest_path)
 
   if verbose:
     print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)

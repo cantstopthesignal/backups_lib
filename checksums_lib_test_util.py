@@ -134,3 +134,15 @@ def DoImageFromFolder(root_path, output_path=None, volume_name=None, compressed=
     cmd_args.extend(['--temp-dir', temp_dir])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
+
+
+def DoSafeCopy(from_path, to_path, dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['safe-copy', from_path, to_path]
+  DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                  expected_output=expected_output)
+
+
+def DoSafeMove(from_path, to_path, dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['safe-move', from_path, to_path]
+  DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                  expected_output=expected_output)

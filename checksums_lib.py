@@ -18,6 +18,8 @@ COMMAND_VERIFY = 'verify'
 COMMAND_SYNC = 'sync'
 COMMAND_RENAME_PATHS = 'rename-paths'
 COMMAND_IMAGE_FROM_FOLDER = 'image-from-folder'
+COMMAND_SAFE_COPY = 'safe-copy'
+COMMAND_SAFE_MOVE = 'safe-move'
 
 COMMANDS = [
   COMMAND_CREATE,
@@ -26,6 +28,8 @@ COMMANDS = [
   COMMAND_SYNC,
   COMMAND_RENAME_PATHS,
   COMMAND_IMAGE_FROM_FOLDER,
+  COMMAND_SAFE_COPY,
+  COMMAND_SAFE_MOVE,
 ]
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
@@ -837,6 +841,159 @@ class ImageFromFolderCreator(object):
     os.chmod(output_path, mode & ro_mask)
 
 
+class SafeCopyOrMover(object):
+  def __init__(self, from_path, to_path, output,
+               move=False, dry_run=False, verbose=False):
+    if from_path is None:
+      raise Exception('from_path cannot be None')
+    if to_path is None:
+      raise Exception('to_path cannot be None')
+    self.from_path = from_path
+    self.to_path = to_path
+    self.output = output
+    self.move = move
+    self.dry_run = dry_run
+    self.verbose = verbose
+
+  def SafeCopyOrMove(self):
+    if self.move:
+      raise Exception('Not yet implemented')
+
+    if os.path.isdir(self.to_path):
+      self.to_path = os.path.join(self.to_path, os.path.basename(self.from_path))
+
+    abs_from_path = os.path.abspath(self.from_path)
+    abs_to_path = os.path.abspath(self.to_path)
+
+    from_root_path = self._FindRootPath(abs_from_path)
+    to_root_path = self._FindRootPath(abs_to_path)
+    if from_root_path == abs_from_path:
+      print('*** Error: Cannot move manifest root path %s' % lib.EscapePath(self.from_path), file=self.output)
+      return False
+    assert abs_to_path != to_root_path
+    if from_root_path is None:
+      print('*** Error: Could not find manifest for from path %s' % lib.EscapePath(self.from_path), file=self.output)
+      return False
+    if to_root_path is None:
+      print('*** Error: Could not find manifest for to path %s' % lib.EscapePath(self.to_path), file=self.output)
+      return False
+
+    from_rel_path = os.path.relpath(abs_from_path, from_root_path)
+    to_rel_path = os.path.relpath(abs_to_path, to_root_path)
+    if os.path.commonprefix([lib.METADATA_DIR_NAME, from_rel_path]):
+      print('*** Error: From path %s cannot be within metadata dir' % lib.EscapePath(self.from_path), file=self.output)
+      return False
+    if os.path.commonprefix([lib.METADATA_DIR_NAME, to_rel_path]):
+      print('*** Error: To path %s cannot be within metadata dir' % lib.EscapePath(self.to_path), file=self.output)
+      return False
+
+    if not os.path.lexists(abs_from_path):
+      print('*** Error: From path %s does not exist' % lib.EscapePath(self.from_path), file=self.output)
+      return False
+    if os.path.lexists(abs_to_path):
+      print('*** Error: To path %s already exists' % lib.EscapePath(self.to_path), file=self.output)
+      return False
+    if not os.path.isdir(os.path.dirname(abs_to_path)):
+      print('*** Error: To path %s\'s parent dir does not exist' % lib.EscapePath(self.to_path), file=self.output)
+      return False
+
+    print('Verifying manifest for from root %s...' % lib.EscapePath(from_root_path), file=self.output)
+    verify_output = io.StringIO()
+    checksums_verifier = ChecksumsVerifier(
+      from_root_path, output=verify_output,
+      checksum_all=False, dry_run=self.dry_run, verbose=self.verbose)
+    if not checksums_verifier.Verify():
+      print(verify_output.getvalue(), file=self.output)
+      return False
+
+    if from_root_path != to_root_path:
+      print('Verifying manifest for to root %s...' % lib.EscapePath(to_root_path), file=self.output)
+      verify_output = io.StringIO()
+      checksums_verifier = ChecksumsVerifier(
+        to_root_path, output=verify_output,
+        checksum_all=False, dry_run=self.dry_run, verbose=self.verbose)
+      if not checksums_verifier.Verify():
+        print(verify_output.getvalue(), file=self.output)
+        return False
+
+    if self.move:
+      print('Moving %s to %s...'
+            % (lib.EscapePath(self.from_path), lib.EscapePath(self.to_path)), file=self.output)
+    else:
+      print('Copying %s to %s...'
+            % (lib.EscapePath(self.from_path), lib.EscapePath(self.to_path)), file=self.output)
+
+    lib.Rsync(abs_from_path, abs_to_path, output=self.output,
+              force_directories=os.path.isdir(abs_from_path),
+              dry_run=self.dry_run, verbose=self.verbose)
+
+    checksums_syncer = ChecksumsSyncer(
+      to_root_path, output=self.output, dry_run=self.dry_run,
+      checksum_all=True, verbose=self.verbose,
+      path_matcher=lib.PathMatcherOr(
+        lib.PathMatcherSet([os.path.relpath(os.path.dirname(abs_to_path), to_root_path)]),
+        lib.PathMatcherPathsAndPrefix([os.path.relpath(abs_to_path, to_root_path)])))
+    if not checksums_syncer.Sync():
+      return False
+
+    try:
+      from_checksums = Checksums.Open(from_root_path, dry_run=self.dry_run)
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
+      return False
+
+    if from_root_path != to_root_path:
+      try:
+        to_checksums = Checksums.Open(to_root_path, dry_run=self.dry_run)
+      except (ChecksumsError, lib.ManifestError) as e:
+        print('*** Error: %s' % e.args[0], file=self.output)
+        return False
+    else:
+      to_checksums = from_checksums
+
+    from_manifest = from_checksums.GetManifest()
+    to_manifest = to_checksums.GetManifest()
+
+    from_path_matcher = lib.PathMatcherPathsAndPrefix([from_rel_path])
+    from_matching_manifest = lib.Manifest()
+    for path in from_manifest.GetPaths():
+      if from_path_matcher.Matches(path):
+        path_info = from_manifest.GetPathInfo(path).Clone()
+        if path_info.path != from_rel_path:
+          path_info.path = os.path.join(to_rel_path, os.path.relpath(path_info.path, from_rel_path))
+        else:
+          path_info.path = to_rel_path
+        from_matching_manifest.AddPathInfo(path_info)
+
+    to_path_matcher = lib.PathMatcherPathsAndPrefix([to_rel_path])
+    to_matching_manifest = lib.Manifest()
+    for path in to_manifest.GetPaths():
+      if to_path_matcher.Matches(path):
+        to_matching_manifest.AddPathInfo(to_manifest.GetPathInfo(path).Clone())
+
+    itemizeds = from_matching_manifest.GetDiffItemized(
+      to_matching_manifest)
+    if not self.dry_run:
+      if itemizeds:
+        print('*** Error: Unexpected differences between from and to content:', file=self.output)
+        for itemized in itemizeds:
+          itemized.Print(output=self.output)
+        return False
+      if self.move:
+        print('Verified %d moved paths matched' % from_matching_manifest.GetPathCount(), file=self.output)
+      else:
+        print('Verified %d copied paths matched' % from_matching_manifest.GetPathCount(), file=self.output)
+    return True
+
+  def _FindRootPath(self, path):
+    check_dir = path
+    while check_dir not in ['', '/']:
+      if os.path.isfile(os.path.join(check_dir, lib.METADATA_DIR_NAME, lib.MANIFEST_FILENAME)):
+        assert check_dir.startswith('/')
+        return check_dir
+      check_dir = os.path.dirname(check_dir)
+
+
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
@@ -938,6 +1095,30 @@ def DoImageFromFolder(args, output):
   return image_from_folder_creator.CreateImage()
 
 
+def DoSafeCopy(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('from_path')
+  parser.add_argument('to_path')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  safe_copy_or_mover = SafeCopyOrMover(
+    cmd_args.from_path, cmd_args.to_path, move=False, output=output,
+    dry_run=args.dry_run, verbose=args.verbose)
+  return safe_copy_or_mover.SafeCopyOrMove()
+
+
+def DoSafeMove(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('from_path')
+  parser.add_argument('to_path')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  safe_copy_or_mover = SafeCopyOrMover(
+    cmd_args.from_path, cmd_args.to_path, move=True, output=output,
+    dry_run=args.dry_run, verbose=args.verbose)
+  return safe_copy_or_mover.SafeCopyOrMove()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
@@ -951,6 +1132,10 @@ def DoCommand(args, output):
     return DoRenamePaths(args, output=output)
   elif args.command == COMMAND_IMAGE_FROM_FOLDER:
     return DoImageFromFolder(args, output=output)
+  elif args.command == COMMAND_SAFE_COPY:
+    return DoSafeCopy(args, output=output)
+  elif args.command == COMMAND_SAFE_MOVE:
+    return DoSafeMove(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False
