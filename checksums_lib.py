@@ -857,9 +857,6 @@ class SafeCopyOrMover(object):
     self.verbose = verbose
 
   def SafeCopyOrMove(self):
-    if self.move:
-      raise Exception('Not yet implemented')
-
     if os.path.isdir(self.to_path):
       self.to_path = os.path.join(self.to_path, os.path.basename(self.from_path))
 
@@ -917,12 +914,8 @@ class SafeCopyOrMover(object):
         print(verify_output.getvalue(), file=self.output)
         return False
 
-    if self.move:
-      print('Moving %s to %s...'
-            % (lib.EscapePath(self.from_path), lib.EscapePath(self.to_path)), file=self.output)
-    else:
-      print('Copying %s to %s...'
-            % (lib.EscapePath(self.from_path), lib.EscapePath(self.to_path)), file=self.output)
+    print('Copying %s to %s...'
+          % (lib.EscapePath(self.from_path), lib.EscapePath(self.to_path)), file=self.output)
 
     lib.Rsync(abs_from_path, abs_to_path, output=self.output,
               force_directories=os.path.isdir(abs_from_path),
@@ -984,14 +977,53 @@ class SafeCopyOrMover(object):
     if not self.dry_run:
       to_manifest.Write()
 
-    if self.move:
-      print('Verifying moved files...', file=self.output)
-    else:
-      print('Verifying copied files...', file=self.output)
+    print('Verifying copied files...', file=self.output)
 
     checksums_verifier = ChecksumsVerifier(
       to_root_path, output=self.output,
       checksum_path_matcher=lib.PathMatcherPathsAndPrefix([to_rel_path]),
+      dry_run=self.dry_run, verbose=self.verbose)
+
+    if not checksums_verifier.Verify():
+      return False
+    if not self.move:
+      return True
+
+    print('Removing from files and manifest entries...', file=self.output)
+
+    for path in reversed(from_manifest.GetPaths()):
+      if from_path_matcher.Matches(path):
+        path_info = from_manifest.GetPathInfo(path)
+        from_manifest.RemovePathInfo(path_info.path)
+
+        itemized = path_info.GetItemized()
+        itemized.delete_path = True
+        print(itemized, file=self.output)
+
+        if not self.dry_run:
+          full_path = os.path.join(from_root_path, path_info.path)
+          if path_info.path_type == lib.PathInfo.TYPE_DIR:
+            os.rmdir(full_path)
+          else:
+            os.unlink(full_path)
+
+    from_parent_dir_path_info = lib.PathInfo.FromPath(
+      os.path.dirname(from_rel_path) or '.', os.path.dirname(abs_from_path))
+    assert from_parent_dir_path_info.path_type == lib.PathInfo.TYPE_DIR
+    existing_from_parent_dir_path_info = from_manifest.GetPathInfo(from_parent_dir_path_info.path)
+    from_manifest.AddPathInfo(from_parent_dir_path_info, allow_replace=True)
+    itemized = lib.PathInfo.GetItemizedDiff(from_parent_dir_path_info, existing_from_parent_dir_path_info)
+    if itemized.HasDiffs():
+      print(itemized, file=self.output)
+
+    if not self.dry_run:
+      from_manifest.Write()
+
+    print('Verifying from checksums...', file=self.output)
+
+    checksums_verifier = ChecksumsVerifier(
+      from_root_path, output=self.output,
+      checksum_path_matcher=lib.PathMatcherNone(),
       dry_run=self.dry_run, verbose=self.verbose)
     return checksums_verifier.Verify()
 

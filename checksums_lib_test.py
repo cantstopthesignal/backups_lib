@@ -1540,5 +1540,482 @@ class SafeCopyTestCase(BaseTestCase):
                             'Paths: 13 total (6kb), 1 synced (0b), 9 checksummed (6kb)'])
 
 
+class SafeMoveTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    root_dir = CreateDir(test_dir, 'root')
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      DoCreate(root_dir, expected_output=None)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='1'*1025)
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       '>f+++++++ par! \\r/f3',
+                       'Paths: 5 total (2kb), 5 synced (2kb), 3 checksummed (2kb)'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    file1_copy = os.path.join(root_dir, 'f1.copy')
+    DoSafeMove(file1, file1_copy, dry_run=True,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Copying %s to %s...' % (file1, file1_copy),
+                                '>f++++++++++ f1',
+                                'Adding manifest entries...',
+                                '>f+++++++ f1.copy',
+                                '  replacing duplicate: .f....... f1',
+                                'Verifying copied files...',
+                                'Paths: 5 total (2kb)',
+                                'Removing from files and manifest entries...',
+                                '*f.delete f1',
+                                'Verifying from checksums...',
+                                'Paths: 5 total (2kb)'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      DoSafeMove(file1, file1_copy, dry_run=False,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Copying %s to %s...' % (file1, file1_copy),
+                                '>f++++++++++ f1',
+                                'Adding manifest entries...',
+                                '.d..t.... .',
+                                '>f+++++++ f1.copy',
+                                '  replacing duplicate: .f....... f1',
+                                'Verifying copied files...',
+                                'Paths: 6 total (2kb), 1 checksummed (3b)',
+                                'Removing from files and manifest entries...',
+                                '*f.delete f1',
+                                'Verifying from checksums...',
+                                'Paths: 5 total (2kb)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 5 total (2kb), 1 synced (0b), 3 checksummed (2kb)'])
+
+    root2_dir = CreateDir(test_dir, 'root2')
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root2_dir)
+      DoCreate(root2_dir, expected_output=None)
+
+    root2_file1 = CreateFile(root2_dir, 'f1', contents='ABC2')
+    root2_parent1 = CreateDir(root2_dir, 'par! \r')
+    root2_file2 = CreateFile(root2_parent1, 'f2', contents='2'*1025)
+    root2_file3 = CreateFile(root2_parent1, 'f3', contents='2'*1025)
+
+    DoSync(
+      root2_dir, checksum_all=True,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f2',
+                       '>f+++++++ par! \\r/f3',
+                       'Paths: 5 total (2kb), 5 synced (2kb), 3 checksummed (2kb)'])
+    DoVerify(root2_dir, checksum_all=True, expected_output=None)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>f+++++++ f1',
+                       '  replacing duplicate: .f....... f1.copy',
+                       'Paths: 6 total (2kb), 1 synced (3b), 4 checksummed (2kb)'])
+
+    root2_file1_copy = os.path.join(root2_dir, 'f1.copy')
+    DoSafeMove(file1, root2_file1_copy, dry_run=True,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Verifying manifest for to root %s...' % root2_dir,
+                                'Copying %s to %s...' % (file1, root2_file1_copy),
+                                '>f++++++++++ f1',
+                                'Adding manifest entries...',
+                                '>f+++++++ f1.copy',
+                                'Verifying copied files...',
+                                'Paths: 5 total (2kb)',
+                                'Removing from files and manifest entries...',
+                                '*f.delete f1',
+                                'Verifying from checksums...',
+                                'Paths: 6 total (2kb)'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
+    DoVerify(root2_dir, checksum_all=True,
+             expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      mtime_preserver.PreserveMtime(root2_dir)
+      DoSafeMove(file1, root2_file1_copy, dry_run=False,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Verifying manifest for to root %s...' % root2_dir,
+                                  'Copying %s to %s...' % (file1, root2_file1_copy),
+                                  '>f++++++++++ f1',
+                                  'Adding manifest entries...',
+                                  '.d..t.... .',
+                                  '>f+++++++ f1.copy',
+                                  'Verifying copied files...',
+                                  'Paths: 6 total (2kb), 1 checksummed (3b)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete f1',
+                                  '.d..t.... .',
+                                  'Verifying from checksums...',
+                                  'Paths: 5 total (2kb)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
+      DoVerify(root2_dir, checksum_all=True,
+               expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 5 total (2kb), 1 synced (0b), 3 checksummed (2kb)'])
+    DoSync(root2_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 6 total (2kb), 1 synced (0b), 4 checksummed (2kb)'])
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>f+++++++ f1',
+                       '  replacing duplicate: .f....... f1.copy',
+                       'Paths: 6 total (2kb), 1 synced (3b), 4 checksummed (2kb)'])
+
+    DoSafeMove(file1, root2_file1_copy, dry_run=True, expected_success=False,
+               expected_output=['*** Error: To path %s already exists' % root2_file1_copy])
+    DoSafeMove(file1 + '.missing', root2_file1_copy, dry_run=True, expected_success=False,
+               expected_output=['*** Error: From path %s.missing does not exist' % file1])
+
+    DoSafeMove(os.path.dirname(root_dir), root2_dir, dry_run=True, expected_success=False,
+               expected_output=['*** Error: Could not find manifest for from path %s' % os.path.dirname(root_dir)])
+    DoSafeMove(file1, os.path.dirname(root2_dir), dry_run=True, expected_success=False,
+               expected_output=['*** Error: Could not find manifest for to path %s'
+                                % os.path.join(os.path.dirname(root2_dir), os.path.basename(file1))])
+    DoSafeMove(root_dir, root2_dir, dry_run=True, expected_success=False,
+               expected_output=['*** Error: Cannot move manifest root path %s' % root_dir])
+
+    root2_file11 = CreateFile(root2_dir, 'f11', contents='ABC2')
+
+    DoSafeMove(file1, root2_file1_copy + '.other', dry_run=True, expected_success=False,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Verifying manifest for to root %s...' % root2_dir,
+                                '>f+++++++ f11',
+                                'Paths: 7 total (2kb), 1 mismatched (4b)'])
+
+    DeleteFileOrDir(root2_file11)
+    file11 = CreateFile(root_dir, 'f11', contents='ABC')
+
+    DoSafeMove(file1, root2_file1_copy + '.other', dry_run=True, expected_success=False,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                '>f+++++++ f11',
+                                'Paths: 7 total (2kb), 1 mismatched (3b)'])
+
+    DeleteFileOrDir(file11)
+    root2_parent_copy = os.path.join(root2_dir, 'par! \r copy')
+
+    DoSafeMove(parent1, root2_parent_copy, dry_run=True,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Verifying manifest for to root %s...' % root2_dir,
+                                'Copying %s to %s...' % (lib.EscapePath(parent1), lib.EscapePath(root2_parent_copy)),
+                                re.compile('^created directory .*$'),
+                                'cd++++++++++ ./',
+                                '>f++++++++++ f2',
+                                '>f++++++++++ f3',
+                                'Adding manifest entries...',
+                                '>d+++++++ par! \\r copy',
+                                '>f+++++++ par! \\r copy/f2',
+                                '>f+++++++ par! \\r copy/f3',
+                                'Verifying copied files...',
+                                'Paths: 6 total (2kb)',
+                                'Removing from files and manifest entries...',
+                                '*f.delete par! \\r/f3',
+                                '*f.delete par! \\r/f2',
+                                '*d.delete par! \\r',
+                                'Verifying from checksums...',
+                                'Paths: 6 total (2kb)'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
+    DoVerify(root2_dir, checksum_all=True,
+             expected_output=['Paths: 6 total (2kb), 4 checksummed (2kb)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      mtime_preserver.PreserveMtime(root2_dir)
+      DoSafeMove(parent1, root2_parent_copy, dry_run=False,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Verifying manifest for to root %s...' % root2_dir,
+                                  'Copying %s to %s...' % (lib.EscapePath(parent1), lib.EscapePath(root2_parent_copy)),
+                                  re.compile('^created directory .*$'),
+                                  'cd++++++++++ ./',
+                                  '>f++++++++++ f2',
+                                  '>f++++++++++ f3',
+                                  'Adding manifest entries...',
+                                  '.d..t.... .',
+                                  '>d+++++++ par! \\r copy',
+                                  '>f+++++++ par! \\r copy/f2',
+                                  '>f+++++++ par! \\r copy/f3',
+                                  'Verifying copied files...',
+                                  'Paths: 9 total (4kb), 2 checksummed (2kb)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete par! \\r/f3',
+                                  '*f.delete par! \\r/f2',
+                                  '*d.delete par! \\r',
+                                  '.d..t.... .',
+                                  'Verifying from checksums...',
+                                  'Paths: 3 total (6b)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 3 total (6b), 2 checksummed (6b)'])
+      DoVerify(root2_dir, checksum_all=True,
+               expected_output=['Paths: 9 total (4kb), 6 checksummed (4kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 3 total (6b), 1 synced (0b), 2 checksummed (6b)'])
+    DoSync(root2_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 9 total (4kb), 1 synced (0b), 6 checksummed (4kb)'])
+
+    DoSafeMove(os.path.join(root_dir, '.metadata'), os.path.join(root2_dir, 'metadatacopy'), dry_run=True,
+               expected_success=False,
+               expected_output=['*** Error: From path %s cannot be within metadata dir'
+                                % os.path.join(root_dir, '.metadata')])
+    DoSafeMove(parent1, os.path.join(root2_dir, '.metadata'), dry_run=True,
+               expected_success=False,
+               expected_output=['*** Error: To path %s cannot be within metadata dir'
+                                % lib.EscapePath(os.path.join(root2_dir, '.metadata', os.path.basename(parent1)))])
+    DoSafeMove(os.path.join(root_dir, '.metadata/manifest.pbdata'),
+               os.path.join(root2_dir, 'manifestcopy'), dry_run=True,
+               expected_success=False,
+               expected_output=['*** Error: From path %s cannot be within metadata dir'
+                                % os.path.join(root_dir, '.metadata/manifest.pbdata')])
+    DoSafeMove(file1, os.path.join(root2_dir, '.metadata/manifest.pbdata'), dry_run=True,
+               expected_success=False,
+               expected_output=['*** Error: To path %s cannot be within metadata dir'
+                                % lib.EscapePath(os.path.join(root2_dir, '.metadata/manifest.pbdata'))])
+
+    with lib.Chdir(root_dir):
+      DoSafeMove(os.path.basename(file1), 'f1.copy2', dry_run=True,
+                 expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
+                                  'Copying f1 to f1.copy2...',
+                                  '>f++++++++++ f1',
+                                  'Adding manifest entries...',
+                                  '>f+++++++ f1.copy2',
+                                  '  replacing duplicate: .f....... f1.copy',
+                                  '  replacing duplicate: .f....... f1',
+                                  'Verifying copied files...',
+                                  'Paths: 3 total (6b)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete f1',
+                                  'Verifying from checksums...',
+                                  'Paths: 3 total (6b)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      with lib.Chdir(root_dir):
+        DoSafeMove(os.path.basename(file1), 'f1.copy2', dry_run=False,
+                   expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
+                                    'Copying f1 to f1.copy2...',
+                                    '>f++++++++++ f1',
+                                    'Adding manifest entries...',
+                                    '.d..t.... .',
+                                    '>f+++++++ f1.copy2',
+                                    '  replacing duplicate: .f....... f1.copy',
+                                    '  replacing duplicate: .f....... f1',
+                                    'Verifying copied files...',
+                                    'Paths: 4 total (9b), 1 checksummed (3b)',
+                                    'Removing from files and manifest entries...',
+                                    '*f.delete f1',
+                                    'Verifying from checksums...',
+                                    'Paths: 3 total (6b)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 3 total (6b), 2 checksummed (6b)'])
+      DoVerify(root2_dir, checksum_all=True,
+               expected_output=['Paths: 9 total (4kb), 6 checksummed (4kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 3 total (6b), 1 synced (0b), 2 checksummed (6b)'])
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>f+++++++ f1',
+                       '  replacing duplicate: .f....... f1.copy',
+                       '  replacing duplicate: .f....... f1.copy2',
+                       'Paths: 4 total (9b), 1 synced (3b), 3 checksummed (9b)'])
+
+    with lib.Chdir(root2_dir):
+      DoSafeMove(file1, 'f1.copy3', dry_run=True,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Verifying manifest for to root %s...' % os.getcwd(),
+                                  'Copying %s to f1.copy3...' % file1,
+                                  '>f++++++++++ f1',
+                                  'Adding manifest entries...',
+                                  '>f+++++++ f1.copy3',
+                                  '  replacing duplicate: .f....... f1.copy',
+                                  'Verifying copied files...',
+                                  'Paths: 9 total (4kb)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete f1',
+                                  'Verifying from checksums...',
+                                  'Paths: 4 total (9b)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      mtime_preserver.PreserveMtime(root2_dir)
+      with lib.Chdir(root2_dir):
+        DoSafeMove(file1, 'f1.copy3', dry_run=False,
+                   expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                    'Verifying manifest for to root %s...' % os.getcwd(),
+                                    'Copying %s to f1.copy3...' % file1,
+                                    '>f++++++++++ f1',
+                                    'Adding manifest entries...',
+                                    '.d..t.... .',
+                                    '>f+++++++ f1.copy3',
+                                    '  replacing duplicate: .f....... f1.copy',
+                                    'Verifying copied files...',
+                                    'Paths: 10 total (4kb), 1 checksummed (3b)',
+                                    'Removing from files and manifest entries...',
+                                    '*f.delete f1',
+                                    '.d..t.... .',
+                                    'Verifying from checksums...',
+                                    'Paths: 3 total (6b)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 3 total (6b), 2 checksummed (6b)'])
+      DoVerify(root2_dir, checksum_all=True,
+               expected_output=['Paths: 10 total (4kb), 7 checksummed (4kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 3 total (6b), 1 synced (0b), 2 checksummed (6b)'])
+    DoSync(root2_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 10 total (4kb), 1 synced (0b), 7 checksummed (4kb)'])
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>f+++++++ f1',
+                       '  replacing duplicate: .f....... f1.copy',
+                       '  replacing duplicate: .f....... f1.copy2',
+                       'Paths: 4 total (9b), 1 synced (3b), 3 checksummed (9b)'])
+
+    file1 = CreateFile(root_dir, 'f1', contents='DEF')
+
+    file1_copy2 = os.path.join(root_dir, 'f1.copy.2')
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      DoSafeMove(file1, file1_copy2, dry_run=False, expected_success=False,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Copying %s to %s...' % (file1, file1_copy2),
+                                  '>f++++++++++ f1',
+                                  'Adding manifest entries...',
+                                  '.d..t.... .',
+                                  '>f+++++++ f1.copy.2',
+                                  '  replacing duplicate: .f....... f1.copy2',
+                                  '  replacing duplicate: .f....... f1.copy',
+                                  '  replacing duplicate: .f....... f1',
+                                  'Verifying copied files...',
+                                  '>fc...... f1.copy.2',
+                                  'Paths: 5 total (12b), 1 mismatched (3b), 1 checksummed (3b)'])
+      DoVerify(root_dir, checksum_all=True, expected_success=False,
+               expected_output=['>fc...... f1',
+                                '>fc...... f1.copy.2',
+                                'Paths: 5 total (12b), 2 mismatched (6b), 4 checksummed (12b)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            '>fc...... f1',
+                            '>fc...... f1.copy.2',
+                            'Paths: 5 total (12b), 3 synced (6b), 4 checksummed (12b)'])
+
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file2 = CreateFile(parent1, 'f2', contents='1'*1025)
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['>d+++++++ par! \\r',
+                            '>f+++++++ par! \\r/f2',
+                            '>f+++++++ par! \\r/f3',
+                            'Paths: 8 total (2kb), 3 synced (2kb), 6 checksummed (2kb)'])
+
+    DoSafeMove(parent1, root2_parent_copy, dry_run=True,
+               expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                'Verifying manifest for to root %s...' % root2_dir,
+                                'Copying %s to %s...'
+                                % (lib.EscapePath(parent1), lib.EscapePath(
+                                  os.path.join(root2_parent_copy, os.path.basename(parent1)))),
+                                re.compile('^created directory .*$'),
+                                'cd++++++++++ ./',
+                                '>f++++++++++ f2',
+                                '>f++++++++++ f3',
+                                'Adding manifest entries...',
+                                '>d+++++++ par! \\r copy/par! \\r',
+                                '>f+++++++ par! \\r copy/par! \\r/f2',
+                                '  replacing duplicate: .f....... par! \\r copy/f2',
+                                '  replacing duplicate: .f....... par! \\r copy/f3',
+                                '>f+++++++ par! \\r copy/par! \\r/f3',
+                                '  replacing duplicate: .f....... par! \\r copy/f3',
+                                '  replacing duplicate: .f....... par! \\r copy/f2',
+                                'Verifying copied files...',
+                                'Paths: 10 total (4kb)',
+                                'Removing from files and manifest entries...',
+                                '*f.delete par! \\r/f3',
+                                '*f.delete par! \\r/f2',
+                                '*d.delete par! \\r',
+                                'Verifying from checksums...',
+                                'Paths: 8 total (2kb)'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 8 total (2kb), 6 checksummed (2kb)'])
+    DoVerify(root2_dir, checksum_all=True,
+             expected_output=['Paths: 10 total (4kb), 7 checksummed (4kb)'])
+
+    with lib.MtimePreserver() as mtime_preserver:
+      mtime_preserver.PreserveMtime(root_dir)
+      mtime_preserver.PreserveMtime(root2_parent_copy)
+      DoSafeMove(parent1, root2_parent_copy, dry_run=False,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Verifying manifest for to root %s...' % root2_dir,
+                                  'Copying %s to %s...'
+                                  % (lib.EscapePath(parent1), lib.EscapePath(
+                                    os.path.join(root2_parent_copy, os.path.basename(parent1)))),
+                                  re.compile('^created directory .*$'),
+                                  'cd++++++++++ ./',
+                                  '>f++++++++++ f2',
+                                  '>f++++++++++ f3',
+                                  'Adding manifest entries...',
+                                  '.d..t.... par! \\r copy',
+                                  '>d+++++++ par! \\r copy/par! \\r',
+                                  '>f+++++++ par! \\r copy/par! \\r/f2',
+                                  '  replacing duplicate: .f....... par! \\r copy/f2',
+                                  '  replacing duplicate: .f....... par! \\r copy/f3',
+                                  '>f+++++++ par! \\r copy/par! \\r/f3',
+                                  '  replacing duplicate: .f....... par! \\r copy/f3',
+                                  '  replacing duplicate: .f....... par! \\r copy/f2',
+                                  'Verifying copied files...',
+                                  'Paths: 13 total (6kb), 2 checksummed (2kb)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete par! \\r/f3',
+                                  '*f.delete par! \\r/f2',
+                                  '*d.delete par! \\r',
+                                  '.d..t.... .',
+                                  'Verifying from checksums...',
+                                  'Paths: 5 total (12b)'])
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 5 total (12b), 4 checksummed (12b)'])
+      DoVerify(root2_dir, checksum_all=True,
+               expected_output=['Paths: 13 total (6kb), 9 checksummed (6kb)'])
+    DoSync(root_dir, checksum_all=True,
+           expected_output=['.d..t.... .',
+                            'Paths: 5 total (12b), 1 synced (0b), 4 checksummed (12b)'])
+    DoSync(root2_dir, checksum_all=True,
+           expected_output=['.d..t.... par! \\r copy',
+                            'Paths: 13 total (6kb), 1 synced (0b), 9 checksummed (6kb)'])
+
+
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()
