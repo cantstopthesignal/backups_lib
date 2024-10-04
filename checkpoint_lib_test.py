@@ -35,6 +35,7 @@ from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import DoBackupsMain
 from .test_util import OverrideUmask
+from .test_util import RenameFile
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
 from .test_util import TempDir
@@ -536,8 +537,122 @@ class CreateTestCase(BaseTestCase):
     finally:
       checkpoint_lib.CheckpointCreator.PRE_SYNC_CONTENTS_TEST_HOOK = None
 
-    file5 = CreateFile(src_root, 'f5')
-    SetMTime(src_root, 1510000000)
+    file8 = CreateFile(parent1, 'f8', contents='8'*1024)
+    file9 = CreateFile(parent1, 'f9', contents='9'*1024)
+    file10 = CreateFile(parent1, 'f10', contents='10'*513)
+
+    checkpoint6, manifest6 = DoCreate(
+      src_root, checkpoints_dir, '6',
+      last_checkpoint_path=checkpoint5.GetImagePath(),
+      readonly=False,
+      expected_output=['>f+++++++ par!/f10',
+                       '>f+++++++ par!/f8',
+                       '>f+++++++ par!/f9',
+                       'Transferring 3 of 13 paths (3kb of 3kb)'])
+    try:
+      VerifyCheckpointContents(manifest6, checkpoint6.GetContentRootPath(), prev_manifest=manifest5)
+      AssertLinesEqual(GetManifestDiffItemized(manifest5, manifest6),
+                       ['>f+++++++ par!/f10',
+                        '>f+++++++ par!/f8',
+                        '>f+++++++ par!/f9'])
+      AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint6.GetContentRootPath()),
+                            ['>f++++++++++ .staged_backup_filter',
+                             '>f++++++++++ par!/f2',
+                             '>f++++++++++ par!/f3',
+                             '>f++++++++++ par!/f4',
+                             '>f++++++++++ par!/f_\r',
+                             '>f++++++++++ par!/file6_to',
+                             'cd++++++++++ par2/',
+                             '>f++++++++++ par2/f2b'])
+      AssertBasisInfoFileEquals(checkpoint6.GetMetadataPath(), checkpoint5.GetImagePath())
+      DoVerifyManifest(src_root, manifest6.GetPath(),
+                       expected_success=False,
+                       expected_output=['*f.delete SKIP1',
+                                        '*f.delete par!/2.skp'])
+      DoVerifyManifest(checkpoint6.GetContentRootPath(), manifest6.GetPath())
+    finally:
+      checkpoint6.Close()
+
+    RenameFile(file8, file8 + '.tmp')
+    RenameFile(file9, file8)
+    RenameFile(file8 + '.tmp', file9)
+
+    prev_checkpoint = checkpoint6
+    prev_manifest = manifest6
+
+    checkpoint, manifest = DoCreate(
+      src_root, checkpoints_dir, '7',
+      last_checkpoint_path=prev_checkpoint.GetImagePath(),
+      readonly=False,
+      expected_output=['>fc...... par!/f8',
+                       '  replaced by duplicate: .f....... par!/f9',
+                       '>fc...... par!/f9',
+                       '  replaced by duplicate: .f....... par!/f8',
+                       'Transferring 2 of 13 paths (2kb of 3kb)'])
+    try:
+      VerifyCheckpointContents(manifest, checkpoint.GetContentRootPath(), prev_manifest=prev_manifest)
+      AssertLinesEqual(GetManifestDiffItemized(prev_manifest, manifest),
+                       ['>fc...... par!/f8',
+                        '>fc...... par!/f9'])
+      AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint.GetContentRootPath()),
+                            ['>f++++++++++ .staged_backup_filter',
+                             '>f++++++++++ par!/f10',
+                             '>f++++++++++ par!/f2',
+                             '>f++++++++++ par!/f3',
+                             '>f++++++++++ par!/f4',
+                             '>f++++++++++ par!/f_\r',
+                             '>f++++++++++ par!/file6_to',
+                             'cd++++++++++ par2/',
+                             '>f++++++++++ par2/f2b'])
+      AssertBasisInfoFileEquals(checkpoint.GetMetadataPath(), prev_checkpoint.GetImagePath())
+      DoVerifyManifest(src_root, manifest.GetPath(),
+                       expected_success=False,
+                       expected_output=['*f.delete SKIP1',
+                                        '*f.delete par!/2.skp'])
+      DoVerifyManifest(checkpoint.GetContentRootPath(), manifest.GetPath())
+    finally:
+      checkpoint.Close()
+
+    DeleteFileOrDir(file10)
+    RenameFile(file9, file10)
+    RenameFile(file8, file9)
+
+    prev_checkpoint = checkpoint
+    prev_manifest = manifest
+
+    checkpoint, manifest = DoCreate(
+      src_root, checkpoints_dir, '8',
+      last_checkpoint_path=prev_checkpoint.GetImagePath(),
+      readonly=False,
+      expected_output=['>fcs..... par!/f10',
+                       '*f.delete par!/f8',
+                       '  replaced by duplicate: .f....... par!/f9',
+                       '>fc...... par!/f9',
+                       '  replaced by duplicate: .f....... par!/f10',
+                       'Transferring 2 of 12 paths (2kb of 2kb)'])
+    try:
+      VerifyCheckpointContents(manifest, checkpoint.GetContentRootPath(), prev_manifest=prev_manifest)
+      AssertLinesEqual(GetManifestDiffItemized(prev_manifest, manifest),
+                       ['>fcs..... par!/f10',
+                        '*f.delete par!/f8',
+                        '>fc...... par!/f9'])
+      AssertRsyncLinesEqual(RsyncPaths(src_root, checkpoint.GetContentRootPath()),
+                            ['>f++++++++++ .staged_backup_filter',
+                             '>f++++++++++ par!/f2',
+                             '>f++++++++++ par!/f3',
+                             '>f++++++++++ par!/f4',
+                             '>f++++++++++ par!/f_\r',
+                             '>f++++++++++ par!/file6_to',
+                             'cd++++++++++ par2/',
+                             '>f++++++++++ par2/f2b'])
+      AssertBasisInfoFileEquals(checkpoint.GetMetadataPath(), prev_checkpoint.GetImagePath())
+      DoVerifyManifest(src_root, manifest.GetPath(),
+                       expected_success=False,
+                       expected_output=['*f.delete SKIP1',
+                                        '*f.delete par!/2.skp'])
+      DoVerifyManifest(checkpoint.GetContentRootPath(), manifest.GetPath())
+    finally:
+      checkpoint.Close()
 
 
 class CreateWithFilterMergeTestCase(BaseTestCase):

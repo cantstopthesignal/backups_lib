@@ -466,11 +466,11 @@ class CheckpointCreator(object):
     for itemized, basis_path_info, path_info in self.pending_path_printouts:
       dup_analyze_result = None
       if itemized.HasDiffs():
-        if (itemized.new_path or itemized.checksum_diff) and path_info.HasFileContents():
+        if itemized.new_path and path_info.HasFileContents():
           dup_analyze_result = lib.AnalyzePathInfoDups(
             path_info, self.sha256_to_basis_pathinfos.get(path_info.sha256, []),
             replacing_previous=True, verbose=self.verbose)
-        elif itemized.delete_path and basis_path_info.HasFileContents():
+        elif (itemized.delete_path or itemized.checksum_diff) and basis_path_info.HasFileContents():
           dup_analyze_result = lib.AnalyzePathInfoDups(
             basis_path_info, sha256_to_pathinfos.get(basis_path_info.sha256, []),
             replacing_previous=False, verbose=self.verbose)

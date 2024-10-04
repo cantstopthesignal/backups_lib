@@ -625,6 +625,8 @@ class AddMissingManifestsToBackupsTestCase(BaseTestCase):
     checkpoint_path2 = DoCreateBackup(
       config, backup_name='2020-01-04-120000',
       expected_output=['>fc...... f3',
+                       '  replaced by duplicate: .f....... f1',
+                       '  replaced by duplicate: .f....... f2',
                        'Transferring 1 of 5 paths (3b of 9b)'])
 
     DoApplyToBackups(
@@ -2218,6 +2220,7 @@ class ExtractFromBackupsTestCase(BaseTestCase):
     DoCreateBackup(
       config, backup_name='2020-01-05-120000',
       expected_output=['>fc...... f7',
+                       '  replaced by duplicate: .f....... par2/f9',
                        '.d......x par2',
                        '>f+++++++ par2/f9',
                        '  replacing duplicate: .f....... f7',
