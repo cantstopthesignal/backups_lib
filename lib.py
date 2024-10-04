@@ -2069,10 +2069,11 @@ class ItemizedPathChange:
         itemized_str[0] = '>'
       if self.checksum_diff:
         itemized_str[2] = 'c'
-        color = TERM_COLOR_PURPLE
+        color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
       if self.size_diff:
         itemized_str[3] = 's'
-        color = TERM_COLOR_PURPLE
+        if color in [TERM_COLOR_RESET, TERM_COLOR_PURPLE]:
+          color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
       if self.time_diff:
         itemized_str[4] = 't'
         if color == TERM_COLOR_RESET:
@@ -2087,7 +2088,8 @@ class ItemizedPathChange:
         itemized_str[7] = 'g'
       if self.xattr_diff:
         itemized_str[8] = 'x'
-        color = TERM_COLOR_PURPLE
+        if color in [TERM_COLOR_RESET, TERM_COLOR_YELLOW]:
+          color = TERM_COLOR_PURPLE
     link_dest_str = ''
     if self.link_dest is not None:
       link_dest_str = ' -> %s' % EscapePath(self.link_dest)

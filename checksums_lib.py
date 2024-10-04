@@ -437,7 +437,24 @@ class ChecksumsSyncer(object):
         itemized.Print(output=self.output)
       return
 
-    itemized.Print(output=self.output)
+    found_matching_rename = False
+    dup_output_lines = []
+    if (self.detect_renames and path_info.HasFileContents()
+        and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE
+        and (itemized.checksum_diff or itemized.size_diff)):
+      if self.sha256_to_basis_pathinfos is None:
+        self.sha256_to_basis_pathinfos = self.basis_manifest.CreateSha256ToPathInfosMap(
+          min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
+
+      dup_path_infos = self.sha256_to_basis_pathinfos.get(path_info.sha256, [])
+      analyze_result = lib.AnalyzePathInfoDups(
+        path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
+      found_matching_rename = analyze_result.found_matching_rename
+      dup_output_lines = analyze_result.dup_output_lines
+
+    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
+    for dup_output_line in dup_output_lines:
+      print(dup_output_line, file=self.output)
 
     self._AddStatsForSyncedPath(path_info)
 
