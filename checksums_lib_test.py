@@ -1371,12 +1371,14 @@ class SafeCopyTestCase(BaseTestCase):
 
     DoSafeCopy(os.path.join(root_dir, '.metadata'), os.path.join(root2_dir, 'metadatacopy'), dry_run=True,
                expected_success=False,
-               expected_output=['*** Error: From path %s cannot be within metadata dir' % os.path.join(root_dir, '.metadata')])
+               expected_output=['*** Error: From path %s cannot be within metadata dir'
+                                % os.path.join(root_dir, '.metadata')])
     DoSafeCopy(parent1, os.path.join(root2_dir, '.metadata'), dry_run=True,
                expected_success=False,
                expected_output=['*** Error: To path %s cannot be within metadata dir'
                                 % lib.EscapePath(os.path.join(root2_dir, '.metadata', os.path.basename(parent1)))])
-    DoSafeCopy(os.path.join(root_dir, '.metadata/manifest.pbdata'), os.path.join(root2_dir, 'manifestcopy'), dry_run=True,
+    DoSafeCopy(os.path.join(root_dir, '.metadata/manifest.pbdata'),
+               os.path.join(root2_dir, 'manifestcopy'), dry_run=True,
                expected_success=False,
                expected_output=['*** Error: From path %s cannot be within metadata dir'
                                 % os.path.join(root_dir, '.metadata/manifest.pbdata')])
@@ -1485,7 +1487,8 @@ class SafeCopyTestCase(BaseTestCase):
                expected_output=['Verifying manifest for from root %s...' % root_dir,
                                 'Verifying manifest for to root %s...' % root2_dir,
                                 'Copying %s to %s...'
-                                % (lib.EscapePath(parent1), lib.EscapePath(os.path.join(root2_parent_copy, os.path.basename(parent1)))),
+                                % (lib.EscapePath(parent1), lib.EscapePath(
+                                  os.path.join(root2_parent_copy, os.path.basename(parent1)))),
                                 re.compile('^created directory .*$'),
                                 'cd++++++++++ ./',
                                 '>f++++++++++ f2',
@@ -1511,7 +1514,8 @@ class SafeCopyTestCase(BaseTestCase):
                  expected_output=['Verifying manifest for from root %s...' % root_dir,
                                   'Verifying manifest for to root %s...' % root2_dir,
                                   'Copying %s to %s...'
-                                  % (lib.EscapePath(parent1), lib.EscapePath(os.path.join(root2_parent_copy, os.path.basename(parent1)))),
+                                  % (lib.EscapePath(parent1), lib.EscapePath(
+                                    os.path.join(root2_parent_copy, os.path.basename(parent1)))),
                                   re.compile('^created directory .*$'),
                                   'cd++++++++++ ./',
                                   '>f++++++++++ f2',
