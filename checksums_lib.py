@@ -207,16 +207,17 @@ class ChecksumsDiffer(object):
 
 
 class ChecksumsVerifier(object):
-  def __init__(self, root_or_image_path, output, manifest_path=None, checksum_all=False,
-               path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
+  def __init__(self, root_or_image_path, output, manifest_path=None,
+               path_matcher=lib.PathMatcherAll(), checksum_path_matcher=lib.PathMatcherNone(),
+               dry_run=False, verbose=False,
                encryption_manager=None, hdiutil_verify=True):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
     self.manifest_path = manifest_path
     self.output = output
-    self.checksum_all = checksum_all
     self.path_matcher = path_matcher
+    self.checksum_path_matcher = checksum_path_matcher
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
@@ -244,7 +245,7 @@ class ChecksumsVerifier(object):
     try:
       verifier = lib.ManifestVerifier(
         self.checksums.GetManifest(), root_path, output=self.output,
-        filters=self.filters, manifest_on_top=False, checksum_path_matcher=lib.PathMatcherAllOrNone(self.checksum_all),
+        filters=self.filters, manifest_on_top=False, checksum_path_matcher=self.checksum_path_matcher,
         escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
@@ -691,7 +692,7 @@ class ImageFromFolderCreator(object):
       verify_output = io.StringIO()
       checksums_verifier = ChecksumsVerifier(
         attacher.GetMountPoint(), output=verify_output,
-        checksum_all=True, dry_run=self.dry_run, verbose=self.verbose)
+        checksum_path_matcher=lib.PathMatcherAll(), dry_run=self.dry_run, verbose=self.verbose)
       if not checksums_verifier.Verify():
         print(verify_output.getvalue(), file=self.output)
         return False
@@ -901,7 +902,7 @@ class SafeCopyOrMover(object):
     verify_output = io.StringIO()
     checksums_verifier = ChecksumsVerifier(
       from_root_path, output=verify_output,
-      checksum_all=False, dry_run=self.dry_run, verbose=self.verbose)
+      checksum_path_matcher=lib.PathMatcherNone(), dry_run=self.dry_run, verbose=self.verbose)
     if not checksums_verifier.Verify():
       print(verify_output.getvalue(), file=self.output)
       return False
@@ -911,7 +912,7 @@ class SafeCopyOrMover(object):
       verify_output = io.StringIO()
       checksums_verifier = ChecksumsVerifier(
         to_root_path, output=verify_output,
-        checksum_all=False, dry_run=self.dry_run, verbose=self.verbose)
+        checksum_path_matcher=lib.PathMatcherNone(), dry_run=self.dry_run, verbose=self.verbose)
       if not checksums_verifier.Verify():
         print(verify_output.getvalue(), file=self.output)
         return False
@@ -926,17 +927,6 @@ class SafeCopyOrMover(object):
     lib.Rsync(abs_from_path, abs_to_path, output=self.output,
               force_directories=os.path.isdir(abs_from_path),
               dry_run=self.dry_run, verbose=True)
-
-    print('Syncing checksums...', file=self.output)
-
-    checksums_syncer = ChecksumsSyncer(
-      to_root_path, output=self.output, dry_run=self.dry_run,
-      checksum_all=True, verbose=self.verbose,
-      path_matcher=lib.PathMatcherOr(
-        lib.PathMatcherSet([os.path.relpath(os.path.dirname(abs_to_path), to_root_path)]),
-        lib.PathMatcherPathsAndPrefix([os.path.relpath(abs_to_path, to_root_path)])))
-    if not checksums_syncer.Sync():
-      return False
 
     try:
       from_checksums = Checksums.Open(from_root_path, dry_run=self.dry_run)
@@ -953,11 +943,24 @@ class SafeCopyOrMover(object):
     else:
       to_checksums = from_checksums
 
+    print('Adding manifest entries...', file=self.output)
+
     from_manifest = from_checksums.GetManifest()
     to_manifest = to_checksums.GetManifest()
 
+    to_parent_dir_path_info = lib.PathInfo.FromPath(
+      os.path.dirname(to_rel_path) or '.', os.path.dirname(abs_to_path))
+    assert to_parent_dir_path_info.path_type == lib.PathInfo.TYPE_DIR
+    existing_to_parent_dir_path_info = to_manifest.GetPathInfo(to_parent_dir_path_info.path)
+    to_manifest.AddPathInfo(to_parent_dir_path_info, allow_replace=True)
+    itemized = lib.PathInfo.GetItemizedDiff(to_parent_dir_path_info, existing_to_parent_dir_path_info)
+    if itemized.HasDiffs():
+      print(itemized, file=self.output)
+
+    sha256_to_to_pathinfos = to_manifest.CreateSha256ToPathInfosMap(
+      min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
+
     from_path_matcher = lib.PathMatcherPathsAndPrefix([from_rel_path])
-    from_matching_manifest = lib.Manifest()
     for path in from_manifest.GetPaths():
       if from_path_matcher.Matches(path):
         path_info = from_manifest.GetPathInfo(path).Clone()
@@ -965,27 +968,32 @@ class SafeCopyOrMover(object):
           path_info.path = os.path.join(to_rel_path, os.path.relpath(path_info.path, from_rel_path))
         else:
           path_info.path = to_rel_path
-        from_matching_manifest.AddPathInfo(path_info)
+        to_manifest.AddPathInfo(path_info)
 
-    to_path_matcher = lib.PathMatcherPathsAndPrefix([to_rel_path])
-    to_matching_manifest = lib.Manifest()
-    for path in to_manifest.GetPaths():
-      if to_path_matcher.Matches(path):
-        to_matching_manifest.AddPathInfo(to_manifest.GetPathInfo(path).Clone())
+        itemized = path_info.GetItemized()
+        itemized.new_path = True
+        print(itemized, file=self.output)
 
-    itemizeds = from_matching_manifest.GetDiffItemized(
-      to_matching_manifest)
+        if path_info.HasFileContents() and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE:
+          dup_path_infos = sha256_to_to_pathinfos.get(path_info.sha256, [])
+          analyze_result = lib.AnalyzePathInfoDups(
+            path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
+          for dup_output_line in analyze_result.dup_output_lines:
+            print(dup_output_line, file=self.output)
+
     if not self.dry_run:
-      if itemizeds:
-        print('*** Error: Unexpected differences between from and to content:', file=self.output)
-        for itemized in itemizeds:
-          itemized.Print(output=self.output)
-        return False
-      if self.move:
-        print('Verified %d moved paths matched' % from_matching_manifest.GetPathCount(), file=self.output)
-      else:
-        print('Verified %d copied paths matched' % from_matching_manifest.GetPathCount(), file=self.output)
-    return True
+      to_manifest.Write()
+
+    if self.move:
+      print('Verifying moved files...', file=self.output)
+    else:
+      print('Verifying copied files...', file=self.output)
+
+    checksums_verifier = ChecksumsVerifier(
+      to_root_path, output=self.output,
+      checksum_path_matcher=lib.PathMatcherPathsAndPrefix([to_rel_path]),
+      dry_run=self.dry_run, verbose=self.verbose)
+    return checksums_verifier.Verify()
 
   def _FindRootPath(self, path):
     check_dir = path
@@ -1038,7 +1046,8 @@ def DoVerify(args, output):
 
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
-    checksum_all=cmd_args.checksum_all, path_matcher=path_matcher, dry_run=args.dry_run,
+    checksum_path_matcher=lib.PathMatcherAllOrNone(cmd_args.checksum_all),
+    path_matcher=path_matcher, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
     hdiutil_verify=cmd_args.hdiutil_verify)
   return checksums_verifier.Verify()
