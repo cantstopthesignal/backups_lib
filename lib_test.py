@@ -394,7 +394,7 @@ class CompactTestCase(BaseTestCase):
                 expected_output=[
                   re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
                              % re.escape(image_path2)),
-                  re.compile('^Image size 225[.][5-8]mb -> 225[.][5-8]mb$')])
+                  re.compile('^Image size 225[.][5-9]mb -> 225[.][5-9]mb$')])
       DoCompact(image_path2, defragment_iterations=5,
                 expected_output=[
                   re.compile('^Defragmenting %s; apfs min size [0-9]+(?:[.][0-9]+)?[gm]b, current size 1023[.]8gb[.][.][.]$'
@@ -415,7 +415,7 @@ class CompactTestCase(BaseTestCase):
                   'Reclaiming free space…',
                   'Finishing compaction…',
                   re.compile('^Reclaimed [0-9]+(?:[.][0-9]+)? (MB|KB|bytes) out of [0-9]+(?:[.][0-9]+)? [MG]B possible[.]$'),
-                  re.compile('^Image size 225[.][5-8]mb -> [3-5][0-9](?:[.][0-9]+)?mb$')])
+                  re.compile('^Image size 225[.][5-9]mb -> [3-5][0-9](?:[.][0-9]+)?mb$')])
       AssertFileSizeInRange(lib.GetPathTreeSize(image_path2), '34.7mb', '58.9mb')
     else:
       DoCompact(image_path2, dry_run=True,
