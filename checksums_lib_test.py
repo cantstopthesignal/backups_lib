@@ -447,6 +447,29 @@ class SyncTestCase(BaseTestCase):
         '>f+++++++ par! \\r/f4_renamed',
         '*d.delete par2',
         'Paths: 10 total (6kb), 11 synced (5kb), 3 deleted (1kb), 6 checksummed (5kb)'])
+    DoSync(
+      root_dir, dry_run=True,
+      expected_output=[
+        '.d......x .',
+        '>fc.t.... f1',
+        '.d......x par! \\r',
+        '>f+++++++ par! \\r/f2_renamed',
+        '  replacing duplicate: .f....... par! \\r/f2',
+        '>f+++++++ par! \\r/f2_renamed2',
+        '  replacing similar: .f..t.... par! \\r/f2',
+        '*f.delete par! \\r/f3',
+        '*f.delete par! \\r/f4',
+        '  replaced by duplicate: .f....... par! \\r/f4_dup1',
+        '  replaced by duplicate: .f....... par! \\r/f4_dup2',
+        '  replaced by duplicate: .f....... par! \\r/f4_renamed',
+        '>f+++++++ par! \\r/f4_dup1',
+        '  replacing duplicate: .f....... par! \\r/f4',
+        '>f+++++++ par! \\r/f4_dup2',
+        '  replacing duplicate: .f....... par! \\r/f4',
+        '>f+++++++ par! \\r/f4_renamed',
+        '  replacing duplicate: .f....... par! \\r/f4',
+        '*d.delete par2',
+        'Paths: 10 total (6kb), 11 synced (5kb), 1 renamed (1kb), 2 deleted (0b), 6 checksummed (5kb)'])
     with SetMaxRenameDetectionMatchingSizeFileCount(1):
       DoSync(
         root_dir, dry_run=True,
@@ -495,6 +518,8 @@ class SyncTestCase(BaseTestCase):
     DoSync(
       root_dir, checksum_all=True,
       expected_output=['>fc...... par! \\r/f2',
+                       '  replaced by duplicate: .f....... par! \\r/f2_renamed',
+                       '  replaced by similar: .f..t.... par! \\r/f2_renamed2',
                        'Paths: 10 total (6kb), 1 synced (1kb), 7 checksummed (6kb)'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 10 total (6kb), 7 checksummed (6kb)'])
@@ -549,9 +574,9 @@ class SyncTestCase(BaseTestCase):
           expected_output=['.d......x .',
                            '.f..t.... f1',
                            '.d......x par! \\r',
-                           '>fc.t.... par! \\r/f2',
+                           '*** Cancelled at path par! \\r/f2',
                            '*** Cancelled at path par! \\r/f4',
-                           'Paths: 9 total (5kb), 4 synced (1kb), 2 checksummed (1kb)',
+                           'Paths: 9 total (5kb), 3 synced (3b), 2 checksummed (1kb)',
                            'Apply update? (y/N): n',
                            '*** Cancelled ***'])
     with InteractiveCheckerReadyResults(
@@ -564,9 +589,9 @@ class SyncTestCase(BaseTestCase):
           expected_output=['.d......x .',
                            '.f..t.... f1',
                            '.d......x par! \\r',
-                           '>fc.t.... par! \\r/f2',
+                           '*** Cancelled at path par! \\r/f2',
                            '*** Cancelled at path par! \\r/f4',
-                           'Paths: 9 total (5kb), 4 synced (1kb), 2 checksummed (1kb)',
+                           'Paths: 9 total (5kb), 3 synced (3b), 2 checksummed (1kb)',
                            'Apply update? (y/N): n',
                            '*** Cancelled ***'])
     with InteractiveCheckerReadyResults(
@@ -578,9 +603,9 @@ class SyncTestCase(BaseTestCase):
           expected_output=['.d......x .',
                            '.f..t.... f1',
                            '.d......x par! \\r',
-                           '>fc.t.... par! \\r/f2',
+                           '*** Cancelled at path par! \\r/f2',
                            '*** Cancelled at path par! \\r/f4',
-                           'Paths: 9 total (5kb), 4 synced (1kb), 2 checksummed (1kb)',
+                           'Paths: 9 total (5kb), 3 synced (3b), 2 checksummed (1kb)',
                            'Apply update? (y/N): y'])
     DoVerify(root_dir, checksum_all=True,
              expected_success=False,
@@ -648,6 +673,58 @@ class SyncTestCase(BaseTestCase):
                        'Paths: 11 total (5kb), 2 synced (0b), 1 deleted (3b), 2 checksummed (3b)'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 11 total (5kb), 7 checksummed (5kb)'])
+
+    file8 = CreateFile(parent3, 'f8', contents='8'*1024)
+    file9 = CreateFile(parent3, 'f9', contents='9'*1024)
+    file10 = CreateFile(parent3, 'f10', contents='10'*513)
+
+    DoSync(
+      root_dir,
+      expected_output=['>f+++++++ par3/f10',
+                       '>f+++++++ par3/f8',
+                       '>f+++++++ par3/f9',
+                       'Paths: 14 total (8kb), 3 synced (3kb), 3 checksummed (3kb)'])
+
+    RenameFile(file8, file8 + '.tmp')
+    RenameFile(file9, file8)
+    RenameFile(file8 + '.tmp', file9)
+
+    DoSync(
+      root_dir, dry_run=True,
+      expected_output=['Paths: 14 total (8kb)'])
+    DoSync(
+      root_dir, checksum_all=True,
+      expected_output=['>fc...... par3/f8',
+                       '  replaced by duplicate: .f....... par3/f9',
+                       '>fc...... par3/f9',
+                       '  replaced by duplicate: .f....... par3/f8',
+                       'Paths: 14 total (8kb), 2 synced (2kb), 10 checksummed (8kb)'])
+
+    RenameFile(file10, file10 + '.tmp')
+    RenameFile(file9, file10)
+    RenameFile(file10 + '.tmp', file9)
+
+    DoSync(
+      root_dir,
+      expected_output=['>fcs..... par3/f10',
+                       '  replaced by duplicate: .f....... par3/f9',
+                       '>fcs..... par3/f9',
+                       '  replaced by duplicate: .f....... par3/f10',
+                       'Paths: 14 total (8kb), 2 synced (2kb), 2 checksummed (2kb)'])
+
+    DeleteFileOrDir(file10)
+    RenameFile(file9, file10)
+    RenameFile(file8, file9)
+
+    DoSync(
+      root_dir,
+      expected_output=[
+        '>fcs..... par3/f10',
+        '*f.delete par3/f8',
+        '  replaced by duplicate: .f....... par3/f9',
+        '>fcs..... par3/f9',
+        '  replaced by duplicate: .f....... par3/f10',
+        'Paths: 13 total (7kb), 3 synced (2kb), 1 renamed (1kb), 2 checksummed (2kb)'])
 
 
 class RenamePathsTestCase(BaseTestCase):
@@ -1480,7 +1557,11 @@ class SafeCopyTestCase(BaseTestCase):
     DoSync(root_dir, checksum_all=True,
            expected_output=['.d..t.... .',
                             '>fc...... f1',
+                            '  replaced by duplicate: .f....... f1.copy',
+                            '  replaced by duplicate: .f....... f1.copy2',
                             '>fc...... f1.copy.2',
+                            '  replaced by duplicate: .f....... f1.copy2',
+                            '  replaced by duplicate: .f....... f1.copy',
                             'Paths: 8 total (2kb), 3 synced (6b), 6 checksummed (2kb)'])
 
     DoSafeCopy(parent1, root2_parent_copy, dry_run=True,
@@ -1930,7 +2011,11 @@ class SafeMoveTestCase(BaseTestCase):
     DoSync(root_dir, checksum_all=True,
            expected_output=['.d..t.... .',
                             '>fc...... f1',
+                            '  replaced by duplicate: .f....... f1.copy',
+                            '  replaced by duplicate: .f....... f1.copy2',
                             '>fc...... f1.copy.2',
+                            '  replaced by duplicate: .f....... f1.copy2',
+                            '  replaced by duplicate: .f....... f1.copy',
                             'Paths: 5 total (12b), 3 synced (6b), 4 checksummed (12b)'])
 
     parent1 = CreateDir(root_dir, 'par! \r')

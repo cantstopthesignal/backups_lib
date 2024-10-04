@@ -437,20 +437,10 @@ class ChecksumsSyncer(object):
         itemized.Print(output=self.output)
       return
 
-    found_matching_rename = False
-    dup_output_lines = []
-    if (self.detect_renames and path_info.HasFileContents()
-        and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE
-        and (itemized.checksum_diff or itemized.size_diff)):
-      if self.sha256_to_basis_pathinfos is None:
-        self.sha256_to_basis_pathinfos = self.basis_manifest.CreateSha256ToPathInfosMap(
-          min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
-
-      dup_path_infos = self.sha256_to_basis_pathinfos.get(path_info.sha256, [])
-      analyze_result = lib.AnalyzePathInfoDups(
-        path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
-      found_matching_rename = analyze_result.found_matching_rename
-      dup_output_lines = analyze_result.dup_output_lines
+    find_matching_renames_results = self._FindMatchingRenames(basis_path_info)
+    if find_matching_renames_results is None:
+      return
+    found_matching_rename, dup_output_lines = find_matching_renames_results
 
     itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
     for dup_output_line in dup_output_lines:
@@ -492,6 +482,24 @@ class ChecksumsSyncer(object):
 
     self.total_synced_paths += 1
 
+    find_matching_renames_results = self._FindMatchingRenames(basis_path_info)
+    if find_matching_renames_results is None:
+      return
+    found_matching_rename, dup_output_lines = find_matching_renames_results
+
+    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
+    for dup_output_line in dup_output_lines:
+      print(dup_output_line, file=self.output)
+
+    if found_matching_rename:
+      self.total_renamed_paths += 1
+      self.total_renamed_size += basis_path_info.size
+    else:
+      self.total_deleted_paths += 1
+      if basis_path_info.HasFileContents():
+        self.total_deleted_size += basis_path_info.size
+
+  def _FindMatchingRenames(self, basis_path_info):
     found_matching_rename = False
     dup_output_lines = []
 
@@ -510,9 +518,11 @@ class ChecksumsSyncer(object):
       else:
         dup_path_infos = []
         for path_info in matching_size_path_infos:
+          if path_info.path == basis_path_info.path:
+            continue
           if path_info.sha256 is None:
             if self.escape_key_detector.WasEscapePressed():
-              print('*** Cancelled at path %s' % lib.EscapePath(path), file=self.output)
+              print('*** Cancelled at path %s' % lib.EscapePath(basis_path_info.path), file=self.output)
               return
 
             full_path = os.path.join(self.root_path, path_info.path)
@@ -528,17 +538,7 @@ class ChecksumsSyncer(object):
         dup_output_lines = analyze_result.dup_output_lines
         found_matching_rename = analyze_result.found_matching_rename
 
-    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
-    for dup_output_line in dup_output_lines:
-      print(dup_output_line, file=self.output)
-
-    if found_matching_rename:
-      self.total_renamed_paths += 1
-      self.total_renamed_size += basis_path_info.size
-    else:
-      self.total_deleted_paths += 1
-      if basis_path_info.HasFileContents():
-        self.total_deleted_size += basis_path_info.size
+    return (found_matching_rename, dup_output_lines)
 
   def _AddStatsForSyncedPath(self, path_info):
     self.total_synced_paths += 1

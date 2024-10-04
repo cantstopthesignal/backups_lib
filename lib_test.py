@@ -221,11 +221,11 @@ class ItemizedPathChangeTestCase(BaseTestCase):
 
     AssertEquals(b'\x1b[1;m.f.......\x1b[1;m path',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE)))
-    AssertEquals(b'\x1b[1;32m>f+++++++\x1b[1;m path',
+    AssertEquals(b'\x1b[%s>f+++++++\x1b[1;m path' % lib.TERM_COLOR_GREEN.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True)))
-    AssertEquals(b'\x1b[1;31m>f+++++++\x1b[1;m path',
+    AssertEquals(b'\x1b[%s>f+++++++\x1b[1;m path' % lib.TERM_COLOR_RED.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True), warn_for_new_path=True))
-    AssertEquals(b'\x1b[1;35m>f+++++++\x1b[1;m path',
+    AssertEquals(b'\x1b[%s>f+++++++\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, new_path=True),
                                  warn_for_new_path=True, found_matching_rename=True))
     AssertEquals(b'\x1b[1;m.f.......\x1b[1;m \x1b[1;36mpar/\x1b[1;mpath',
@@ -234,19 +234,28 @@ class ItemizedPathChangeTestCase(BaseTestCase):
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR)))
     AssertEquals(b'\x1b[1;m.L.......\x1b[1;m \x1b[1;35mpath\x1b[1;m -> dest',
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_SYMLINK, link_dest='dest')))
-    AssertEquals(b'\x1b[1;31m*f.delete\x1b[1;m path',
+    AssertEquals(b'\x1b[%s*f.delete\x1b[1;m path' % lib.TERM_COLOR_RED.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True)))
-    AssertEquals(b'\x1b[1;35m*f.delete\x1b[1;m path',
-                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True), found_matching_rename=True))
-    AssertEquals(b'\x1b[1;35m*d.delete\x1b[1;m \x1b[1;36mpath\x1b[1;m',
+    AssertEquals(b'\x1b[%s*f.delete\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
+                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, delete_path=True),
+                                 found_matching_rename=True))
+    AssertEquals(b'\x1b[%s*d.delete\x1b[1;m \x1b[1;36mpath\x1b[1;m' % lib.TERM_COLOR_PURPLE.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_DIR, delete_path=True)))
-    AssertEquals(b'\x1b[1;35m.fc......\x1b[1;m path',
+    AssertEquals(b'\x1b[%s.fc......\x1b[1;m path' % lib.TERM_COLOR_RED.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, checksum_diff=True)))
-    AssertEquals(b'\x1b[1;33m.f..t....\x1b[1;m path',
+    AssertEquals(b'\x1b[%s.fc......\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
+                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, checksum_diff=True),
+                                 found_matching_rename=True))
+    AssertEquals(b'\x1b[%s.f.s.....\x1b[1;m path' % lib.TERM_COLOR_RED.encode('ascii'),
+                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, size_diff=True)))
+    AssertEquals(b'\x1b[%s.f.s.....\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
+                 ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, size_diff=True),
+                                 found_matching_rename=True))
+    AssertEquals(b'\x1b[%s.f..t....\x1b[1;m path' % lib.TERM_COLOR_YELLOW.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, time_diff=True)))
-    AssertEquals(b'\x1b[1;33m.f...p...\x1b[1;m path',
+    AssertEquals(b'\x1b[%s.f...p...\x1b[1;m path' % lib.TERM_COLOR_YELLOW.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, permission_diff=True)))
-    AssertEquals(b'\x1b[1;35m.f......x\x1b[1;m path',
+    AssertEquals(b'\x1b[%s.f......x\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, xattr_diff=True)))
 
 
