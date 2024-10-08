@@ -146,3 +146,16 @@ def DoSafeMove(from_path, to_path, dry_run=False, expected_success=True, expecte
   cmd_args = ['safe-move', from_path, to_path]
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                   expected_output=expected_output)
+
+
+def DoRestoreMeta(root_path, manifest_path=None, dry_run=False, mtimes=False, paths=[],
+                  expected_success=True, expected_output=[]):
+  cmd_args = ['restore-meta', root_path]
+  if manifest_path is not None:
+    cmd_args.extend(['--manifest-path', manifest_path])
+  if mtimes:
+    cmd_args.append('--mtimes')
+  for path in paths:
+    cmd_args.extend(['--path', path])
+  DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                  expected_output=expected_output)

@@ -20,6 +20,7 @@ COMMAND_RENAME_PATHS = 'rename-paths'
 COMMAND_IMAGE_FROM_FOLDER = 'image-from-folder'
 COMMAND_SAFE_COPY = 'safe-copy'
 COMMAND_SAFE_MOVE = 'safe-move'
+COMMAND_RESTORE_META = 'restore-meta'
 
 COMMANDS = [
   COMMAND_CREATE,
@@ -30,6 +31,7 @@ COMMANDS = [
   COMMAND_IMAGE_FROM_FOLDER,
   COMMAND_SAFE_COPY,
   COMMAND_SAFE_MOVE,
+  COMMAND_RESTORE_META,
 ]
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
@@ -1053,6 +1055,84 @@ class SafeCopyOrMover(object):
       check_dir = os.path.dirname(check_dir)
 
 
+class MetadataRestorer(object):
+  def __init__(self, root_path, output, manifest_path=None, mtimes=False,
+               path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
+    if root_path is None:
+      raise Exception('root_path cannot be None')
+    self.root_path = root_path
+    self.output = output
+    self.manifest_path = manifest_path
+    self.mtimes = mtimes
+    self.path_matcher = path_matcher
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.checksums = None
+    self.manifest = None
+    self.path_enumerator = lib.PathEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
+    self.total_paths = 0
+    self.total_updated_paths = 0
+    self.total_unknown_paths = 0
+    self.total_skipped_paths = 0
+
+  def RestoreMetadata(self):
+    assert self.mtimes
+
+    try:
+      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
+      return False
+
+    self.manifest = self.checksums.GetManifest()
+
+    meta_strs = []
+    if self.mtimes:
+      meta_strs.append('mtimes')
+    print('Restoring metadata (%s)...' % ', '.join(meta_strs), file=self.output)
+
+    for enumerated_path in self.path_enumerator.Scan():
+      self.total_paths += 1
+
+      path = enumerated_path.GetPath()
+      if not self.path_matcher.Matches(path):
+        self.total_skipped_paths += 1
+        continue
+
+      basis_path_info = self.manifest.GetPathInfo(path)
+      if basis_path_info is None:
+        self.total_unknown_paths += 1
+        continue
+
+      full_path = os.path.join(self.root_path, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+
+      itemized = path_info.GetItemized()
+      if self.mtimes and path_info.mtime != basis_path_info.mtime:
+        itemized.time_diff = True
+        if not self.dry_run:
+          os.utime(full_path, (basis_path_info.mtime, basis_path_info.mtime), follow_symlinks=False)
+
+      if itemized.HasDiffs():
+        self.total_updated_paths += 1
+        print(itemized, file=self.output)
+
+    self._PrintResults()
+
+    return True
+
+  def _PrintResults(self):
+    if self.total_paths:
+      out_pieces = ['%d total' % self.total_paths]
+      if self.total_updated_paths:
+        out_pieces.append('%d updated' % self.total_updated_paths)
+      if self.total_unknown_paths:
+        out_pieces.append('%d unknown' % self.total_unknown_paths)
+      if self.total_skipped_paths:
+        out_pieces.append('%d skipped' % self.total_skipped_paths)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
+
+
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
@@ -1179,6 +1259,31 @@ def DoSafeMove(args, output):
   return safe_copy_or_mover.SafeCopyOrMove()
 
 
+def DoRestoreMeta(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
+  parser.add_argument('--mtimes', action='store_true')
+  lib.AddPathsArgs(parser)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+
+  if not cmd_args.mtimes:
+    print('*** Error: --mtimes arg is required', file=output)
+    return False
+
+  if not cmd_args.paths:
+    print('*** Error: --path args are required', file=output)
+    return False
+
+  metadata_restorer = MetadataRestorer(
+    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    mtimes=cmd_args.mtimes, path_matcher=path_matcher,
+    dry_run=args.dry_run, verbose=args.verbose)
+  return metadata_restorer.RestoreMetadata()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
@@ -1196,6 +1301,8 @@ def DoCommand(args, output):
     return DoSafeCopy(args, output=output)
   elif args.command == COMMAND_SAFE_MOVE:
     return DoSafeMove(args, output=output)
+  elif args.command == COMMAND_RESTORE_META:
+    return DoRestoreMeta(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False

@@ -47,6 +47,7 @@ from .checksums_lib_test_util import DoCreate
 from .checksums_lib_test_util import DoDiff
 from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
+from .checksums_lib_test_util import DoRestoreMeta
 from .checksums_lib_test_util import DoSafeCopy
 from .checksums_lib_test_util import DoSafeMove
 from .checksums_lib_test_util import DoSync
@@ -2100,6 +2101,113 @@ class SafeMoveTestCase(BaseTestCase):
     DoSync(root2_dir, checksum_all=True,
            expected_output=['.d..t.... par! \\r copy',
                             'Paths: 13 total (6kb), 1 synced (0b), 9 checksummed (6kb)'])
+
+
+class RestoreMetaTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    root_dir = CreateDir(test_dir, 'root')
+    alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
+
+    DoCreate(root_dir, expected_output=None)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    file2 = CreateFile(root_dir, 'f2', contents='DEF')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+    parent2 = CreateDir(root_dir, 'par2')
+    file4 = CreateFile(parent2, 'f4', contents='2'*1025)
+    ln1 = CreateSymlink(root_dir, 'ln1', 'INVALID')
+    ln2 = CreateSymlink(root_dir, 'ln2', 'f2')
+
+    DoSync(
+      root_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>f+++++++ f2',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> f2',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f3',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f4',
+                       'Paths: 9 total (2kb), 9 synced (2kb), 4 checksummed (2kb)'])
+
+    DoRestoreMeta(
+      root_dir, dry_run=True, expected_success=False,
+      expected_output=['*** Error: --mtimes arg is required'])
+    DoRestoreMeta(
+      root_dir, dry_run=True, mtimes=True, expected_success=False,
+      expected_output=['*** Error: --path args are required'])
+    DoRestoreMeta(
+      root_dir, dry_run=True, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       'Paths: 9 total, 8 skipped'])
+
+    DoVerify(root_dir, expected_output=None)
+
+    SetMTime(file1, mtime=1510000000)
+    SetMTime(parent1, mtime=1530000000)
+    SetMTime(ln1, mtime=1520000000)
+    SetMTime(ln2, mtime=1540000000)
+    SetMTime(file4, mtime=1550000000)
+
+    DoVerify(root_dir, expected_success=False,
+             expected_output=['.f..t.... f1',
+                              '.L..t.... ln1 -> INVALID',
+                              '.L..t.... ln2 -> f2',
+                              '.d..t.... par! \\r',
+                              '.f..t.... par2/f4',
+                              'Paths: 9 total (2kb), 5 mismatched (1kb), 2 checksummed (1kb)'])
+
+    DoRestoreMeta(
+      root_dir, dry_run=True, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... f1',
+                       'Paths: 9 total, 1 updated, 8 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_success=False,
+             expected_output=['.f..t.... f1',
+                              '.L..t.... ln1 -> INVALID',
+                              '.L..t.... ln2 -> f2',
+                              '.d..t.... par! \\r',
+                              '.f..t.... par2/f4',
+                              'Paths: 9 total (2kb), 5 mismatched (1kb), 4 checksummed (2kb)'])
+
+    DoRestoreMeta(
+      root_dir, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... f1',
+                       'Paths: 9 total, 1 updated, 8 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_success=False,
+             expected_output=['.L..t.... ln1 -> INVALID',
+                              '.L..t.... ln2 -> f2',
+                              '.d..t.... par! \\r',
+                              '.f..t.... par2/f4',
+                              'Paths: 9 total (2kb), 4 mismatched (1kb), 4 checksummed (2kb)'])
+
+    DoRestoreMeta(
+      root_dir, mtimes=True, paths=['par2'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... par2/f4',
+                       'Paths: 9 total, 1 updated, 7 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_success=False,
+             expected_output=['.L..t.... ln1 -> INVALID',
+                              '.L..t.... ln2 -> f2',
+                              '.d..t.... par! \\r',
+                              'Paths: 9 total (2kb), 3 mismatched (0b), 4 checksummed (2kb)'])
+
+    DoRestoreMeta(
+      root_dir, mtimes=True, paths=['ln1', 'ln2', os.path.basename(parent1)],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       'Paths: 9 total, 3 updated, 5 skipped'])
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 9 total (2kb), 4 checksummed (2kb)'])
 
 
 if __name__ == '__main__':
