@@ -331,3 +331,14 @@ def DoMarkBackupsNotPruneable(config, backup_names=[], min_backup=None, max_back
     cmd_args.extend(['--max-backup', max_backup])
   DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
                 expected_output=expected_output)
+
+
+def DoRestoreMeta(config, mtimes=False, paths=[], dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['restore-meta',
+              '--backups-config', config.path]
+  if mtimes:
+    cmd_args.append('--mtimes')
+  for path in paths:
+    cmd_args.extend(['--path', path])
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)

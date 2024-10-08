@@ -61,6 +61,7 @@ from .backups_manager_lib_test_util import DoExtractFromBackups
 from .backups_manager_lib_test_util import DoListBackups
 from .backups_manager_lib_test_util import DoMarkBackupsNotPruneable
 from .backups_manager_lib_test_util import DoMergeIntoBackups
+from .backups_manager_lib_test_util import DoRestoreMeta
 from .backups_manager_lib_test_util import DoVerifyBackups
 from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
 from .backups_manager_lib_test_util import VerifyBackupManifest
@@ -3025,6 +3026,141 @@ class MarkBackupsNotPruneableTestCase(BaseTestCase):
       config, backup_names=['2020-01-04-120000'],
       expected_output=[
         'Marking backup Backup<2020-01-04-120000,DONE> as not pruneable'])
+
+
+class RestoreMetaTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    config = CreateConfig(test_dir)
+    CreateBackupsBundle(config)
+    latest_checkpoint_path = CreateLatestManifestCheckpoint(config)
+
+    file1 = CreateFile(config.src_path, 'f1', contents='ABC')
+    file2 = CreateFile(config.src_path, 'f2', contents='DEF')
+    parent1 = CreateDir(config.src_path, 'par! \r')
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+    parent2 = CreateDir(config.src_path, 'par2')
+    file4 = CreateFile(parent2, 'f4', contents='2'*1025)
+    ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
+    ln2 = CreateSymlink(config.src_path, 'ln2', 'f2')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-02-120000',
+      expected_output=['>fcs..... f1',
+                       '>f+++++++ f2',
+                       '*f.delete fT',
+                       '*f.delete fX',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> f2',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f3',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f4',
+                       'Transferring 8 of 9 paths (2kb of 2kb)'])
+
+    DoApplyToBackups(
+      config,
+      expected_output=[
+        'Applying 2020-01-02-120000 onto 2020-01-01-120000...',
+        '>fcs..... f1',
+        '>f+++++++ f2',
+        '*f.delete fT',
+        '*f.delete fX',
+        '>L+++++++ ln1 -> INVALID',
+        '>L+++++++ ln2 -> f2',
+        '>d+++++++ par! \\r',
+        '>f+++++++ par! \\r/f3',
+        '>d+++++++ par2',
+        '>f+++++++ par2/f4',
+        'Copying paths: 9 to copy, 9 total in source, 9 total in result...',
+        'Verifying 2020-01-02-120000...',
+        'Paths: 9 total (2kb), 4 checksummed (2kb)'])
+
+    DoRestoreMeta(
+      config, dry_run=True, expected_success=False,
+      expected_output=['*** Error: --mtimes arg is required'])
+    DoRestoreMeta(
+      config, dry_run=True, mtimes=True, expected_success=False,
+      expected_output=['*** Error: --path args are required'])
+    DoRestoreMeta(
+      config, dry_run=True, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       'Paths: 9 total, 8 skipped'])
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=[])
+
+    SetMTime(file1, mtime=1510000000)
+    SetMTime(parent1, mtime=1530000000)
+    SetMTime(ln1, mtime=1520000000)
+    SetMTime(ln2, mtime=1540000000)
+    SetMTime(file4, mtime=1550000000)
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.f..t.... f1',
+                       '.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       '.f..t.... par2/f4',
+                       'Transferring 5 of 9 paths (1kb of 2kb)'])
+
+    DoRestoreMeta(
+      config, dry_run=True, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... f1',
+                       'Paths: 9 total, 1 updated, 8 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.f..t.... f1',
+                       '.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       '.f..t.... par2/f4',
+                       'Transferring 5 of 9 paths (1kb of 2kb)'])
+
+
+    DoRestoreMeta(
+      config, mtimes=True, paths=['f1'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... f1',
+                       'Paths: 9 total, 1 updated, 8 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       '.f..t.... par2/f4',
+                       'Transferring 4 of 9 paths (1kb of 2kb)'])
+
+    DoRestoreMeta(
+      config, mtimes=True, paths=['par2'],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.f..t.... par2/f4',
+                       'Paths: 9 total, 1 updated, 7 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       'Transferring 3 of 9 paths (0b of 2kb)'])
+
+    DoRestoreMeta(
+      config, mtimes=True, paths=['ln1', 'ln2', os.path.basename(parent1)],
+      expected_output=['Restoring metadata (mtimes)...',
+                       '.L..t.... ln1 -> INVALID',
+                       '.L..t.... ln2 -> f2',
+                       '.d..t.... par! \\r',
+                       'Paths: 9 total, 3 updated, 5 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=[])
 
 
 if __name__ == '__main__':

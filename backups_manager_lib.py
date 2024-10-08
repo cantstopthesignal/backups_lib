@@ -27,6 +27,7 @@ COMMAND_EXTRACT_FROM_BACKUPS = 'extract-from-backups'
 COMMAND_MERGE_INTO_BACKUPS = 'merge-into-backups'
 COMMAND_DELETE_IN_BACKUPS = 'delete-in-backups'
 COMMAND_MARK_BACKUPS_NOT_PRUNEABLE = 'mark-backups-not-pruneable'
+COMMAND_RESTORE_META = 'restore-meta'
 
 COMMANDS = [
   COMMAND_CREATE_BACKUP,
@@ -44,6 +45,7 @@ COMMANDS = [
   COMMAND_MERGE_INTO_BACKUPS,
   COMMAND_DELETE_IN_BACKUPS,
   COMMAND_MARK_BACKUPS_NOT_PRUNEABLE,
+  COMMAND_RESTORE_META,
 ]
 
 
@@ -2153,6 +2155,85 @@ class BackupNotPruneableMarker(object):
     return True
 
 
+class MetadataRestorer:
+  def __init__(self, config, output, mtimes=False, path_matcher=lib.PathMatcherAll(),
+               encryption_manager=None, dry_run=False, verbose=False):
+    self.config = config
+    self.output = output
+    self.mtimes = mtimes
+    self.path_matcher = path_matcher
+    self.encryption_manager = encryption_manager
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.total_paths = 0
+    self.total_updated_paths = 0
+    self.total_unknown_paths = 0
+    self.total_skipped_paths = 0
+
+  def RestoreMetadata(self):
+    assert self.mtimes
+
+    checkpoints = ListBackupCheckpoints(self.config.checkpoints_dir)
+    if not checkpoints:
+      print('*** Error: No previous checkpoints found', file=self.output)
+      return False
+
+    last_checkpoint = checkpoints[-1]
+
+    basis_path = last_checkpoint.GetPath()
+    basis_manifest = lib.ReadManifestFromImageOrPath(
+      basis_path, encryption_manager=self.encryption_manager, dry_run=self.dry_run)
+
+    filters = self.config.GetFilters()
+
+    path_enumerator = lib.PathEnumerator(self.config.src_path, self.output, filters=filters, verbose=self.verbose)
+
+    meta_strs = []
+    if self.mtimes:
+      meta_strs.append('mtimes')
+    print('Restoring metadata (%s)...' % ', '.join(meta_strs), file=self.output)
+
+    for enumerated_path in path_enumerator.Scan():
+      self.total_paths += 1
+
+      path = enumerated_path.GetPath()
+      if not self.path_matcher.Matches(path):
+        self.total_skipped_paths += 1
+        continue
+
+      basis_path_info = basis_manifest.GetPathInfo(path)
+      if basis_path_info is None:
+        self.total_unknown_paths += 1
+        continue
+
+      full_path = os.path.join(self.config.src_path, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+
+      itemized = path_info.GetItemized()
+      if self.mtimes and path_info.mtime != basis_path_info.mtime:
+        itemized.time_diff = True
+        if not self.dry_run:
+          os.utime(full_path, (basis_path_info.mtime, basis_path_info.mtime), follow_symlinks=False)
+
+      if itemized.HasDiffs():
+        self.total_updated_paths += 1
+        print(itemized, file=self.output)
+
+    self._PrintResults()
+    return True
+
+  def _PrintResults(self):
+    if self.total_paths:
+      out_pieces = ['%d total' % self.total_paths]
+      if self.total_updated_paths:
+        out_pieces.append('%d updated' % self.total_updated_paths)
+      if self.total_unknown_paths:
+        out_pieces.append('%d unknown' % self.total_unknown_paths)
+      if self.total_skipped_paths:
+        out_pieces.append('%d skipped' % self.total_skipped_paths)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
+
+
 def DoCreateBackup(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
@@ -2434,6 +2515,31 @@ def DoMarkBackupsNotPruneable(args, output):
   return marker.MarkBackupsNotPruneable()
 
 
+def DoRestoreMeta(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--backups-config', required=True)
+  parser.add_argument('--mtimes', action='store_true')
+  lib.AddPathsArgs(parser)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  config = BackupsConfig.Load(cmd_args.backups_config)
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+
+  if not cmd_args.mtimes:
+    print('*** Error: --mtimes arg is required', file=output)
+    return False
+
+  if not cmd_args.paths:
+    print('*** Error: --path args are required', file=output)
+    return False
+
+  metadata_restorer = MetadataRestorer(
+    config, output=output, path_matcher=path_matcher, mtimes=cmd_args.mtimes,
+    encryption_manager=lib.EncryptionManager(output=output),
+    dry_run=args.dry_run, verbose=args.verbose)
+  return metadata_restorer.RestoreMetadata()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE_BACKUP:
     return DoCreateBackup(args, output=output)
@@ -2465,6 +2571,8 @@ def DoCommand(args, output):
     return DoDeleteInBackups(args, output=output)
   elif args.command == COMMAND_MARK_BACKUPS_NOT_PRUNEABLE:
     return DoMarkBackupsNotPruneable(args, output=output)
+  elif args.command == COMMAND_RESTORE_META:
+    return DoRestoreMeta(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False
