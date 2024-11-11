@@ -1116,6 +1116,13 @@ class MetadataRestorer(object):
       if itemized.HasDiffs():
         self.total_updated_paths += 1
         print(itemized, file=self.output)
+        if self.verbose:
+          if path_info is not None:
+            print('<', path_info.ToString(
+              shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
+          if basis_path_info is not None:
+            print('>', basis_path_info.ToString(
+              shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
     self._PrintResults()
 
@@ -1271,10 +1278,6 @@ def DoRestoreMeta(args, output):
 
   if not cmd_args.mtimes:
     print('*** Error: --mtimes arg is required', file=output)
-    return False
-
-  if not cmd_args.paths:
-    print('*** Error: --path args are required', file=output)
     return False
 
   metadata_restorer = MetadataRestorer(

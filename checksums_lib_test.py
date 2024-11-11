@@ -2140,8 +2140,9 @@ class RestoreMetaTestCase(BaseTestCase):
       root_dir, dry_run=True, expected_success=False,
       expected_output=['*** Error: --mtimes arg is required'])
     DoRestoreMeta(
-      root_dir, dry_run=True, mtimes=True, expected_success=False,
-      expected_output=['*** Error: --path args are required'])
+      root_dir, dry_run=True, mtimes=True,
+      expected_output=['Restoring metadata (mtimes)...',
+                       'Paths: 9 total'])
     DoRestoreMeta(
       root_dir, dry_run=True, mtimes=True, paths=['f1'],
       expected_output=['Restoring metadata (mtimes)...',
