@@ -216,3 +216,9 @@ def OverrideUmask(umask_value):
     yield old_umask_value
   finally:
     os.umask(old_umask_value)
+
+
+def GetRsyncCreatedDirectoryOutputLines():
+  if platform.system() == lib.PLATFORM_LINUX:
+    return []
+  return [re.compile('^created directory .*$')]
