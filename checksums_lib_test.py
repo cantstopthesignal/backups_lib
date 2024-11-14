@@ -53,6 +53,7 @@ from .checksums_lib_test_util import DoSafeCopy
 from .checksums_lib_test_util import DoSafeMove
 from .checksums_lib_test_util import DoSync
 from .checksums_lib_test_util import DoVerify
+from .checksums_lib_test_util import SafeMoveOrCopyForceFromParentDirMtimeChangeForTest
 from .checksums_lib_test_util import SetMaxRenameDetectionMatchingSizeFileCount
 
 
@@ -1669,20 +1670,22 @@ class SafeMoveTestCase(BaseTestCase):
 
     with lib.MtimePreserver() as mtime_preserver:
       mtime_preserver.PreserveMtime(root_dir)
-      DoSafeMove(file1, file1_copy, dry_run=False,
-               expected_output=['Verifying manifest for from root %s...' % root_dir,
-                                'Copying %s to %s...' % (file1, file1_copy),
-                                re.compile('^[>]f[+]{9,10} f1$'),
-                                'Adding manifest entries...',
-                                '.d..t.... .',
-                                '>f+++++++ f1.copy',
-                                '  replacing duplicate: .f....... f1',
-                                'Verifying copied files...',
-                                'Paths: 6 total (2kb), 1 checksummed (3b)',
-                                'Removing from files and manifest entries...',
-                                '*f.delete f1',
-                                'Verifying from checksums...',
-                                'Paths: 5 total (2kb)'])
+      with SafeMoveOrCopyForceFromParentDirMtimeChangeForTest():
+        DoSafeMove(file1, file1_copy, dry_run=False,
+                 expected_output=['Verifying manifest for from root %s...' % root_dir,
+                                  'Copying %s to %s...' % (file1, file1_copy),
+                                  re.compile('^[>]f[+]{9,10} f1$'),
+                                  'Adding manifest entries...',
+                                  '.d..t.... .',
+                                  '>f+++++++ f1.copy',
+                                  '  replacing duplicate: .f....... f1',
+                                  'Verifying copied files...',
+                                  'Paths: 6 total (2kb), 1 checksummed (3b)',
+                                  'Removing from files and manifest entries...',
+                                  '*f.delete f1',
+                                  '.d..t.... .',
+                                  'Verifying from checksums...',
+                                  'Paths: 5 total (2kb)'])
       DoVerify(root_dir, checksum_all=True,
                expected_output=['Paths: 5 total (2kb), 3 checksummed (2kb)'])
     DoSync(root_dir, checksum_all=True,
@@ -1902,21 +1905,23 @@ class SafeMoveTestCase(BaseTestCase):
     with lib.MtimePreserver() as mtime_preserver:
       mtime_preserver.PreserveMtime(root_dir)
       with lib.Chdir(root_dir):
-        DoSafeMove(os.path.basename(file1), 'f1.copy2', dry_run=False,
-                   expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
-                                    'Copying f1 to f1.copy2...',
-                                    re.compile('^[>]f[+]{9,10} f1$'),
-                                    'Adding manifest entries...',
-                                    '.d..t.... .',
-                                    '>f+++++++ f1.copy2',
-                                    '  replacing duplicate: .f....... f1.copy',
-                                    '  replacing duplicate: .f....... f1',
-                                    'Verifying copied files...',
-                                    'Paths: 4 total (9b), 1 checksummed (3b)',
-                                    'Removing from files and manifest entries...',
-                                    '*f.delete f1',
-                                    'Verifying from checksums...',
-                                    'Paths: 3 total (6b)'])
+        with SafeMoveOrCopyForceFromParentDirMtimeChangeForTest():
+          DoSafeMove(os.path.basename(file1), 'f1.copy2', dry_run=False,
+                     expected_output=['Verifying manifest for from root %s...' % os.getcwd(),
+                                      'Copying f1 to f1.copy2...',
+                                      re.compile('^[>]f[+]{9,10} f1$'),
+                                      'Adding manifest entries...',
+                                      '.d..t.... .',
+                                      '>f+++++++ f1.copy2',
+                                      '  replacing duplicate: .f....... f1.copy',
+                                      '  replacing duplicate: .f....... f1',
+                                      'Verifying copied files...',
+                                      'Paths: 4 total (9b), 1 checksummed (3b)',
+                                      'Removing from files and manifest entries...',
+                                      '*f.delete f1',
+                                      '.d..t.... .',
+                                      'Verifying from checksums...',
+                                      'Paths: 3 total (6b)'])
       DoVerify(root_dir, checksum_all=True,
                expected_output=['Paths: 3 total (6b), 2 checksummed (6b)'])
       DoVerify(root2_dir, checksum_all=True,

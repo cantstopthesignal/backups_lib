@@ -24,6 +24,16 @@ def SetMaxRenameDetectionMatchingSizeFileCount(new_file_count):
     checksums_lib.MAX_RENAME_DETECTION_MATCHING_SIZE_FILE_COUNT = old_value
 
 
+@contextlib.contextmanager
+def SafeMoveOrCopyForceFromParentDirMtimeChangeForTest():
+  old_value = checksums_lib.SafeCopyOrMover.FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST
+  checksums_lib.SafeCopyOrMover.FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST = True
+  try:
+    yield
+  finally:
+    checksums_lib.SafeCopyOrMover.FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST = old_value
+
+
 def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
   args = []
   if dry_run:

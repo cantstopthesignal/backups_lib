@@ -862,6 +862,8 @@ class ImageFromFolderCreator(object):
 
 
 class SafeCopyOrMover(object):
+  FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST = False
+
   def __init__(self, from_path, to_path, output,
                move=False, dry_run=False, verbose=False):
     if from_path is None:
@@ -1032,6 +1034,8 @@ class SafeCopyOrMover(object):
     existing_from_parent_dir_path_info = from_manifest.GetPathInfo(from_parent_dir_path_info.path)
     from_manifest.AddPathInfo(from_parent_dir_path_info, allow_replace=True)
     itemized = lib.PathInfo.GetItemizedDiff(from_parent_dir_path_info, existing_from_parent_dir_path_info)
+    if SafeCopyOrMover.FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST:
+      itemized.time_diff = True
     if itemized.HasDiffs():
       print(itemized, file=self.output)
 
