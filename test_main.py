@@ -46,4 +46,7 @@ def RunTestSuite():
   lib_test_util.FAKE_DISK_IMAGE_LEVEL = args.fake_disk_image_level
 
   suite = unittest.TestLoader().discover(os.path.dirname(sys.argv[0]), '*_test.py')
-  unittest.TextTestRunner(verbosity=args.verbose and 2 or 1).run(suite)
+  runner = unittest.TextTestRunner(verbosity=args.verbose and 2 or 1)
+  if not runner.run(suite).wasSuccessful():
+    sys.exit(1)
+  sys.exit(0)
