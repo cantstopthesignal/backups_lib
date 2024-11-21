@@ -314,6 +314,10 @@ class ApplyToBackupsTestCase(BaseTestCase):
                        'Verifying 2020-01-06-120000...',
                        'Paths: 14 total, 8 inode hits, 1 checksummed (1kb)'])
 
+    DoApplyToBackups(
+      config,
+      expected_output=['No checkpoints to apply found'])
+
 
 class ApplyToBackupsWithFilterMergeTestCase(BaseTestCase):
   def test(self):

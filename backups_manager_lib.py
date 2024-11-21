@@ -1125,7 +1125,7 @@ class CheckpointsToBackupsApplier:
       return True
 
     self.manager = BackupsManager.Open(
-      self.config, encryption_manager=self.encryption_manager, readonly=False,
+      self.config, encryption_manager=self.encryption_manager, readonly=True,
       dry_run=self.dry_run)
     try:
       last_backup = self.manager.GetLastDone()
@@ -1144,6 +1144,11 @@ class CheckpointsToBackupsApplier:
         if checkpoint.IsManifestOnly():
           raise Exception('Checkpoint %s is manifest only: cannot apply to backups' % checkpoint)
         checkpoints_to_apply.append(checkpoint)
+      if not checkpoints_to_apply:
+        print('No checkpoints to apply found', file=self.output)
+        return True
+      if not self.dry_run:
+        self.manager.Reopen(readonly=False)
       for checkpoint in checkpoints_to_apply:
         open_checkpoint = checkpoint_lib.Checkpoint.Open(
           checkpoint.GetPath(), encryption_manager=self.encryption_manager, readonly=True,
@@ -1154,9 +1159,6 @@ class CheckpointsToBackupsApplier:
           open_checkpoint.Close()
         if not success:
           return False
-      if not checkpoints_to_apply:
-        print('No checkpoints to apply found', file=self.output)
-        return True
       return True
     finally:
       self.manager.Close()
