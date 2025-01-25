@@ -1,9 +1,9 @@
 import argparse
 import io
 import os
-import pipes
 import platform
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -759,7 +759,7 @@ class ImageFromFolderCreator(object):
       p.stdin.write(self.password)
     p.stdin.close()
     if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
     if self.encrypt:
       _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(rw_image_path)
       assert image_uuid
@@ -830,7 +830,7 @@ class ImageFromFolderCreator(object):
     if p.wait():
       raise Exception('expect command failed')
     if child_result_code:
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
     if self.encrypt:
       _, image_uuid = lib.GetDiskImageHelper().GetImageEncryptionDetails(output_path)
       assert image_uuid

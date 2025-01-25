@@ -11,13 +11,13 @@ import io
 import json
 import math
 import os
-import pipes
 import platform
 import plistlib
 import pwd
 import random
 import re
 import select
+import shlex
 import shutil
 import stat
 import struct
@@ -825,7 +825,7 @@ class DiskImageHelperDarwin(DiskImageHelper):
       p.stdin.write(password)
     p.stdin.close()
     if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
     if IsRunningAsRoot():
       pwd_info = pwd.getpwnam(os.getlogin())
@@ -861,7 +861,7 @@ class DiskImageHelperDarwin(DiskImageHelper):
       lines = output.decode('utf8').strip().split('\n')
       if len(lines) == 1 and lines[0].endswith('- Authentication error'):
         raise DiskImageHelperAuthenticationError()
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
     result = DiskImageHelperAttachResult()
     plist_data = plistlib.loads(output)
@@ -1243,7 +1243,7 @@ def ResizeImage(image_path, block_count, output, encryption_manager=None, encryp
     with p.stdout:
       output.write(p.stdout.read())
     if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
 
 def SplitImageExt(path):
@@ -1311,7 +1311,7 @@ def CleanFreeSparsebundleBands(image_path, output, encryption_manager=None, encr
   with p.stdout:
     hdiutil_output = p.stdout.read()
   if p.wait():
-    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
   block_size = None
   partitions = []
@@ -1444,7 +1444,7 @@ def ResizeApfsContainer(apfs_device, new_size, output):
   if p.wait():
     if size_change_too_small:
       return False
-    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
   return True
 
 
@@ -1467,7 +1467,7 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
   with p.stdout:
     hdiutil_output = p.stdout.read()
   if p.wait():
-    raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+    raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
   lines = hdiutil_output.strip().split('\n')
   if len(lines) != 1:
@@ -1537,7 +1537,7 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
   cmd.append(MakeRsyncDirname(dest_root_path))
 
   if verbose:
-    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
+    print(' '.join([ shlex.quote(c) for c in cmd ]), file=output)
     print('(%d paths)' % len(paths), file=output)
   p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
@@ -1568,7 +1568,7 @@ def RsyncList(src_path, output, filters=None, verbose=False):
   cmd.append(MakeRsyncDirname(src_path))
 
   if verbose:
-    print(' '.join([ pipes.quote(c) for c in cmd ]), file=output)
+    print(' '.join([ shlex.quote(c) for c in cmd ]), file=output)
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                        text=True)
   out, err = p.communicate()
@@ -1869,7 +1869,7 @@ class EncryptionManager(object):
         m = re.match('^password: "(.*)"$', line)
         if m:
           return m.group(1)
-      raise Exception('Unexpected output from %s' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Unexpected output from %s' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
 
 class ImageAttacher(object):
@@ -2684,7 +2684,7 @@ class ImageCompactor(object):
       with p.stdout:
         self.output.write(p.stdout.read())
       if p.wait():
-        raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+        raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
 
   def _CompactImageWithResizeDarwin(self):
     assert self.encrypted is not None

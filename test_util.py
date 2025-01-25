@@ -5,6 +5,7 @@ import os
 import platform
 import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -81,7 +82,7 @@ def AssertDiskImageFormat(image_format, image_path, password=None):
     with p.stdout:
       output = p.stdout.read()
     if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ pipes.quote(a) for a in cmd ]))
+      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
     plist_data = plistlib.loads(output)
     AssertEquals(image_format, plist_data['Format'])
     if password is not None:
