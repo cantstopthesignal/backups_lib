@@ -808,7 +808,7 @@ class ImageFromFolderCreator(object):
     p = subprocess.Popen(['expect'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True)
     with p.stdin:
-      p.stdin.write('set timeout 120\n')
+      p.stdin.write('set timeout -1\n')
       p.stdin.write('log_user 0\n')
       p.stdin.write('spawn %s\n' % ' '.join([self._QuoteTclString(a) for a in cmd]))
       if self.encrypt:
