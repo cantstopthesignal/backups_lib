@@ -851,33 +851,36 @@ class DiskImageHelperDarwin(DiskImageHelper):
     if not verify:
       cmd.append('-noverify')
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    if encrypted:
-      p.stdin.write(password.encode('utf8'))
-    p.stdin.close()
-    with p.stdout:
-      output = p.stdout.read()
+                         stderr=subprocess.PIPE)
+    output, error_output = p.communicate(
+      input=encrypted and password.encode('utf8') or b'')
     if p.wait():
-      lines = output.decode('utf8').strip().split('\n')
+      lines = error_output.decode('utf8').strip().split('\n')
       if len(lines) == 1 and lines[0].endswith('- Authentication error'):
         raise DiskImageHelperAuthenticationError()
-      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
-
+      raise Exception('Command %s failed: stdout: %r, stderr: %r'
+                      % (' '.join([ shlex.quote(a) for a in cmd ]),
+                         output, error_output))
     result = DiskImageHelperAttachResult()
-    plist_data = plistlib.loads(output)
-    for entry in plist_data['system-entities']:
-      if entry['content-hint'] == 'GUID_partition_scheme':
-        assert result.device is None
-        result.device = entry['dev-entry']
-        assert result.device.startswith('/dev/')
-      if 'mount-point' in entry:
-        assert result.mount_point is None
-        result.mount_point = entry['mount-point']
-        assert os.path.isdir(result.mount_point)
-        if not random_mount_point and mount_point is not None:
-          assert os.path.samefile(mount_point, result.mount_point)
+    try:
+      plist_data = plistlib.loads(output)
+    except:
+      plist_data = None
+    if plist_data is not None:
+      for entry in plist_data['system-entities']:
+        if entry['content-hint'] == 'GUID_partition_scheme':
+          assert result.device is None
+          result.device = entry['dev-entry']
+          assert result.device.startswith('/dev/')
+        if 'mount-point' in entry:
+          assert result.mount_point is None
+          result.mount_point = entry['mount-point']
+          assert os.path.isdir(result.mount_point)
+          if not random_mount_point and mount_point is not None:
+            assert os.path.samefile(mount_point, result.mount_point)
     if result.device is None or (mount and result.mount_point is None):
-      raise Exception('Unexpected output from hdiutil attach:\n%s' % output.decode('utf8'))
+      raise Exception('Unexpected output from hdiutil attach: stdout: %r, stderr: %r'
+                      % (output, error_output))
     return result
 
   def DetachImage(self, device, mount_point):
