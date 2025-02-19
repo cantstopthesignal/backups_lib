@@ -2470,6 +2470,91 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
+    file12 = CreateFile(parent1, 'f12', contents='4'*1025)
+    file13 = CreateFile(parent1, 'f13', contents='4'*1025)
+    file14 = CreateFile(parent1, 'f14', contents='4'*1025)
+    SetXattr(file12, 'example', b'example_value')
+    subprocess.check_call(['chmod', 'g-r', file13])
+    subprocess.check_call(['chmod', 'g-r', file14])
+    SetXattr(file14, 'example', b'example_value')
+
+    DoSync(
+      root_dir,
+      expected_output=['>f+++++++ par! \\r/f12',
+                       '  replacing similar: .f..t...x par2/f11',
+                       '>f+++++++ par! \\r/f13',
+                       '  replacing similar: .f..tp... par2/f11',
+                       '>f+++++++ par! \\r/f14',
+                       '  replacing similar: .f..tp..x par2/f11',
+                       'Paths: 9 total (4kb), 3 synced (3kb), 3 checksummed (3kb)'])
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f12',
+                       '  similar to .f..t...x par2/f11',
+                       'Path par! \\r/f13',
+                       '  similar to .f..tp... par2/f11',
+                       'Path par! \\r/f14',
+                       '  similar to .f..tp..x par2/f11',
+                       'Paths: 4 total, 3 similar, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'], ignore_permissions=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f12',
+                       '  similar to .f..t...x par2/f11',
+                       'Path par! \\r/f13',
+                       '  similar to .f..tp... par2/f11',
+                       'Path par! \\r/f14',
+                       '  similar to .f..tp..x par2/f11',
+                       'Paths: 4 total, 3 similar, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'], ignore_mtimes=True, ignore_permissions=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f12',
+                       '  similar to .f..t...x par2/f11',
+                       'Path par! \\r/f13',
+                       '  duplicated by .f..tp... par2/f11',
+                       'Path par! \\r/f14',
+                       '  similar to .f..tp..x par2/f11',
+                       '*f.delete par! \\r/f13',
+                       'Paths: 4 total, 1 duplicate, 2 similar, 1 deleted, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f12',
+                       '  duplicated by .f..t...x par2/f11',
+                       'Path par! \\r/f14',
+                       '  similar to .f..tp..x par2/f11',
+                       '*f.delete par! \\r/f12',
+                       'Paths: 3 total, 1 duplicate, 1 similar, 1 deleted, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True, ignore_permissions=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f14',
+                       '  duplicated by .f..tp..x par2/f11',
+                       '*f.delete par! \\r/f14',
+                       'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
 
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()

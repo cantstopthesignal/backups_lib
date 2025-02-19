@@ -172,8 +172,8 @@ def DoRestoreMeta(root_path, manifest_path=None, dry_run=False, mtimes=False, pa
 
 
 def DoDeleteDuplicateFiles(root_path, manifest_path=None, dry_run=False, source_manifest_path=None,
-                           allow_source_path_match=False, ignore_mtimes=False, paths=[],
-                           expected_success=True, expected_output=[]):
+                           allow_source_path_match=False, ignore_mtimes=False, ignore_permissions=False,
+                           ignore_xattrs=False, paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['delete-duplicate-files', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -183,6 +183,10 @@ def DoDeleteDuplicateFiles(root_path, manifest_path=None, dry_run=False, source_
     cmd_args.append('--allow-source-path-match')
   if ignore_mtimes:
     cmd_args.append('--ignore-mtimes')
+  if ignore_permissions:
+    cmd_args.append('--ignore-permissions')
+  if ignore_xattrs:
+    cmd_args.append('--ignore-xattrs')
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
