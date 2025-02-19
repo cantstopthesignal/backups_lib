@@ -1148,7 +1148,8 @@ class MetadataRestorer(object):
 
 class DuplicateFilesDeleter(object):
   def __init__(self, root_path, output, manifest_path=None, source_manifest_path=None,
-               allow_source_path_match=False, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
+               allow_source_path_match=False, path_matcher=lib.PathMatcherAll(),
+               ignore_mtimes=False, dry_run=False, verbose=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -1157,6 +1158,7 @@ class DuplicateFilesDeleter(object):
     self.source_manifest_path = source_manifest_path
     self.source_manifest = None
     self.allow_source_path_match = allow_source_path_match
+    self.ignore_mtimes = ignore_mtimes
     self.path_matcher = path_matcher
     self.dry_run = dry_run
     self.verbose = verbose
@@ -1219,12 +1221,15 @@ class DuplicateFilesDeleter(object):
       for dup_path_info in lib.PathInfo.SortedByPathSimilarity(
           path, sha256_to_source_pathinfos.get(path_info.sha256, [])):
         if not self.path_matcher.Matches(dup_path_info.path) or self.allow_source_path_match:
+          itemized_display = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
           itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
+          if self.ignore_mtimes:
+            itemized.time_diff = False
           if not itemized.HasDiffs():
             if duplicate_itemized_outside_of_match_paths is None:
-              duplicate_itemized_outside_of_match_paths = itemized
+              duplicate_itemized_outside_of_match_paths = itemized_display
           elif similar_itemized_outside_of_match_paths is None:
-            similar_itemized_outside_of_match_paths = itemized
+            similar_itemized_outside_of_match_paths = itemized_display
 
       delete_file = False
       if duplicate_itemized_outside_of_match_paths:
@@ -1436,6 +1441,7 @@ def DoDeleteDuplicateFiles(args, output):
   parser.add_argument('--manifest-path')
   parser.add_argument('--source-manifest-path')
   parser.add_argument('--allow-source-path-match', action='store_true')
+  parser.add_argument('--ignore-mtimes', action='store_true')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -1449,7 +1455,7 @@ def DoDeleteDuplicateFiles(args, output):
     cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
     source_manifest_path=cmd_args.source_manifest_path,
     allow_source_path_match=cmd_args.allow_source_path_match,
-    path_matcher=path_matcher,
+    ignore_mtimes=cmd_args.ignore_mtimes, path_matcher=path_matcher,
     dry_run=args.dry_run, verbose=args.verbose)
   return duplicate_files_deleter.DeleteDuplicateFiles()
 

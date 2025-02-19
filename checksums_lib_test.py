@@ -2440,6 +2440,36 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        '.d..t.... par2',
                        'Paths: 5 total, 5 duplicate, 5 deleted'])
 
+    file10 = CreateFile(parent1, 'f10', contents='4'*1025)
+    file11 = CreateFile(parent2, 'f11', contents='4'*1025, mtime=1540000000)
+
+    DoSync(
+      root_dir,
+      expected_output=['>f+++++++ par! \\r/f10',
+                       '>f+++++++ par2/f11',
+                       'Paths: 7 total (2kb), 2 synced (2kb), 2 checksummed (2kb)'])
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f10',
+                       '  similar to .f..t.... par2/f11',
+                       'Paths: 2 total, 1 similar, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'], ignore_mtimes=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f10',
+                       '  duplicated by .f..t.... par2/f11',
+                       '*f.delete par! \\r/f10',
+                       'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
 
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()
