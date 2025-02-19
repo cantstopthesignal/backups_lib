@@ -45,6 +45,7 @@ from .lib_test_util import SetEscapeKeyDetectorCancelAtInvocation
 from .lib_test_util import SetXattr
 
 from .checksums_lib_test_util import DoCreate
+from .checksums_lib_test_util import DoDeleteDuplicateFiles
 from .checksums_lib_test_util import DoDiff
 from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
@@ -2214,6 +2215,230 @@ class RestoreMetaTestCase(BaseTestCase):
                        'Paths: 9 total, 3 updated, 5 skipped'])
     DoVerify(root_dir, checksum_all=True,
              expected_output=['Paths: 9 total (2kb), 4 checksummed (2kb)'])
+
+
+class DeleteDuplicateFilesTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    root_dir = CreateDir(test_dir, 'root')
+
+    DoCreate(root_dir, expected_output=None)
+
+    file1 = CreateFile(root_dir, 'f1', contents='ABC')
+    file2 = CreateFile(root_dir, 'f2', contents='DEF')
+    parent1 = CreateDir(root_dir, 'par! \r')
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+    file6 = CreateFile(parent1, 'f6', contents='3'*1025)
+    parent2 = CreateDir(root_dir, 'par2')
+    file4 = CreateFile(parent2, 'f4', contents='2'*1025)
+    file5 = CreateFile(parent2, 'f5', contents='3'*1025)
+    ln1 = CreateSymlink(root_dir, 'ln1', 'INVALID')
+    ln2 = CreateSymlink(root_dir, 'ln2', 'f2')
+
+    DoSync(
+      root_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       '>f+++++++ f2',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> f2',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f3',
+                       '>f+++++++ par! \\r/f6',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f4',
+                       '>f+++++++ par2/f5',
+                       'Paths: 11 total (4kb), 11 synced (4kb), 6 checksummed (4kb)'])
+
+    checksums_bak = checksums_lib.Checksums.Open(root_dir)
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Paths: 6 total'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f6',
+                       '  duplicated by .f....... par2/f5',
+                       'Paths: 6 total, 1 duplicate, 4 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    checksums_bak.GetManifest().Write()
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f6',
+                       '  duplicated by .f....... par2/f5',
+                       '*f.delete par! \\r/f6',
+                       '.d..t.... par! \\r',
+                       'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    checksums_bak.GetManifest().Write()
+    DoSync(
+      root_dir,
+      expected_output=['.d..t.... par! \\r',
+                       '*f.delete par! \\r/f6',
+                       '  replaced by duplicate: .f....... par2/f5',
+                       'Paths: 10 total (3kb), 2 synced (0b), 1 renamed (1kb), 2 checksummed (2kb)'])
+
+    SetMTime(parent1, mtime=1530000000)
+    file7 = CreateFile(parent1, 'f7', contents='3'*1025)
+    file8 = CreateFile(parent1, 'f8', contents='3'*1025, mtime=1510000000)
+
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True, expected_success=False,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       '.d..t.... par! \\r',
+                       '>f+++++++ par! \\r/f7',
+                       '>f+++++++ par! \\r/f8',
+                       'Paths: 12 total (5kb), 3 mismatched (2kb)'])
+    DoSync(
+      root_dir,
+      expected_output=['.d..t.... par! \\r',
+                       '>f+++++++ par! \\r/f7',
+                       '  replacing duplicate: .f....... par2/f5',
+                       '>f+++++++ par! \\r/f8',
+                       '  replacing similar: .f..t.... par2/f5',
+                       'Paths: 12 total (5kb), 3 synced (2kb), 2 checksummed (2kb)'])
+    checksums_bak = checksums_lib.Checksums.Open(root_dir)
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f7',
+                       '  duplicated by .f....... par2/f5',
+                       'Path par! \\r/f8',
+                       '  similar to .f..t.... par2/f5',
+                       'Paths: 7 total, 1 duplicate, 1 similar, 4 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    checksums_bak.GetManifest().Write()
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    DoDeleteDuplicateFiles(
+      root_dir,
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f7',
+                       '  duplicated by .f....... par2/f5',
+                       'Path par! \\r/f8',
+                       '  similar to .f..t.... par2/f5',
+                       '*f.delete par! \\r/f7',
+                       '.d..t.... par! \\r',
+                       'Paths: 7 total, 1 duplicate, 1 similar, 1 deleted, 4 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+    checksums_bak.GetManifest().Write()
+    DoSync(
+      root_dir,
+      expected_output=['.d..t.... par! \\r',
+                       '*f.delete par! \\r/f7',
+                       '  replaced by duplicate: .f....... par2/f5',
+                       '  replaced by similar: .f..t.... par! \\r/f8',
+                       'Paths: 11 total (4kb), 2 synced (0b), 1 renamed (1kb), 3 checksummed (3kb)'])
+    SetMTime(parent1, mtime=1530000000)
+    DoSync(
+      root_dir,
+      expected_output=['.d..t.... par! \\r',
+                       'Paths: 11 total (4kb), 1 synced (0b)'])
+
+    root2_dir = CreateDir(test_dir, 'root2')
+    DoCreate(root2_dir, expected_output=None)
+    root2_file1 = CreateFile(root2_dir, 'f1', contents='3'*1025, mtime=1510000000)
+    DoSync(
+      root2_dir,
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ f1',
+                       'Paths: 2 total (1kb), 2 synced (1kb), 1 checksummed (1kb)'])
+    checksums2_bak = checksums_lib.Checksums.Open(root2_dir)
+
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      source_manifest_path=checksums2_bak.GetManifest().GetPath(),
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f8',
+                       '  duplicated by .f....... f1',
+                       'Paths: 6 total, 1 duplicate, 4 skipped'])
+    DoDeleteDuplicateFiles(
+      root_dir,
+      source_manifest_path=checksums2_bak.GetManifest().GetPath(),
+      paths=['par! \r'],
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path par! \\r/f8',
+                       '  duplicated by .f....... f1',
+                       '*f.delete par! \\r/f8',
+                       '.d..t.... par! \\r',
+                       'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
+    DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True, allow_source_path_match=True, expected_success=False,
+      expected_output=['*** Error: --allow-source-path-match requires --source-manifest-path'])
+
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True, expected_success=False,
+      source_manifest_path=os.path.join(root_dir, '.metadata/manifest.pbdata'),
+      expected_output=['*** Error: --source-manifest-path matches checksums manifest path'])
+
+    alt_manifest_path = os.path.join(test_dir, 'alt_manifest.pbdata')
+    shutil.copy(os.path.join(root_dir, '.metadata/manifest.pbdata'), alt_manifest_path)
+
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      source_manifest_path=alt_manifest_path,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Paths: 5 total'])
+    DoDeleteDuplicateFiles(
+      root_dir, dry_run=True,
+      source_manifest_path=alt_manifest_path, allow_source_path_match=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path f1',
+                       '  duplicated by .f....... f1',
+                       'Path f2',
+                       '  duplicated by .f....... f2',
+                       'Path par! \\r/f3',
+                       '  duplicated by .f....... par! \\r/f3',
+                       'Path par2/f4',
+                       '  duplicated by .f....... par2/f4',
+                       'Path par2/f5',
+                       '  duplicated by .f....... par2/f5',
+                       'Paths: 5 total, 5 duplicate'])
+    DoDeleteDuplicateFiles(
+      root_dir,
+      source_manifest_path=alt_manifest_path, allow_source_path_match=True,
+      expected_output=['Verifying manifest for root %s...' % root_dir,
+                       'Deleting duplicate files...',
+                       'Path f1',
+                       '  duplicated by .f....... f1',
+                       'Path f2',
+                       '  duplicated by .f....... f2',
+                       'Path par! \\r/f3',
+                       '  duplicated by .f....... par! \\r/f3',
+                       'Path par2/f4',
+                       '  duplicated by .f....... par2/f4',
+                       'Path par2/f5',
+                       '  duplicated by .f....... par2/f5',
+                       '*f.delete f1',
+                       '*f.delete f2',
+                       '*f.delete par! \\r/f3',
+                       '*f.delete par2/f4',
+                       '*f.delete par2/f5',
+                       '.d..t.... par2',
+                       'Paths: 5 total, 5 duplicate, 5 deleted'])
 
 
 if __name__ == '__main__':

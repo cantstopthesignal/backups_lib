@@ -21,6 +21,7 @@ COMMAND_IMAGE_FROM_FOLDER = 'image-from-folder'
 COMMAND_SAFE_COPY = 'safe-copy'
 COMMAND_SAFE_MOVE = 'safe-move'
 COMMAND_RESTORE_META = 'restore-meta'
+COMMAND_DELETE_DUPLICATE_FILES = 'delete-duplicate-files'
 
 COMMANDS = [
   COMMAND_CREATE,
@@ -32,6 +33,7 @@ COMMANDS = [
   COMMAND_SAFE_COPY,
   COMMAND_SAFE_MOVE,
   COMMAND_RESTORE_META,
+  COMMAND_DELETE_DUPLICATE_FILES,
 ]
 
 FILTER_DIR_MERGE_FILENAME = '.adjoined_checksums_filter'
@@ -1144,6 +1146,143 @@ class MetadataRestorer(object):
       print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
 
+class DuplicateFilesDeleter(object):
+  def __init__(self, root_path, output, manifest_path=None, source_manifest_path=None,
+               allow_source_path_match=False, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
+    if root_path is None:
+      raise Exception('root_path cannot be None')
+    self.root_path = root_path
+    self.output = output
+    self.manifest_path = manifest_path
+    self.source_manifest_path = source_manifest_path
+    self.source_manifest = None
+    self.allow_source_path_match = allow_source_path_match
+    self.path_matcher = path_matcher
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.checksums = None
+    self.manifest = None
+    self.total_paths = 0
+    self.total_duplicate_paths = 0
+    self.total_similar_paths = 0
+    self.total_deleted_paths = 0
+    self.total_skipped_paths = 0
+
+  def DeleteDuplicateFiles(self):
+    try:
+      self.checksums = Checksums.Open(self.root_path, manifest_path=self.manifest_path, dry_run=self.dry_run)
+    except (ChecksumsError, lib.ManifestError) as e:
+      print('*** Error: %s' % e.args[0], file=self.output)
+      return False
+
+    self.manifest = self.checksums.GetManifest()
+
+    if self.source_manifest_path is not None:
+      if self.checksums.GetManifest().GetPath() == self.source_manifest_path:
+        print('*** Error: --source-manifest-path matches checksums manifest path', file=self.output)
+        return False
+      self.source_manifest = lib.Manifest(self.source_manifest_path)
+      self.source_manifest.Read()
+    else:
+      self.source_manifest = self.manifest
+
+    print('Verifying manifest for root %s...' % lib.EscapePath(self.root_path), file=self.output)
+    verify_output = io.StringIO()
+    checksums_verifier = ChecksumsVerifier(
+      self.root_path, output=verify_output,
+      checksum_path_matcher=lib.PathMatcherNone(), dry_run=self.dry_run, verbose=self.verbose)
+    if not checksums_verifier.Verify():
+      print(verify_output.getvalue(), file=self.output)
+      return False
+
+    print('Deleting duplicate files...', file=self.output)
+
+    sha256_to_source_pathinfos = self.source_manifest.CreateSha256ToPathInfosMap(
+      min_file_size=MIN_RENAME_DETECTION_FILE_SIZE)
+
+    paths_to_delete = []
+
+    for path in self.manifest.GetPaths():
+      path_info = self.manifest.GetPathInfo(path)
+
+      if not path_info.HasFileContents():
+        continue
+
+      self.total_paths += 1
+
+      if not self.path_matcher.Matches(path):
+        self.total_skipped_paths += 1
+        continue
+
+      duplicate_itemized_outside_of_match_paths = None
+      similar_itemized_outside_of_match_paths = None
+      for dup_path_info in lib.PathInfo.SortedByPathSimilarity(
+          path, sha256_to_source_pathinfos.get(path_info.sha256, [])):
+        if not self.path_matcher.Matches(dup_path_info.path) or self.allow_source_path_match:
+          itemized = lib.PathInfo.GetItemizedDiff(dup_path_info, path_info, ignore_paths=True)
+          if not itemized.HasDiffs():
+            if duplicate_itemized_outside_of_match_paths is None:
+              duplicate_itemized_outside_of_match_paths = itemized
+          elif similar_itemized_outside_of_match_paths is None:
+            similar_itemized_outside_of_match_paths = itemized
+
+      delete_file = False
+      if duplicate_itemized_outside_of_match_paths:
+        print('Path %s' % lib.EscapePath(path), file=self.output)
+        print('  duplicated by %s' % duplicate_itemized_outside_of_match_paths, file=self.output)
+        self.total_duplicate_paths += 1
+        paths_to_delete.append(path)
+      elif similar_itemized_outside_of_match_paths:
+        print('Path %s' % lib.EscapePath(path), file=self.output)
+        print('  similar to %s' % similar_itemized_outside_of_match_paths, file=self.output)
+        self.total_similar_paths += 1
+
+    if not self.dry_run and paths_to_delete:
+      modified_parent_dirs = set()
+      for path in paths_to_delete:
+        path_info = self.manifest.GetPathInfo(path)
+
+        full_path = os.path.join(self.root_path, path)
+        os.unlink(full_path)
+        itemized = path_info.GetItemized()
+        itemized.new_path = False
+        itemized.delete_path = True
+        itemized.Print(output=self.output)
+        self.manifest.RemovePathInfo(path)
+        self.total_deleted_paths += 1
+
+        modified_parent_dirs.add(os.path.dirname(path))
+
+      for parent_path in sorted(modified_parent_dirs):
+        parent_dir_path_info = lib.PathInfo.FromPath(
+          parent_path or '.', os.path.join(self.root_path, parent_path or '.'))
+        assert parent_dir_path_info.path_type == lib.PathInfo.TYPE_DIR
+        existing_parent_dir_path_info = self.manifest.GetPathInfo(parent_dir_path_info.path)
+        self.manifest.AddPathInfo(parent_dir_path_info, allow_replace=True)
+        itemized = lib.PathInfo.GetItemizedDiff(parent_dir_path_info, existing_parent_dir_path_info)
+        if itemized.HasDiffs():
+          print(itemized, file=self.output)
+
+      self.manifest.Write()
+
+    self._PrintResults()
+
+    return True
+
+  def _PrintResults(self):
+    if self.total_paths:
+      out_pieces = ['%d total' % self.total_paths]
+      if self.total_duplicate_paths:
+        out_pieces.append('%d duplicate' % self.total_duplicate_paths)
+      if self.total_similar_paths:
+        out_pieces.append('%d similar' % self.total_similar_paths)
+      if self.total_deleted_paths:
+        out_pieces.append('%d deleted' % self.total_deleted_paths)
+      if self.total_skipped_paths:
+        out_pieces.append('%d skipped' % self.total_skipped_paths)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
+
+
 def DoCreate(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('root_path')
@@ -1291,6 +1430,30 @@ def DoRestoreMeta(args, output):
   return metadata_restorer.RestoreMetadata()
 
 
+def DoDeleteDuplicateFiles(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('root_path')
+  parser.add_argument('--manifest-path')
+  parser.add_argument('--source-manifest-path')
+  parser.add_argument('--allow-source-path-match', action='store_true')
+  lib.AddPathsArgs(parser)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+
+  if cmd_args.allow_source_path_match and cmd_args.source_manifest_path is None:
+    print('*** Error: --allow-source-path-match requires --source-manifest-path', file=output)
+    return False
+
+  duplicate_files_deleter = DuplicateFilesDeleter(
+    cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
+    source_manifest_path=cmd_args.source_manifest_path,
+    allow_source_path_match=cmd_args.allow_source_path_match,
+    path_matcher=path_matcher,
+    dry_run=args.dry_run, verbose=args.verbose)
+  return duplicate_files_deleter.DeleteDuplicateFiles()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE:
     return DoCreate(args, output=output)
@@ -1310,6 +1473,8 @@ def DoCommand(args, output):
     return DoSafeMove(args, output=output)
   elif args.command == COMMAND_RESTORE_META:
     return DoRestoreMeta(args, output=output)
+  elif args.command == COMMAND_DELETE_DUPLICATE_FILES:
+    return DoDeleteDuplicateFiles(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False
