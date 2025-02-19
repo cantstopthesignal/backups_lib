@@ -2116,7 +2116,6 @@ class RestoreMetaTestCase(BaseTestCase):
 
   def RunTest(self, test_dir):
     root_dir = CreateDir(test_dir, 'root')
-    alt_manifest_path = os.path.join(test_dir, 'mymanifest.pbdata')
 
     DoCreate(root_dir, expected_output=None)
 
