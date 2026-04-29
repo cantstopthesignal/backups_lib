@@ -1,5 +1,6 @@
 import abc
 import argparse
+import array
 import binascii
 import contextlib
 import difflib
@@ -580,8 +581,9 @@ def Sha256(path):
 
 def GetTerminalSize(output):
   if output.isatty():
-    cr = struct.unpack('hh', fcntl.ioctl(output, termios.TIOCGWINSZ, '1234'))
-    return int(cr[1]), int(cr[0])
+    buf = array.array('H', [0, 0, 0, 0])
+    fcntl.ioctl(output, termios.TIOCGWINSZ, buf)
+    return (buf[1], buf[0])
 
 
 def Sha256WithProgress(full_path, path_info, output):
