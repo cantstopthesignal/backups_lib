@@ -401,6 +401,7 @@ IGNORED_XATTR_KEYS = [
   'com.apple.macl',
   'com.apple.provenance',
   'com.apple.quarantine',
+  'com.docker.grpcfuse.ownership',
   'user.drive.can_manage_team_drive_members',
   'user.drive.md5',
   'user.drive.shortcut.target.stableid',
