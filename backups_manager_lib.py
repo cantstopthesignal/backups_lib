@@ -28,6 +28,7 @@ COMMAND_MERGE_INTO_BACKUPS = 'merge-into-backups'
 COMMAND_DELETE_IN_BACKUPS = 'delete-in-backups'
 COMMAND_MARK_BACKUPS_NOT_PRUNEABLE = 'mark-backups-not-pruneable'
 COMMAND_RESTORE_META = 'restore-meta'
+COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE = 'delete-local-content-in-backup-scope'
 
 COMMANDS = [
   COMMAND_CREATE_BACKUP,
@@ -46,6 +47,7 @@ COMMANDS = [
   COMMAND_DELETE_IN_BACKUPS,
   COMMAND_MARK_BACKUPS_NOT_PRUNEABLE,
   COMMAND_RESTORE_META,
+  COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE,
 ]
 
 
@@ -2236,6 +2238,72 @@ class MetadataRestorer:
       print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
 
+class LocalContentInBackupScopeDeleter:
+  def __init__(self, config, output, path_matcher=lib.PathMatcherAll(),
+               encryption_manager=None, dry_run=False, verbose=False):
+    self.config = config
+    self.output = output
+    self.path_matcher = path_matcher
+    self.encryption_manager = encryption_manager
+    self.dry_run = dry_run
+    self.verbose = verbose
+    self.total_paths = 0
+    self.total_deleted_paths = 0
+    self.total_skipped_paths = 0
+
+  def DeleteLocalContent(self):
+    filters = self.config.GetFilters()
+
+    path_enumerator = lib.PathEnumerator(self.config.src_path, self.output, filters=filters, verbose=self.verbose)
+
+    print('Deleting local content...', file=self.output)
+
+    paths_to_delete = []
+
+    for enumerated_path in path_enumerator.Scan():
+      self.total_paths += 1
+
+      path = enumerated_path.GetPath()
+      if not self.path_matcher.Matches(path) or path == '.':
+        self.total_skipped_paths += 1
+        continue
+
+      self.total_deleted_paths += 1
+
+      full_path = os.path.join(self.config.src_path, path)
+      path_info = lib.PathInfo.FromPath(path, full_path)
+
+      itemized = path_info.GetItemized()
+      itemized.new_path = False
+      itemized.delete_path = True
+      itemized.Print(output=self.output)
+      paths_to_delete.append(path)
+
+    if not self.dry_run:
+      for path in reversed(paths_to_delete):
+        full_path = os.path.join(self.config.src_path, path)
+        path_stat = os.lstat(full_path)
+        if stat.S_ISDIR(path_stat.st_mode):
+          if not os.listdir(full_path):
+            os.rmdir(full_path)
+          else:
+            print('*** Cannot delete non-empty directory %s' % lib.EscapePath(path), file=self.output)
+        else:
+          os.unlink(full_path)
+
+    self._PrintResults()
+    return True
+
+  def _PrintResults(self):
+    if self.total_paths:
+      out_pieces = ['%d total' % self.total_paths]
+      if self.total_deleted_paths:
+        out_pieces.append('%d deleted' % self.total_deleted_paths)
+      if self.total_skipped_paths:
+        out_pieces.append('%d skipped' % self.total_skipped_paths)
+      print('Paths: %s' % ', '.join(out_pieces), file=self.output)
+
+
 def DoCreateBackup(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
@@ -2542,6 +2610,22 @@ def DoRestoreMeta(args, output):
   return metadata_restorer.RestoreMetadata()
 
 
+def DoDeleteLocalContentInBackupScope(args, output):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--backups-config', required=True)
+  lib.AddPathsArgs(parser)
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  config = BackupsConfig.Load(cmd_args.backups_config)
+  path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+
+  local_content_deleter = LocalContentInBackupScopeDeleter(
+    config, output=output, path_matcher=path_matcher,
+    encryption_manager=lib.EncryptionManager(output=output),
+    dry_run=args.dry_run, verbose=args.verbose)
+  return local_content_deleter.DeleteLocalContent()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE_BACKUP:
     return DoCreateBackup(args, output=output)
@@ -2575,6 +2659,8 @@ def DoCommand(args, output):
     return DoMarkBackupsNotPruneable(args, output=output)
   elif args.command == COMMAND_RESTORE_META:
     return DoRestoreMeta(args, output=output)
+  elif args.command == COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE:
+    return DoDeleteLocalContentInBackupScope(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False

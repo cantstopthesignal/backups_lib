@@ -45,7 +45,7 @@ def CreateBackupsBundle(config, create_example_content=True):
       CreateFile(disk_dir, 'fT')
 
 
-def CreateLatestManifestCheckpoint(config):
+def CreateLatestManifestCheckpoint(config, expect_example_content=True):
   backups_manager = backups_manager_lib.BackupsManager.Open(
     config, readonly=False, browseable=False)
   try:
@@ -62,12 +62,17 @@ def CreateLatestManifestCheckpoint(config):
     m = re.match('^Created checkpoint at (.+)$', output_lines[-1])
     assert m
     checkpoint_path = m.group(1)
-    AssertLinesEqual(output_lines[:-1],
-                     ['>d+++++++ .',
-                      '>f+++++++ f1',
-                      '>f+++++++ fT',
-                      '>f+++++++ fX',
-                      'Transferring 4 paths (0b)'])
+    if expect_example_content:
+      AssertLinesEqual(output_lines[:-1],
+                       ['>d+++++++ .',
+                        '>f+++++++ f1',
+                        '>f+++++++ fT',
+                        '>f+++++++ fX',
+                        'Transferring 4 paths (0b)'])
+    else:
+      AssertLinesEqual(output_lines[:-1],
+                       ['>d+++++++ .',
+                        'Transferring 1 paths (0b)'])
 
     manifest = lib.ReadManifestFromImageOrPath(checkpoint_path)
     manifest.SetPath(last_backup.GetManifestPath())
@@ -338,6 +343,15 @@ def DoRestoreMeta(config, mtimes=False, paths=[], dry_run=False, expected_succes
               '--backups-config', config.path]
   if mtimes:
     cmd_args.append('--mtimes')
+  for path in paths:
+    cmd_args.extend(['--path', path])
+  DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
+                expected_output=expected_output)
+
+
+def DoDeleteLocalContentInBackupScope(config, paths=[], dry_run=False, expected_success=True, expected_output=[]):
+  cmd_args = ['delete-local-content-in-backup-scope',
+              '--backups-config', config.path]
   for path in paths:
     cmd_args.extend(['--path', path])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,

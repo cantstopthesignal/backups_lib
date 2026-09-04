@@ -17,6 +17,7 @@ import backups_lib
 __package__ = backups_lib.__package__
 
 from . import backups_manager_lib
+from . import checkpoint_lib
 from . import lib
 from . import lib_test_util
 from . import test_main
@@ -55,6 +56,7 @@ from .backups_manager_lib_test_util import DoCreateCheckpoint
 from .backups_manager_lib_test_util import DoDeduplicateBackups
 from .backups_manager_lib_test_util import DoDeleteBackups
 from .backups_manager_lib_test_util import DoDeleteBackupsInteractive
+from .backups_manager_lib_test_util import DoDeleteLocalContentInBackupScope
 from .backups_manager_lib_test_util import DoDeleteInBackups
 from .backups_manager_lib_test_util import DoDumpUniqueFilesInBackups
 from .backups_manager_lib_test_util import DoExtractFromBackups
@@ -3165,6 +3167,145 @@ class RestoreMetaTestCase(BaseTestCase):
     DoCreateBackup(
       config, backup_name='2020-01-03-120000', dry_run=True,
       expected_output=[])
+
+
+class DeleteLocalContentInBackupScopeTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    config = CreateConfig(test_dir)
+    CreateBackupsBundle(config, create_example_content=False)
+    CreateLatestManifestCheckpoint(config, expect_example_content=False)
+
+    file1 = CreateFile(config.src_path, 'f1', contents='ABC')
+    file2 = CreateFile(config.src_path, 'f2', contents='DEF')
+    parent1 = CreateDir(config.src_path, 'par! \r')
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+    parent2 = CreateDir(config.src_path, 'par2')
+    file4 = CreateFile(parent2, 'f4', contents='2'*1025)
+    ln1 = CreateSymlink(config.src_path, 'ln1', 'INVALID')
+    ln2 = CreateSymlink(config.src_path, 'ln2', 'f2')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['>f+++++++ f1',
+                       '>f+++++++ f2',
+                       '>L+++++++ ln1 -> INVALID',
+                       '>L+++++++ ln2 -> f2',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f3',
+                       '>d+++++++ par2',
+                       '>f+++++++ par2/f4',
+                       'Transferring 8 of 9 paths (2kb of 2kb)'])
+
+    DoDeleteLocalContentInBackupScope(
+      config, dry_run=True,
+      expected_output=['Deleting local content...',
+                       '*f.delete f1',
+                       '*f.delete f2',
+                       '*L.delete ln1',
+                       '*L.delete ln2',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f3',
+                       '*d.delete par2',
+                       '*f.delete par2/f4',
+                       'Paths: 9 total, 8 deleted, 1 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config, dry_run=True, paths=['f1'],
+      expected_output=['Deleting local content...',
+                       '*f.delete f1',
+                       'Paths: 9 total, 1 deleted, 8 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config, paths=['f1'],
+      expected_output=['Deleting local content...',
+                       '*f.delete f1',
+                       'Paths: 9 total, 1 deleted, 8 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config, dry_run=True,
+      expected_output=['Deleting local content...',
+                       '*f.delete f2',
+                       '*L.delete ln1',
+                       '*L.delete ln2',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f3',
+                       '*d.delete par2',
+                       '*f.delete par2/f4',
+                       'Paths: 8 total, 7 deleted, 1 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config,
+      expected_output=['Deleting local content...',
+                       '*f.delete f2',
+                       '*L.delete ln1',
+                       '*L.delete ln2',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f3',
+                       '*d.delete par2',
+                       '*f.delete par2/f4',
+                       'Paths: 8 total, 7 deleted, 1 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config, dry_run=True,
+      expected_output=['Deleting local content...',
+                       'Paths: 1 total, 1 skipped'])
+
+    CreateFile(config.src_path, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['exclude /SKIP1',
+                         'exclude *.skp'])
+    file1 = CreateFile(config.src_path, 'f1', contents='ABC')
+    file2_skp = CreateFile(config.src_path, 'f2.skp', contents='DEF')
+    parent1 = CreateDir(config.src_path, 'par! \r')
+    file3 = CreateFile(parent1, 'f3', contents='1'*1025)
+    file4_skp = CreateFile(parent1, 'f4.skp', contents='DEF')
+    parent2_skp = CreateDir(config.src_path, 'SKIP1')
+    file5 = CreateFile(parent2_skp, 'f5', contents='1'*1025)
+    file6_skp = CreateFile(parent2_skp, 'f6.skp', contents='DEF')
+    parent3 = CreateDir(config.src_path, 'par3')
+    file7 = CreateFile(parent3, '.DS_Store', contents='DS_STORE')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.d..t.... .',
+                       '>f+++++++ .staged_backup_filter',
+                       '>f+++++++ f1',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f3',
+                       '>d+++++++ par3',
+                       '>f+++++++ par3/.DS_Store',
+                       'Transferring 7 of 7 paths (1kb of 1kb)'])
+    DoDeleteLocalContentInBackupScope(
+      config, dry_run=True,
+      expected_output=['Deleting local content...',
+                       '*f.delete .staged_backup_filter',
+                       '*f.delete f1',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f3',
+                       '*d.delete par3',
+                       '*f.delete par3/.DS_Store',
+                       'Paths: 7 total, 6 deleted, 1 skipped'])
+    DoDeleteLocalContentInBackupScope(
+      config,
+      expected_output=['Deleting local content...',
+                       '*f.delete .staged_backup_filter',
+                       '*f.delete f1',
+                       '*d.delete par! \\r',
+                       '*f.delete par! \\r/f3',
+                       '*d.delete par3',
+                       '*f.delete par3/.DS_Store',
+                       '*** Cannot delete non-empty directory par! \\r',
+                       'Paths: 7 total, 6 deleted, 1 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.d..t.... .',
+                       '>d+++++++ SKIP1',
+                       '>f+++++++ SKIP1/f5',
+                       '>f+++++++ SKIP1/f6.skp',
+                       '>f+++++++ f2.skp',
+                       '>d+++++++ par! \\r',
+                       '>f+++++++ par! \\r/f4.skp',
+                       'Transferring 7 of 7 paths (1kb of 1kb)'])
 
 
 if __name__ == '__main__':
