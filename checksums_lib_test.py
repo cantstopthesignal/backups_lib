@@ -245,6 +245,34 @@ class VerifyTestCase(BaseTestCase):
                        '>f+++++++ par! \\r/f2',
                        'Paths: 5 total (1kb), 5 mismatched (1kb)'])
 
+  def testNoFilters(self):
+    with TempDir() as test_dir:
+      root_dir = CreateDir(test_dir, 'root')
+      par_dir = CreateDir(root_dir, 'par')
+      file1 = CreateFile(par_dir, 'f1', contents='hello')
+      DoCreate(root_dir, expected_output=None)
+      DoSync(root_dir, expected_output=None)
+
+      filter_file = CreateFile(par_dir, '.adjoined_checksums_filter', contents='exclude /f1\n')
+
+      # Without --no-filters, .adjoined_checksums_filter excludes par/f1 so par/f1 is reported as deleted.
+      DoVerify(
+        root_dir,
+        expected_success=False,
+        expected_output=['>f+++++++ par/.adjoined_checksums_filter',
+                         '*f.delete par/f1',
+                         'Paths: 3 total (12b), 2 mismatched (17b)'])
+
+      # With --no-filters, .adjoined_checksums_filter is ignored as a filter rule, so par/f1 is found on disk.
+      DoVerify(
+        root_dir,
+        no_filters=True,
+        expected_success=False,
+        expected_output=['>d+++++++ .metadata',
+                         '>f+++++++ .metadata/manifest.pbdata',
+                         '>f+++++++ par/.adjoined_checksums_filter',
+                         'Paths: 6 total (122b), 3 mismatched (117b)'])
+
 
 class SyncTestCase(BaseTestCase):
   def test(self):

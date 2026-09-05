@@ -87,12 +87,14 @@ def DoDiff(path1, path2, root_path1=None, root_path2=None, manifest_path1=None, 
 
 
 def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checksum_all=False,
-             paths=[], expected_success=True, expected_output=[]):
+             no_filters=False, paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
   if checksum_all:
     cmd_args.append('--checksum-all')
+  if no_filters:
+    cmd_args.append('--no-filters')
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,

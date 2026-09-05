@@ -214,7 +214,7 @@ class ChecksumsVerifier(object):
   def __init__(self, root_or_image_path, output, manifest_path=None,
                path_matcher=lib.PathMatcherAll(), checksum_path_matcher=lib.PathMatcherNone(),
                dry_run=False, verbose=False,
-               encryption_manager=None, hdiutil_verify=True):
+               encryption_manager=None, hdiutil_verify=True, filters=CHECKSUM_FILTERS):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
@@ -225,7 +225,7 @@ class ChecksumsVerifier(object):
     self.dry_run = dry_run
     self.verbose = verbose
     self.checksums = None
-    self.filters = CHECKSUM_FILTERS
+    self.filters = filters
     self.encryption_manager = encryption_manager
     self.hdiutil_verify = hdiutil_verify
 
@@ -1330,17 +1330,22 @@ def DoVerify(args, output):
   parser.add_argument('--manifest-path')
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
+  parser.add_argument('--no-filters', action='store_true')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+
+  filters = CHECKSUM_FILTERS
+  if cmd_args.no_filters:
+    filters = []
 
   checksums_verifier = ChecksumsVerifier(
     cmd_args.root_or_image_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_path_matcher=lib.PathMatcherAllOrNone(cmd_args.checksum_all),
     path_matcher=path_matcher, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
-    hdiutil_verify=cmd_args.hdiutil_verify)
+    hdiutil_verify=cmd_args.hdiutil_verify, filters=filters)
   return checksums_verifier.Verify()
 
 
