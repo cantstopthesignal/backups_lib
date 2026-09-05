@@ -58,14 +58,34 @@ from .checkpoint_lib_test_util import DoCreate
 
 
 def AssertRsyncLinesEqual(actual_lines, expected_lines):
-  if platform.system() == lib.PLATFORM_LINUX:
+  # Standard upstream rsync itemized output (%i) uses an 11-character prefix:
+  # 'YXcstpoguax'. Historically, older macOS/Homebrew rsync builds included an
+  # out-of-tree 'fileflags' patch (--with-fileflags) that appended a 12th
+  # character for BSD file flags (chflags). Test cases were originally written
+  # expecting 12-character prefixes.
+  #
+  # Standard Linux rsync builds, as well as modern macOS rsync builds (e.g.,
+  # upstream rsync 3.3/3.4+ where the deprecated fileflags patch is no longer
+  # applied), output the standard 11 characters.
+  #
+  # If the actual rsync output has 11-character prefixes (or on Linux), normalize
+  # 12-character expected lines down to 11 characters by dropping index 11 (the
+  # fileflags character, which is either '+' or '.').
+  actual_itemized_lens = {
+      len(line.split(' ', 1)[0])
+      for line in actual_lines
+      if not line.startswith('*deleting ')
+  }
+  if 11 in actual_itemized_lens or platform.system() == lib.PLATFORM_LINUX:
     new_expected_lines = []
     for expected_line in expected_lines:
       if expected_line.startswith('*deleting '):
         new_expected_lines.append(expected_line)
-      else:
+      elif len(expected_line.split(' ', 1)[0]) == 12:
         assert expected_line[11] in ['+', '.']
         new_expected_lines.append(expected_line[:11] + expected_line[12:])
+      else:
+        new_expected_lines.append(expected_line)
     expected_lines = new_expected_lines
   AssertLinesEqual(actual_lines, expected_lines)
 
