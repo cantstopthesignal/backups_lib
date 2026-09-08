@@ -991,6 +991,7 @@ class ApplyTestCase(BaseTestCase):
     # One with ignored xattr
     file3 = CreateFile(src_root, 'f3')
     SetXattr(file3, 'com.apple.lastuseddate#PS', b'Initial')
+    SetXattr(file3, 'com.apple.metadata:kMDLabel_123', b'Initial')
     SetXattr(file3, 'example', b'example_value_initial')
 
     checkpoint2, manifest2 = DoCreate(
@@ -1009,7 +1010,7 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> f_\\r'])
       AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
-                   ['com.apple.lastuseddate#PS', 'example'])
+                   ['com.apple.lastuseddate#PS', 'com.apple.metadata:kMDLabel_123', 'example'])
     finally:
       checkpoint2.Close()
 
@@ -1022,6 +1023,7 @@ class ApplyTestCase(BaseTestCase):
     SetXattr(src_root, 'example', b'example_value_new')
     # And adjust an ignored xattr
     SetXattr(file3, 'com.apple.lastuseddate#PS', b'Modified')
+    SetXattr(file3, 'com.apple.metadata:kMDLabel_123', b'Modified')
 
     checkpoint3, manifest3 = DoCreate(
       src_root, checkpoints_dir, '3', last_checkpoint_path=checkpoint2.GetImagePath(),
@@ -1093,7 +1095,7 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> INVALID'])
       AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
-                   ['com.apple.lastuseddate#PS', 'example'])
+                   ['com.apple.lastuseddate#PS', 'com.apple.metadata:kMDLabel_123', 'example'])
     finally:
       checkpoint5.Close()
 

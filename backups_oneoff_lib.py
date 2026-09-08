@@ -48,9 +48,9 @@ class OneoffIgnoredXattrsUpdater(object):
 
   def Apply(self):
     print('Old ignored xattrs: %s' % ', '.join(
-      [ lib.EscapeString(s) for s in self.old_ignored_xattrs ]), file=self.output)
+      [ lib.EscapeIgnoredXattr(s) for s in self.old_ignored_xattrs ]), file=self.output)
     print('New ignored xattrs: %s' % ', '.join(
-      [ lib.EscapeString(s) for s in self.new_ignored_xattrs ]), file=self.output)
+      [ lib.EscapeIgnoredXattr(s) for s in self.new_ignored_xattrs ]), file=self.output)
 
     backups_manager = backups_manager_lib.BackupsManager.Open(
       self.config, readonly=False, encryption_manager=self.encryption_manager,
@@ -347,20 +347,32 @@ def DoOneoffUpdateIgnoredXattrs(args, output):
   parser.add_argument('--max-backup')
   parser.add_argument('--old-ignored-xattr', dest='old_ignored_xattrs', action='append', default=[])
   parser.add_argument('--new-ignored-xattr', dest='new_ignored_xattrs', action='append', default=[])
+  parser.add_argument('--old-ignored-xattr-regex', '--old-ignored-xattr-regex-prefix',
+                      dest='old_ignored_xattr_regexes', action='append', default=[])
+  parser.add_argument('--new-ignored-xattr-regex', '--new-ignored-xattr-regex-prefix',
+                      dest='new_ignored_xattr_regexes', action='append', default=[])
   cmd_args = parser.parse_args(args.cmd_args)
 
-  cmd_args.old_ignored_xattrs.sort()
-  cmd_args.new_ignored_xattrs.sort()
+  old_ignored_xattrs = list(cmd_args.old_ignored_xattrs)
+  for pattern in cmd_args.old_ignored_xattr_regexes:
+    old_ignored_xattrs.append(re.compile(pattern))
 
-  if cmd_args.old_ignored_xattrs == cmd_args.new_ignored_xattrs:
+  new_ignored_xattrs = list(cmd_args.new_ignored_xattrs)
+  for pattern in cmd_args.new_ignored_xattr_regexes:
+    new_ignored_xattrs.append(re.compile(pattern))
+
+  old_ignored_xattrs.sort(key=lib.IgnoredXattrSortKey)
+  new_ignored_xattrs.sort(key=lib.IgnoredXattrSortKey)
+
+  if old_ignored_xattrs == new_ignored_xattrs:
     raise Exception('Old and new ignored xattrs should be different')
 
   config = backups_manager_lib.GetBackupsConfigFromArgs(cmd_args)
 
   updater = OneoffIgnoredXattrsUpdater(
     config, output=output, min_backup=cmd_args.min_backup,
-    max_backup=cmd_args.max_backup, old_ignored_xattrs=cmd_args.old_ignored_xattrs,
-    new_ignored_xattrs=cmd_args.new_ignored_xattrs,
+    max_backup=cmd_args.max_backup, old_ignored_xattrs=old_ignored_xattrs,
+    new_ignored_xattrs=new_ignored_xattrs,
     encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return updater.Apply()

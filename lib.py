@@ -406,7 +406,30 @@ IGNORED_XATTR_KEYS = [
   'user.drive.md5',
   'user.drive.shortcut.target.stableid',
   'user.drive.stableid',
+  re.compile('^com[.]apple[.]metadata:kMDLabel_.*$'),
 ]
+
+
+def IgnoredXattrSortKey(item):
+  if isinstance(item, re.Pattern):
+    return item.pattern
+  return item
+
+
+def EscapeIgnoredXattr(s):
+  if isinstance(s, re.Pattern):
+    return EscapeString(s.pattern)
+  return EscapeString(s)
+
+
+def KeyMatchesIgnoredKeys(key, ignored_keys):
+  for ignored_key in ignored_keys:
+    if isinstance(ignored_key, re.Pattern):
+      if ignored_key.match(key):
+        return True
+    elif key == ignored_key:
+      return True
+  return False
 
 
 @contextlib.contextmanager
@@ -681,7 +704,7 @@ def ParseXattrData(path, path_type, ignored_keys=[], follow_symlinks=False):
   xattr_list = []
   try:
     for key in sorted(xattr_data.keys()):
-      if key in ignored_keys:
+      if KeyMatchesIgnoredKeys(key, ignored_keys):
         continue
       try:
         value = xattr_data[key]

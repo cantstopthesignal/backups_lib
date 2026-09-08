@@ -179,6 +179,82 @@ class PathInfoTestCase(BaseTestCase):
              '/tmp/d'])
 
 
+class IgnoredXattrKeysTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    # Test KeyMatchesIgnoredKeys
+    ignored_keys = [
+      'com.apple.quarantine',
+      re.compile('com[.]apple[.]metadata:kMDLabel_.*'),
+    ]
+    AssertEquals(True, lib.KeyMatchesIgnoredKeys('com.apple.quarantine', ignored_keys))
+    AssertEquals(False, lib.KeyMatchesIgnoredKeys('com.apple.macl', ignored_keys))
+    AssertEquals(True, lib.KeyMatchesIgnoredKeys('com.apple.metadata:kMDLabel_123', ignored_keys))
+    AssertEquals(True, lib.KeyMatchesIgnoredKeys('com.apple.metadata:kMDLabel_', ignored_keys))
+    AssertEquals(False, lib.KeyMatchesIgnoredKeys('com.apple.metadata:other', ignored_keys))
+    AssertEquals(False, lib.KeyMatchesIgnoredKeys('example', ignored_keys))
+
+    # Test IgnoredXattrSortKey
+    sort_items = ['com.apple.quarantine', re.compile('com[.]apple[.]metadata:kMDLabel_.*'), 'a.key']
+    sort_items.sort(key=lib.IgnoredXattrSortKey)
+    AssertEquals('a.key', sort_items[0])
+    AssertEquals('com.apple.quarantine', sort_items[1])
+    AssertEquals('com[.]apple[.]metadata:kMDLabel_.*', sort_items[2].pattern)
+
+    # Test EscapeIgnoredXattr
+    AssertEquals('hello', lib.EscapeIgnoredXattr('hello'))
+    AssertEquals('com[.]apple[.]metadata:kMDLabel_.*',
+                 lib.EscapeIgnoredXattr(re.compile('com[.]apple[.]metadata:kMDLabel_.*')))
+
+    # Test ParseXattrData and PathInfo.FromPath with file xattrs
+    file1 = CreateFile(test_dir, 'file1')
+    SetXattr(file1, 'example', b'val1')
+    SetXattr(file1, 'com.apple.quarantine', b'quar')
+    SetXattr(file1, 'com.apple.metadata:kMDLabel_abc', b'label_initial')
+
+    xattr_hash1, xattr_keys1 = lib.ParseXattrData(
+      file1, lib.PathInfo.TYPE_FILE, ignored_keys=lib.IGNORED_XATTR_KEYS)
+    AssertEquals(['example'], xattr_keys1)
+
+    path_info1 = lib.PathInfo.FromPath('file1', file1)
+    AssertEquals(['example'], path_info1.xattr_keys)
+    AssertEquals(xattr_hash1, path_info1.xattr_hash)
+
+    # Modifying the regex prefix ignored xattr should not change hash or keys
+    SetXattr(file1, 'com.apple.metadata:kMDLabel_abc', b'label_modified')
+    xattr_hash2, xattr_keys2 = lib.ParseXattrData(
+      file1, lib.PathInfo.TYPE_FILE, ignored_keys=lib.IGNORED_XATTR_KEYS)
+    AssertEquals(['example'], xattr_keys2)
+    AssertEquals(xattr_hash1, xattr_hash2)
+
+    path_info2 = lib.PathInfo.FromPath('file1', file1)
+    AssertEquals(False, lib.PathInfo.GetItemizedDiff(path_info1, path_info2).xattr_diff)
+
+    # Adding another regex prefix ignored xattr should also not change hash or keys
+    SetXattr(file1, 'com.apple.metadata:kMDLabel_xyz', b'label2')
+    xattr_hash3, xattr_keys3 = lib.ParseXattrData(
+      file1, lib.PathInfo.TYPE_FILE, ignored_keys=lib.IGNORED_XATTR_KEYS)
+    AssertEquals(['example'], xattr_keys3)
+    AssertEquals(xattr_hash1, xattr_hash3)
+
+    # Modifying the non-ignored xattr should change hash
+    SetXattr(file1, 'example', b'val2')
+    xattr_hash4, xattr_keys4 = lib.ParseXattrData(
+      file1, lib.PathInfo.TYPE_FILE, ignored_keys=lib.IGNORED_XATTR_KEYS)
+    AssertEquals(['example'], xattr_keys4)
+    AssertNotEquals(xattr_hash1, xattr_hash4)
+
+    # Adding a non-ignored xattr should add to keys and change hash
+    SetXattr(file1, 'com.apple.metadata:other', b'other_val')
+    xattr_hash5, xattr_keys5 = lib.ParseXattrData(
+      file1, lib.PathInfo.TYPE_FILE, ignored_keys=lib.IGNORED_XATTR_KEYS)
+    AssertEquals(['com.apple.metadata:other', 'example'], xattr_keys5)
+    AssertNotEquals(xattr_hash4, xattr_hash5)
+
+
 class ItemizedPathChangeTestCase(BaseTestCase):
   def test(self):
     def ReadItemizedTty(itemized, found_matching_rename=False, warn_for_new_path=False):
