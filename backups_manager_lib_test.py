@@ -3089,7 +3089,7 @@ class RestoreMetaTestCase(BaseTestCase):
 
     DoRestoreMeta(
       config, dry_run=True, expected_success=False,
-      expected_output=['*** Error: --mtimes arg is required'])
+      expected_output=['*** Error: --mtimes or --modes arg is required'])
     DoRestoreMeta(
       config, dry_run=True, mtimes=True, expected_success=False,
       expected_output=['*** Error: --path args are required'])
@@ -3164,6 +3164,34 @@ class RestoreMetaTestCase(BaseTestCase):
                        '.L..t.... ln2 -> f2',
                        '.d..t.... par! \\r',
                        'Paths: 9 total, 3 updated, 5 skipped'])
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=[])
+
+    os.chmod(file1, 0o660)
+    os.chmod(parent1, 0x770)
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_output=['.f...p... f1',
+                       '.d...p... par! \\r',
+                       'Transferring 2 of 9 paths (3b of 2kb)'])
+    DoRestoreMeta(
+      config, mtimes=True, paths=['f1', 'par! \r'], dry_run=True,
+      expected_output=['Restoring metadata (mtimes)...',
+                       'Paths: 9 total, 6 skipped'])
+    DoRestoreMeta(
+      config, modes=True, paths=['f1', 'par! \r'], dry_run=True,
+      expected_output=['Restoring metadata (modes)...',
+                       '.f...p... f1',
+                       '.d...p... par! \\r',
+                       'Paths: 9 total, 2 updated, 6 skipped'])
+    DoRestoreMeta(
+      config, modes=True, paths=['f1', 'par! \r'],
+      expected_output=['Restoring metadata (modes)...',
+                       '.f...p... f1',
+                       '.d...p... par! \\r',
+                       'Paths: 9 total, 2 updated, 6 skipped'])
     DoCreateBackup(
       config, backup_name='2020-01-03-120000', dry_run=True,
       expected_output=[])

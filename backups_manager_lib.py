@@ -2160,11 +2160,12 @@ class BackupNotPruneableMarker(object):
 
 
 class MetadataRestorer:
-  def __init__(self, config, output, mtimes=False, path_matcher=lib.PathMatcherAll(),
+  def __init__(self, config, output, mtimes=False, modes=False, path_matcher=lib.PathMatcherAll(),
                encryption_manager=None, dry_run=False, verbose=False):
     self.config = config
     self.output = output
     self.mtimes = mtimes
+    self.modes = modes
     self.path_matcher = path_matcher
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
@@ -2175,7 +2176,7 @@ class MetadataRestorer:
     self.total_skipped_paths = 0
 
   def RestoreMetadata(self):
-    assert self.mtimes
+    assert self.mtimes or self.modes
 
     checkpoints = ListBackupCheckpoints(self.config.checkpoints_dir)
     if not checkpoints:
@@ -2195,6 +2196,8 @@ class MetadataRestorer:
     meta_strs = []
     if self.mtimes:
       meta_strs.append('mtimes')
+    if self.modes:
+      meta_strs.append('modes')
     print('Restoring metadata (%s)...' % ', '.join(meta_strs), file=self.output)
 
     for enumerated_path in path_enumerator.Scan():
@@ -2218,10 +2221,14 @@ class MetadataRestorer:
         itemized.time_diff = True
         if not self.dry_run:
           os.utime(full_path, (basis_path_info.mtime, basis_path_info.mtime), follow_symlinks=False)
+      if self.modes and path_info.mode != basis_path_info.mode:
+        itemized.permission_diff = True
+        if not self.dry_run:
+          os.chmod(full_path, basis_path_info.mode, follow_symlinks=False)
 
       if itemized.HasDiffs():
         self.total_updated_paths += 1
-        print(itemized, file=self.output)
+        itemized.Print(output=self.output)
 
     self._PrintResults()
     return True
@@ -2589,14 +2596,15 @@ def DoRestoreMeta(args, output):
   parser = argparse.ArgumentParser()
   parser.add_argument('--backups-config', required=True)
   parser.add_argument('--mtimes', action='store_true')
+  parser.add_argument('--modes', action='store_true')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = BackupsConfig.Load(cmd_args.backups_config)
   path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
 
-  if not cmd_args.mtimes:
-    print('*** Error: --mtimes arg is required', file=output)
+  if not cmd_args.mtimes and not cmd_args.modes:
+    print('*** Error: --mtimes or --modes arg is required', file=output)
     return False
 
   if not cmd_args.paths:
@@ -2605,7 +2613,7 @@ def DoRestoreMeta(args, output):
 
   metadata_restorer = MetadataRestorer(
     config, output=output, path_matcher=path_matcher, mtimes=cmd_args.mtimes,
-    encryption_manager=lib.EncryptionManager(output=output),
+    modes=cmd_args.modes, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose)
   return metadata_restorer.RestoreMetadata()
 
