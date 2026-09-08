@@ -2897,7 +2897,7 @@ class ManifestVerifierStats(object):
 class ManifestVerifier(object):
   def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True,
                checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
-               verbose=False):
+               verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
@@ -2909,6 +2909,9 @@ class ManifestVerifier(object):
     self.path_enumerator = PathEnumerator(src_root, output, filters=filters, verbose=verbose)
     self.has_diffs = False
     self.stats = ManifestVerifierStats()
+    self.ignore_mtimes = ignore_mtimes
+    self.ignore_permissions = ignore_permissions
+    self.ignore_xattrs = ignore_xattrs
 
   def Verify(self):
     missing_paths = []
@@ -2964,6 +2967,12 @@ class ManifestVerifier(object):
     full_path = os.path.join(self.src_root, src_path_info.path)
 
     itemized = PathInfo.GetItemizedDiff(src_path_info, manifest_path_info)
+    if self.ignore_mtimes:
+      itemized.time_diff = False
+    if self.ignore_permissions:
+      itemized.permission_diff = False
+    if self.ignore_xattrs:
+      itemized.xattr_diff = False
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_path_matcher.Matches(path):
       if src_path_info.HasFileContents():
@@ -3114,6 +3123,9 @@ def DoVerifyManifest(args, output):
   parser.add_argument('--src-root', required=True)
   parser.add_argument('path', metavar='manifest_or_image_path')
   parser.add_argument('--checksum-all', action='store_true')
+  parser.add_argument('--ignore-mtimes', action='store_true')
+  parser.add_argument('--ignore-permissions', action='store_true')
+  parser.add_argument('--ignore-xattrs', action='store_true')
   cmd_args = parser.parse_args(args.cmd_args)
 
   manifest = ReadManifestFromImageOrPath(
@@ -3121,7 +3133,9 @@ def DoVerifyManifest(args, output):
 
   manifest_verifier = ManifestVerifier(
     manifest, cmd_args.src_root, output,
-    checksum_path_matcher=PathMatcherAllOrNone(cmd_args.checksum_all), verbose=args.verbose)
+    checksum_path_matcher=PathMatcherAllOrNone(cmd_args.checksum_all), verbose=args.verbose,
+    ignore_mtimes=cmd_args.ignore_mtimes, ignore_permissions=cmd_args.ignore_permissions,
+    ignore_xattrs=cmd_args.ignore_xattrs)
   return manifest_verifier.Verify()
 
 

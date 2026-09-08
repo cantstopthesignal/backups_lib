@@ -273,6 +273,83 @@ class VerifyTestCase(BaseTestCase):
                          '>f+++++++ par/.adjoined_checksums_filter',
                          'Paths: 6 total (122b), 3 mismatched (117b)'])
 
+  def testIgnoreMetadata(self):
+    with TempDir() as test_dir:
+      root_dir = CreateDir(test_dir, 'root')
+      par_dir = CreateDir(root_dir, 'par')
+      file1 = CreateFile(par_dir, 'f1', contents='hello')
+      file2 = CreateFile(par_dir, 'f2', contents='world')
+      file3 = CreateFile(par_dir, 'f3', contents='testing')
+      DoCreate(root_dir, expected_output=None)
+      DoSync(root_dir, expected_output=None)
+
+      DoVerify(root_dir, expected_output=['Paths: 5 total (17b)'])
+
+      # Test --ignore-mtimes
+      SetMTime(file1, 1600000000)
+      DoVerify(
+        root_dir,
+        expected_success=False,
+        expected_output=['.f..t.... par/f1',
+                         'Paths: 5 total (17b), 1 mismatched (5b), 1 checksummed (5b)'])
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True,
+        expected_output=['Paths: 5 total (17b)'])
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True, checksum_all=True,
+        expected_output=['Paths: 5 total (17b), 3 checksummed (17b)'])
+
+      # Test --ignore-permissions
+      subprocess.check_call(['chmod', 'g-r', file2])
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True,
+        expected_success=False,
+        expected_output=['.f...p... par/f2',
+                         'Paths: 5 total (17b), 1 mismatched (5b), 1 checksummed (5b)'])
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True, ignore_permissions=True,
+        expected_output=['Paths: 5 total (17b)'])
+
+      # Test --ignore-xattrs
+      SetXattr(file3, 'test_key', b'test_val')
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True, ignore_permissions=True,
+        expected_success=False,
+        expected_output=['.f......x par/f3',
+                         'Paths: 5 total (17b), 1 mismatched (7b), 1 checksummed (7b)'])
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True, ignore_permissions=True, ignore_xattrs=True,
+        expected_output=['Paths: 5 total (17b)'])
+
+      # Size diff is still caught despite all ignore flags
+      with open(file1, 'w') as f:
+        f.write('hello_modified')
+      SetMTime(file1, 1600000000)
+      DoVerify(
+        root_dir,
+        ignore_mtimes=True, ignore_permissions=True, ignore_xattrs=True,
+        expected_success=False,
+        expected_output=['>fcs..... par/f1',
+                         'Paths: 5 total (26b), 1 mismatched (14b), 1 checksummed (14b)'])
+
+      # Content diff (same size) is still caught
+      with open(file1, 'w') as f:
+        f.write('HELLO')
+      SetMTime(file1, 1600000000)
+      DoVerify(
+        root_dir,
+        checksum_all=True,
+        ignore_mtimes=True, ignore_permissions=True, ignore_xattrs=True,
+        expected_success=False,
+        expected_output=['>fc...... par/f1',
+                         'Paths: 5 total (17b), 1 mismatched (5b), 3 checksummed (17b)'])
+
 
 class SyncTestCase(BaseTestCase):
   def test(self):

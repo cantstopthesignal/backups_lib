@@ -87,7 +87,8 @@ def DoDiff(path1, path2, root_path1=None, root_path2=None, manifest_path1=None, 
 
 
 def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checksum_all=False,
-             no_filters=False, paths=[], expected_success=True, expected_output=[]):
+             no_filters=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
+             paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -95,6 +96,12 @@ def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checks
     cmd_args.append('--checksum-all')
   if no_filters:
     cmd_args.append('--no-filters')
+  if ignore_mtimes:
+    cmd_args.append('--ignore-mtimes')
+  if ignore_permissions:
+    cmd_args.append('--ignore-permissions')
+  if ignore_xattrs:
+    cmd_args.append('--ignore-xattrs')
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,

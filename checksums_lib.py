@@ -214,7 +214,8 @@ class ChecksumsVerifier(object):
   def __init__(self, root_or_image_path, output, manifest_path=None,
                path_matcher=lib.PathMatcherAll(), checksum_path_matcher=lib.PathMatcherNone(),
                dry_run=False, verbose=False,
-               encryption_manager=None, hdiutil_verify=True, filters=CHECKSUM_FILTERS):
+               encryption_manager=None, hdiutil_verify=True, filters=CHECKSUM_FILTERS,
+               ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
@@ -228,6 +229,9 @@ class ChecksumsVerifier(object):
     self.filters = filters
     self.encryption_manager = encryption_manager
     self.hdiutil_verify = hdiutil_verify
+    self.ignore_mtimes = ignore_mtimes
+    self.ignore_permissions = ignore_permissions
+    self.ignore_xattrs = ignore_xattrs
 
   def Verify(self):
     if lib.IsLikelyPathToDiskImage(self.root_or_image_path):
@@ -250,7 +254,9 @@ class ChecksumsVerifier(object):
       verifier = lib.ManifestVerifier(
         self.checksums.GetManifest(), root_path, output=self.output,
         filters=self.filters, manifest_on_top=False, checksum_path_matcher=self.checksum_path_matcher,
-        escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose)
+        escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose,
+        ignore_mtimes=self.ignore_mtimes, ignore_permissions=self.ignore_permissions,
+        ignore_xattrs=self.ignore_xattrs)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
 
@@ -1331,6 +1337,9 @@ def DoVerify(args, output):
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
   parser.add_argument('--no-filters', action='store_true')
+  parser.add_argument('--ignore-mtimes', action='store_true')
+  parser.add_argument('--ignore-permissions', action='store_true')
+  parser.add_argument('--ignore-xattrs', action='store_true')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -1345,7 +1354,9 @@ def DoVerify(args, output):
     checksum_path_matcher=lib.PathMatcherAllOrNone(cmd_args.checksum_all),
     path_matcher=path_matcher, dry_run=args.dry_run,
     verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
-    hdiutil_verify=cmd_args.hdiutil_verify, filters=filters)
+    hdiutil_verify=cmd_args.hdiutil_verify, filters=filters,
+    ignore_mtimes=cmd_args.ignore_mtimes, ignore_permissions=cmd_args.ignore_permissions,
+    ignore_xattrs=cmd_args.ignore_xattrs)
   return checksums_verifier.Verify()
 
 
