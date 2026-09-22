@@ -805,7 +805,8 @@ class DiskImageHelper(abc.ABC):
   @abc.abstractmethod
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
-                  readonly=True, browseable=False, verify=True):
+                  readonly=True, browseable=False, verify=True,
+                  ignore_ownership=False):
     pass
 
   @abc.abstractmethod
@@ -859,8 +860,9 @@ class DiskImageHelperDarwin(DiskImageHelper):
 
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
-                  readonly=True, browseable=False, verify=True):
-    cmd = ['hdiutil', 'attach', path, '-owners', 'on', '-plist']
+                  readonly=True, browseable=False, verify=True,
+                  ignore_ownership=False):
+    cmd = ['hdiutil', 'attach', path, '-owners', 'off' if ignore_ownership else 'on', '-plist']
     if encrypted:
       cmd.append('-stdinpass')
     if mount:
@@ -1017,7 +1019,8 @@ class DiskImageHelperLinux(DiskImageHelper):
 
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
-                  readonly=True, browseable=False, verify=True):
+                  readonly=True, browseable=False, verify=True,
+                  ignore_ownership=False):
     result = DiskImageHelperAttachResult()
     if not random_mount_point and mount_point is None:
       raise Exception('Mount pount or random mount point expected')
@@ -1904,15 +1907,18 @@ class EncryptionManager(object):
 class ImageAttacher(object):
   @staticmethod
   def Open(image_path, mount_point=None, readonly=True, browseable=False,
-           mount=True, encryption_manager=None, hdiutil_verify=True):
+           mount=True, encryption_manager=None, hdiutil_verify=True,
+           ignore_ownership=False):
     image_attacher = ImageAttacher(
       image_path, mount_point, readonly=readonly, browseable=browseable,
-      mount=mount, encryption_manager=encryption_manager, hdiutil_verify=hdiutil_verify)
+      mount=mount, encryption_manager=encryption_manager, hdiutil_verify=hdiutil_verify,
+      ignore_ownership=ignore_ownership)
     image_attacher._Open()
     return image_attacher
 
   def __init__(self, image_path, mount_point=None, readonly=True, browseable=False,
-               mount=True, encryption_manager=None, hdiutil_verify=True):
+               mount=True, encryption_manager=None, hdiutil_verify=True,
+               ignore_ownership=False):
     self.image_path = image_path
     self.mount_point = mount_point
     self.random_mount_point = (self.mount_point is None)
@@ -1924,6 +1930,7 @@ class ImageAttacher(object):
     self.encrypted = False
     self.encryption_manager = encryption_manager
     self.hdiutil_verify = hdiutil_verify
+    self.ignore_ownership = ignore_ownership
     self.device = None
 
   def __enter__(self):
@@ -1941,6 +1948,9 @@ class ImageAttacher(object):
 
   def GetDevice(self):
     return self.device
+
+  def GetIgnoreOwnership(self):
+    return self.ignore_ownership
 
   def Close(self):
     assert self.attached
@@ -1998,7 +2008,8 @@ class ImageAttacher(object):
       attach_result = GetDiskImageHelper().AttachImage(
         self.GetImagePath(), encrypted=self.encrypted, password=password, mount=self.mount,
         random_mount_point=self.random_mount_point, mount_point=self.mount_point,
-        readonly=self.readonly, browseable=self.browseable, verify=self.hdiutil_verify)
+        readonly=self.readonly, browseable=self.browseable, verify=self.hdiutil_verify,
+        ignore_ownership=self.ignore_ownership)
     except DiskImageHelperAuthenticationError:
       self.encryption_manager.ClearPassword(self.image_uuid)
       return False

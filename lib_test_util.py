@@ -168,7 +168,8 @@ class FakeDiskImage(object):
     os.mkdir(self.metadata['unmounted_data_dir'])
     self._Save()
 
-  def Attach(self, mount=False, random_mount_point=False, mount_point=None):
+  def Attach(self, mount=False, random_mount_point=False, mount_point=None,
+             ignore_ownership=False):
     self._Load()
     assert not self.metadata['attached']
     assert not self.metadata['mounted']
@@ -232,10 +233,12 @@ class FakeDiskImageHelper(object):
 
   def AttachImage(self, path, encrypted=False, password=None, mount=False,
                   random_mount_point=False, mount_point=None,
-                  readonly=True, browseable=False, verify=True):
+                  readonly=True, browseable=False, verify=True,
+                  ignore_ownership=False):
     assert not encrypted
     fake_image = FakeDiskImage(path)
-    return fake_image.Attach(mount=mount, random_mount_point=random_mount_point, mount_point=mount_point)
+    return fake_image.Attach(mount=mount, random_mount_point=random_mount_point, mount_point=mount_point,
+                             ignore_ownership=ignore_ownership)
 
   def DetachImage(self, device, mount_point):
     fake_image = FakeDiskImage(FakeDiskImage.PathFromDevice(device))

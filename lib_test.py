@@ -1277,5 +1277,46 @@ class EncryptionManagerTestCase(BaseTestCase):
                      output.getvalue().rstrip())
 
 
+class ImageAttacherTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with SetHdiutilCompactOnBatteryAllowed(True):
+          with TempDir() as test_dir:
+            self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    image_path = os.path.join(test_dir, 'image.sparsebundle')
+    lib.CreateDiskImage(image_path, volume_name='test')
+
+    with lib.ImageAttacher(image_path, readonly=True) as attacher:
+      AssertEquals(False, attacher.GetIgnoreOwnership())
+      if isinstance(lib.GetDiskImageHelper(), lib.DiskImageHelperDarwin):
+        mount_output = subprocess.check_output(['mount'], text=True)
+        mount_lines = [l for l in mount_output.splitlines() if attacher.GetMountPoint() in l]
+        AssertEquals(1, len(mount_lines))
+        AssertEquals(False, 'noowners' in mount_lines[0])
+
+    with lib.ImageAttacher(image_path, readonly=True, ignore_ownership=True) as attacher:
+      AssertEquals(True, attacher.GetIgnoreOwnership())
+      if isinstance(lib.GetDiskImageHelper(), lib.DiskImageHelperDarwin):
+        mount_output = subprocess.check_output(['mount'], text=True)
+        mount_lines = [l for l in mount_output.splitlines() if attacher.GetMountPoint() in l]
+        AssertEquals(1, len(mount_lines))
+        AssertEquals(True, 'noowners' in mount_lines[0])
+
+    attacher = lib.ImageAttacher.Open(image_path, readonly=True, ignore_ownership=True)
+    try:
+      AssertEquals(True, attacher.GetIgnoreOwnership())
+      if isinstance(lib.GetDiskImageHelper(), lib.DiskImageHelperDarwin):
+        mount_output = subprocess.check_output(['mount'], text=True)
+        mount_lines = [l for l in mount_output.splitlines() if attacher.GetMountPoint() in l]
+        AssertEquals(1, len(mount_lines))
+        AssertEquals(True, 'noowners' in mount_lines[0])
+    finally:
+      attacher.Close()
+
+
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()
