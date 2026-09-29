@@ -137,13 +137,13 @@ def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_outp
   return checkpoint_path
 
 
-def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[]):
+def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[], expected_success=True):
   cmd_args = ['create-backup',
               '--no-encrypt',
               '--backups-config', config.path]
   if backup_name is not None:
     cmd_args.extend(['--backup-name', backup_name])
-  lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_output=None)
+  lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success, expected_output=None)
   checkpoint_path = None
   output_lines = []
   for line in lines:

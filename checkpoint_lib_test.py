@@ -882,6 +882,71 @@ class CreateWithFollowSymlinksTestCase(BaseTestCase):
       checkpoint3.Close()
 
 
+class CreateWithEmptySymlinkTestCase(BaseTestCase):
+  def test(self):
+    if platform.system() != lib.PLATFORM_DARWIN:
+      return
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_HIGH, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    file1 = CreateFile(src_root, 'f1')
+    parent1 = CreateDir(src_root, 'par')
+    file2 = CreateFile(parent1, 'f2')
+
+    CreateSymlink(src_root, 'ln_empty', '')
+
+    DoCreate(
+      src_root, checkpoints_dir, '1', dry_run=True,
+      expected_success=False,
+      expected_output=['*** Error: Symlink ln_empty destination is empty'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), [])
+
+    DoCreate(
+      src_root, checkpoints_dir, '1', manifest_only=True,
+      expected_success=False,
+      expected_output=['*** Error: Symlink ln_empty destination is empty'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), [])
+
+    DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_success=False,
+      expected_output=['*** Error: Symlink ln_empty destination is empty'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), [])
+
+    # Test symlink in subdirectory
+    DeleteFileOrDir(os.path.join(src_root, 'ln_empty'))
+    CreateSymlink(parent1, 'ln_empty_sub', '')
+
+    DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_success=False,
+      expected_output=['*** Error: Symlink par/ln_empty_sub destination is empty'])
+    AssertLinesEqual(os.listdir(checkpoints_dir), [])
+
+    # If excluded via filter, checkpoint creation succeeds
+    CreateFile(src_root, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['exclude ln_empty_sub'])
+
+    checkpoint1, manifest1 = DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ .staged_backup_filter',
+                       '>f+++++++ f1',
+                       '>d+++++++ par',
+                       '>f+++++++ par/f2',
+                       'Transferring 5 paths (21b)'])
+    try:
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
+    finally:
+      checkpoint1.Close()
+
+
 class ApplyDryRunTestCase(BaseTestCase):
   def test(self):
     with TempDir() as test_dir:

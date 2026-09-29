@@ -1742,6 +1742,8 @@ class PathSyncer(object):
   def _SyncFileOrSymlink(self, path_info, dest_path_info, src_path, dest_path,
                          follow_symlinks=False):
     assert dest_path_info is None or dest_path_info.path_type == path_info.path_type
+    if path_info.path_type == PathInfo.TYPE_SYMLINK and not path_info.link_dest:
+      raise Exception('Symlink %s destination is empty' % EscapePath(path_info.path))
     self.mtime_preserver.PreserveParentMtime(dest_path)
     dest_path_result = shutil.copyfile(src_path, dest_path, follow_symlinks=follow_symlinks)
     assert dest_path == dest_path_result

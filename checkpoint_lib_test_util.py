@@ -42,7 +42,7 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_success=True, 
     output_lines.append(line)
   output.close()
   AssertLinesEqual(output_lines, expected_output)
-  if not dry_run:
+  if not dry_run and expected_success:
     assert checkpoint_path
     checkpoint, manifest = GetCheckpointData(
       checkpoint_path, readonly=readonly, manifest_only=manifest_only)

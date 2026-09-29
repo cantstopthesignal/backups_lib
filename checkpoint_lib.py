@@ -1,4 +1,5 @@
 import argparse
+import enum
 import json
 import os
 import platform
@@ -200,8 +201,15 @@ class Checkpoint(object):
     self.mounted = False
 
 
+class ReQueueResult(enum.Enum):
+  NOT_REQUEUED = enum.auto()
+  REQUEUED = enum.auto()
+  ERROR = enum.auto()
+
+
 class CheckpointCreator(object):
   PRE_SYNC_CONTENTS_TEST_HOOK = None
+  ReQueueResult = ReQueueResult
 
   def __init__(self, src_root_dir, checkpoints_root_dir, name, output, basis_path=None, basis_manifest=None,
                dry_run=False, verbose=False, checksum_all=False, manifest_only=False, encrypt=True,
@@ -282,7 +290,8 @@ class CheckpointCreator(object):
       path = enumerated_path.GetPath()
       self.enumerated_path_map[path] = enumerated_path
       self._HandleExistingPaths(existing_paths, next_new_path=path)
-      self._AddPathIfChanged(enumerated_path)
+      if not self._AddPathIfChanged(enumerated_path):
+        return False
 
     self._HandleExistingPaths(existing_paths, next_new_path=None)
     self._FlushPendingPathPrintouts()
@@ -325,6 +334,10 @@ class CheckpointCreator(object):
     path = enumerated_path.GetPath()
     full_path = os.path.join(self.src_root_dir, path)
     path_info = lib.PathInfo.FromPath(path, full_path, follow_symlinks=enumerated_path.GetFollowSymlinks())
+    if path_info.path_type == lib.PathInfo.TYPE_SYMLINK and not path_info.link_dest:
+      print('*** Error: Symlink %s destination is empty' % lib.EscapePath(path), file=self.output)
+      return False
+
     self.total_paths += 1
     if path_info.size is not None:
       self.total_size += path_info.size
@@ -334,7 +347,7 @@ class CheckpointCreator(object):
       basis_path_info = self.basis_manifest.GetPathInfo(path)
     if basis_path_info is None:
       self._AddPath(path, full_path, path_info, allow_replace=allow_replace)
-      return
+      return True
 
     if path_info.HasFileContents():
       path_info.sha256 = basis_path_info.sha256
@@ -345,7 +358,7 @@ class CheckpointCreator(object):
     if matches and not self.checksum_all:
       if self.verbose:
         self.pending_path_printouts.append([itemized, basis_path_info, path_info])
-      return
+      return True
     if path_info.HasFileContents():
       path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
     if path_info.sha256 != basis_path_info.sha256:
@@ -355,11 +368,12 @@ class CheckpointCreator(object):
     if matches:
       if self.verbose:
         self.pending_path_printouts.append([itemized, basis_path_info, path_info])
-      return
+      return True
 
     self.pending_path_printouts.append([itemized, basis_path_info, path_info])
 
     self._AddPathContents(path_info)
+    return True
 
   def _AddPath(self, path, full_path, path_info, allow_replace=False):
     if path_info.HasFileContents():
@@ -421,7 +435,10 @@ class CheckpointCreator(object):
       first_requeued = True
       for path in sorted(paths_just_synced_set):
         enumerated_path = self.enumerated_path_map[path]
-        if self._ReQueuePathsModifiedSinceManifest(enumerated_path, first_requeued):
+        requeue_result = self._ReQueuePathsModifiedSinceManifest(enumerated_path, first_requeued)
+        if requeue_result == ReQueueResult.ERROR:
+          return False
+        elif requeue_result == ReQueueResult.REQUEUED:
           first_requeued = False
 
       self._FlushPendingPathPrintouts()
@@ -442,13 +459,14 @@ class CheckpointCreator(object):
         checkpoint_path_info.sha256 = lib.Sha256WithProgress(
           full_path, checkpoint_path_info, output=self.output)
         if checkpoint_path_info.sha256 == expected_path_info.sha256:
-          return False
+          return ReQueueResult.NOT_REQUEUED
       else:
-        return False
+        return ReQueueResult.NOT_REQUEUED
     if first_requeued:
       print("*** Warning: Paths changed since syncing, checking...", file=self.output)
-    self._AddPathIfChanged(enumerated_path, allow_replace=True)
-    return True
+    if not self._AddPathIfChanged(enumerated_path, allow_replace=True):
+      return ReQueueResult.ERROR
+    return ReQueueResult.REQUEUED
 
   def _WriteBasisInfo(self):
     if not self.dry_run and self.basis_path is not None:

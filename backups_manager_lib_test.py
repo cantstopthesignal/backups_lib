@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -3334,6 +3335,34 @@ class DeleteLocalContentInBackupScopeTestCase(BaseTestCase):
                        '>d+++++++ par! \\r',
                        '>f+++++++ par! \\r/f4.skp',
                        'Transferring 7 of 7 paths (1kb of 1kb)'])
+
+
+class CreateBackupWithEmptySymlinkTestCase(BaseTestCase):
+  def test(self):
+    if platform.system() != lib.PLATFORM_DARWIN:
+      return
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    config = CreateConfig(test_dir)
+    CreateBackupsBundle(config, create_example_content=False)
+    CreateLatestManifestCheckpoint(config, expect_example_content=False)
+
+    file1 = CreateFile(config.src_path, 'f1', contents='ABC')
+    CreateSymlink(config.src_path, 'ln_empty', '')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000', dry_run=True,
+      expected_success=False,
+      expected_output=['*** Error: Symlink ln_empty destination is empty'])
+
+    DoCreateBackup(
+      config, backup_name='2020-01-03-120000',
+      expected_success=False,
+      expected_output=['*** Error: Symlink ln_empty destination is empty'])
 
 
 if __name__ == '__main__':
