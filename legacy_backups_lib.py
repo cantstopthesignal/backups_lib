@@ -38,7 +38,7 @@ def Md5(path):
 
 
 def XmlTextNodeToUtf8(textNode):
-  return unicodedata.normalize('NFD', textNode.data)
+  return lib.CanonicalizePath(textNode.data)
 
 
 class LegacyChecksums(object):

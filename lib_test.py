@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
@@ -1535,6 +1536,93 @@ class HistoricalIgnoredXattrsTestCase(BaseTestCase):
       AssertEquals(True, '*** Warning: Manifest does not record ignored xattrs;' in output_str)
       AssertEquals(True, 'Added com.apple.macl' in output_str)
       AssertEquals(True, '*** Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
+
+
+class UnicodeCanonicalizationTestCase(BaseTestCase):
+  def testCanonicalizePath(self):
+    nfc = '\xc9touff\xe9e.gdoc'
+    nfd = unicodedata.normalize('NFD', nfc)
+    AssertNotEquals(nfc, nfd)
+    AssertEquals(nfc, lib.CanonicalizePath(nfd))
+    AssertEquals(nfc, lib.CanonicalizePath(nfc))
+    AssertEquals('simple/path.txt', lib.CanonicalizePath('simple/path.txt'))
+    AssertEquals('simple/path.txt', lib.CanonicalizePath(b'simple/path.txt'))
+    AssertEquals(None, lib.CanonicalizePath(None))
+
+  def testPathInfoCanonicalization(self):
+    nfc = '\xc9touff\xe9e.gdoc'
+    nfd = unicodedata.normalize('NFD', nfc)
+    path_info = lib.PathInfo(
+      nfd, lib.PathInfo.TYPE_FILE, mode=0o100644, uid=501, gid=20, mtime=1000,
+      size=10, link_dest=nfd, sha256=b'fake', xattr_hash=None, xattr_keys=[],
+      google_drive_remote_file=False)
+    AssertEquals(nfc, path_info.path)
+    AssertEquals(nfc, path_info.link_dest)
+
+    path_info_nfc = lib.PathInfo(
+      nfc, lib.PathInfo.TYPE_FILE, mode=0o100644, uid=501, gid=20, mtime=1000,
+      size=10, link_dest=nfc, sha256=b'fake', xattr_hash=None, xattr_keys=[],
+      google_drive_remote_file=False)
+    diff = lib.PathInfo.GetItemizedDiff(path_info, path_info_nfc)
+    AssertEquals(False, diff.HasDiffs())
+
+  def testManifestLookupCanonicalization(self):
+    nfc = '\xc9touff\xe9e.gdoc'
+    nfd = unicodedata.normalize('NFD', nfc)
+    manifest = lib.Manifest()
+    path_info = lib.PathInfo(
+      nfd, lib.PathInfo.TYPE_FILE, mode=0o100644, uid=501, gid=20, mtime=1000,
+      size=10, link_dest=None, sha256=b'fake', xattr_hash=None, xattr_keys=[],
+      google_drive_remote_file=False)
+    manifest.AddPathInfo(path_info)
+
+    AssertEquals(True, manifest.HasPath(nfc))
+    AssertEquals(True, manifest.HasPath(nfd))
+    AssertEquals(path_info, manifest.GetPathInfo(nfc))
+    AssertEquals(path_info, manifest.GetPathInfo(nfd))
+    AssertEquals([nfc], manifest.GetPaths())
+
+  def testPathMatcherCanonicalization(self):
+    nfc = '\xc9touff\xe9e.gdoc'
+    nfd = unicodedata.normalize('NFD', nfc)
+
+    matcher_set = lib.PathMatcherSet([nfc])
+    AssertEquals(True, matcher_set.Matches(nfd))
+    AssertEquals(True, matcher_set.Matches(nfc))
+
+    matcher_prefix = lib.PathMatcherPathsAndPrefix(['recipes/' + nfc])
+    AssertEquals(True, matcher_prefix.Matches('recipes/' + nfd))
+    AssertEquals(True, matcher_prefix.Matches('recipes/' + nfc))
+
+  def testPathEnumeratorAndManifestVerifierWithNFD(self):
+    with TempDir() as test_dir:
+      nfc = '\xc9touff\xe9e.gdoc'
+      nfd = unicodedata.normalize('NFD', nfc)
+
+      # Create file on disk with NFD
+      file_path = CreateFile(test_dir, nfd, contents='recipe content')
+      file_sha256 = lib.Sha256(file_path)
+
+      # Verify PathEnumerator yields canonical NFC
+      enumerated = list(lib.PathEnumerator(test_dir, output=io.StringIO()).Scan())
+      enumerated_paths = [e.GetPath() for e in enumerated]
+      AssertEquals(['.', nfc], enumerated_paths)
+
+      # Create manifest with NFC path info
+      manifest = lib.Manifest()
+      root_info = lib.PathInfo.FromPath('.', test_dir)
+      manifest.AddPathInfo(root_info)
+      file_info = lib.PathInfo.FromPath(nfc, file_path)
+      file_info.sha256 = file_sha256
+      manifest.AddPathInfo(file_info)
+
+      output = io.StringIO()
+      verifier = lib.ManifestVerifier(manifest, test_dir, output=output)
+      success = verifier.Verify()
+      AssertEquals(True, success)
+      stats = verifier.GetStats()
+      AssertEquals(0, stats.total_mismatched_paths)
+      AssertEquals(2, stats.total_paths)
 
 
 if __name__ == '__main__':

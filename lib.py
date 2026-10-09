@@ -30,6 +30,7 @@ import termios
 import threading
 import time
 import tty
+import unicodedata
 import xattr
 
 from . import staged_backup_pb2
@@ -112,6 +113,14 @@ ENCRYPTION_AES_256 = 'AES-256'
 CRYPTSETUP_BIN = '/usr/sbin/cryptsetup'
 
 
+def CanonicalizePath(path):
+  if path is None:
+    return None
+  if isinstance(path, bytes):
+    path = path.decode('utf-8')
+  return unicodedata.normalize('NFC', path)
+
+
 class PathMatcher(object):
   def Matches(self, path):
     raise Exception('Must be implemented by subclass')
@@ -135,24 +144,24 @@ def PathMatcherNone():
 
 class PathMatcherSet(PathMatcher):
   def __init__(self, paths, include=True):
-    self.paths = set(paths)
+    self.paths = set(CanonicalizePath(p) for p in paths)
     self.include = include
 
   def Matches(self, path):
-    return self.include == (path in self.paths)
+    return self.include == (CanonicalizePath(path) in self.paths)
 
 
 class PathMatcherPathsAndPrefix(PathMatcher):
   def __init__(self, paths):
     self.match_paths = set()
     for path in paths:
-      path = os.path.normpath(path)
+      path = CanonicalizePath(os.path.normpath(path))
       if path.startswith('/') or not path:
         raise Exception('Invalid path for matcher: %s' % path)
       self.match_paths.add(path)
 
   def Matches(self, path):
-    path = os.path.normpath(path)
+    path = CanonicalizePath(os.path.normpath(path))
     if path.startswith('/'):
       return False
     while path:
@@ -179,13 +188,13 @@ def AddPathsArgs(parser):
 
 
 def GetPathsFromArgs(args, required=True):
-  paths = args.paths or []
+  paths = [CanonicalizePath(p) for p in (args.paths or [])]
   if args.paths_from:
     with open(args.paths_from, 'r') as f:
       for path_line in f.read().split('\n'):
         if not path_line:
           continue
-        paths.append(DeEscapePath(path_line))
+        paths.append(CanonicalizePath(DeEscapePath(path_line)))
   if required and not paths:
     raise Exception('--path args or --paths-from arg required')
   return sorted(paths)
@@ -266,7 +275,7 @@ def EscapeString(s):
 
 
 def EscapePath(path):
-  return EscapeString(path)
+  return EscapeString(CanonicalizePath(path))
 
 
 def DeEscapeString(s):
@@ -274,7 +283,7 @@ def DeEscapeString(s):
 
 
 def DeEscapePath(path):
-  return DeEscapeString(path)
+  return CanonicalizePath(DeEscapeString(path))
 
 
 class UnsupportedMatcherError(Exception):
@@ -285,13 +294,14 @@ class UnsupportedMatcherError(Exception):
 class FilterRule(object):
   @staticmethod
   def MatchesPath(matcher, path, path_stat):
+    path = CanonicalizePath(path)
     if stat.S_ISDIR(path_stat.st_mode):
       path += '/'
     return not not matcher.match(path)
 
   @staticmethod
   def CompileRegex(matcher):
-    matcher = DeEscapePath(matcher)
+    matcher = CanonicalizePath(DeEscapePath(matcher))
     regex_pieces = []
     if matcher.startswith('/'):
       regex_pieces.append('^')
@@ -368,7 +378,7 @@ class FilterRuleFollowSymlink(FilterRule):
 
 class FilterRuleDirMerge(FilterRule):
   def __init__(self, filename):
-    self.filename = filename
+    self.filename = CanonicalizePath(filename)
 
   def GetFilename(self):
     return self.filename
@@ -382,7 +392,7 @@ class FilterRuleDirMerge(FilterRule):
 
 class FilterRuleMerge(object):
   def __init__(self, path):
-    self.path = path
+    self.path = CanonicalizePath(path)
 
   def GetPath(self):
     return self.path
@@ -1840,7 +1850,7 @@ def RsyncPaths(paths, src_root_path, dest_root_path, output, dry_run=False, verb
   p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        text=True)
   for path in paths:
-    p.stdin.write('%s\0' % path)
+    p.stdin.write('%s\0' % CanonicalizePath(path))
   p.stdin.close()
   with p.stdout:
     for line in p.stdout:
@@ -1886,7 +1896,7 @@ def RsyncList(src_path, output, filters=None, verbose=False):
       raise Exception('Unexpected path type for rsync line %r' % line)
     elif line[0] not in ['d', '-']:
       raise Exception('Unexpected path type for rsync line %r' % line)
-    yield DecodeRsyncEncodedString(path)
+    yield CanonicalizePath(DecodeRsyncEncodedString(path))
   if p.wait():
     print(err.rstrip(), file=output)
     raise Exception('Rsync failed')
@@ -1934,7 +1944,7 @@ def Rsync(src_path, dest_path, output, dry_run=False, verbose=False, link_dest=N
 class PathSyncer(object):
   class PathData(object):
     def __init__(self, path, follow_symlinks=False):
-      self.path = path
+      self.path = CanonicalizePath(path)
       self.follow_symlinks = follow_symlinks
 
     def GetPath(self):
@@ -2299,7 +2309,7 @@ class ItemizedPathChange:
                error_path=False, checksum_diff=False, size_diff=False, time_diff=False,
                permission_diff=False, uid_diff=False, gid_diff=False, xattr_diff=False,
                link_dest=None):
-    self.path = path
+    self.path = CanonicalizePath(path)
     self.path_type = path_type
     self.new_path = new_path
     self.replace_path = replace_path
@@ -2312,7 +2322,7 @@ class ItemizedPathChange:
     self.uid_diff = uid_diff
     self.gid_diff = gid_diff
     self.xattr_diff = xattr_diff
-    self.link_dest = link_dest
+    self.link_dest = CanonicalizePath(link_dest) if link_dest is not None else None
 
   def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS,
                ignore_xattr_diffs=False):
@@ -2436,7 +2446,7 @@ class PathInfo(object):
 
   @staticmethod
   def FromProto(pb):
-    path = pb.path
+    path = CanonicalizePath(pb.path)
     assert pb.path_type in PathInfo.TYPES
     google_drive_remote_file = pb.google_drive_remote_file
     size = None
@@ -2447,7 +2457,7 @@ class PathInfo(object):
     mtime = int(pb.mtime)
     link_dest = None
     if pb.link_dest:
-      link_dest = pb.link_dest
+      link_dest = CanonicalizePath(pb.link_dest)
     sha256 = None
     if pb.sha256:
       sha256 = pb.sha256
@@ -2463,6 +2473,7 @@ class PathInfo(object):
 
   @staticmethod
   def FromPath(path, full_path, ignored_xattr_keys=None, follow_symlinks=False):
+    path = CanonicalizePath(path)
     if ignored_xattr_keys is None:
       ignored_xattr_keys = IGNORED_XATTR_KEYS
     stat_result = PathInfo.STAT_FUNCTION(full_path, follow_symlinks=follow_symlinks)
@@ -2485,7 +2496,7 @@ class PathInfo(object):
         size = stat_result.st_size
     elif stat.S_ISLNK(stat_result.st_mode):
       path_type = PathInfo.TYPE_SYMLINK
-      link_dest = os.readlink(full_path)
+      link_dest = CanonicalizePath(os.readlink(full_path))
     else:
       raise Exception('Unexpected file mode for %r: %d' % (full_path, stat_result.st_mode))
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
@@ -2506,7 +2517,7 @@ class PathInfo(object):
       return itemized
 
     if not ignore_paths:
-      assert first.path == second.path
+      assert CanonicalizePath(first.path) == CanonicalizePath(second.path)
     if stat.S_IFMT(first.mode) != stat.S_IFMT(second.mode):
       itemized.checksum_diff = True
       itemized.replace_path = True
@@ -2524,7 +2535,7 @@ class PathInfo(object):
     if first.sha256 is not None and second.sha256 is not None and first.sha256 != second.sha256:
       itemized.checksum_diff = True
       itemized.replace_path = True
-    if first.link_dest != second.link_dest:
+    if CanonicalizePath(first.link_dest) != CanonicalizePath(second.link_dest):
       itemized.checksum_diff = True
     if (first.xattr_hash != second.xattr_hash or first.xattr_keys != second.xattr_keys
         or first.google_drive_remote_file != second.google_drive_remote_file):
@@ -2542,14 +2553,14 @@ class PathInfo(object):
 
   def __init__(self, path, path_type, mode, uid, gid, mtime, size, link_dest, sha256, xattr_hash,
                xattr_keys, google_drive_remote_file, dev_inode=None):
-    self.path = path
+    self.path = CanonicalizePath(path)
     self.path_type = path_type
     self.mode = mode
     self.uid = uid
     self.gid = gid
     self.mtime = mtime
     self.size = size
-    self.link_dest = link_dest
+    self.link_dest = CanonicalizePath(link_dest) if link_dest is not None else None
     self.sha256 = sha256
     self.xattr_hash = xattr_hash
     self.xattr_keys = xattr_keys
@@ -2647,7 +2658,7 @@ class PathInfo(object):
 class PathEnumerator(object):
   class PathData(object):
     def __init__(self, path, path_stat=None, follow_symlinks=False):
-      self.path = path
+      self.path = CanonicalizePath(path)
       self.path_stat = path_stat
       self.follow_symlinks = follow_symlinks
 
@@ -2676,35 +2687,40 @@ class PathEnumerator(object):
   def _ScanWithRsync(self):
     for path in sorted(RsyncList(self.root_dir, self.output, filters=self.filters,
                                  verbose=self.verbose)):
-      yield PathEnumerator.PathData(path)
+      yield PathEnumerator.PathData(CanonicalizePath(path))
 
-  def _ScanInternal(self, root_dir, path, filters, path_stat=None, follow_symlinks=False):
-    if path != '.':
-      abs_path = os.path.join(root_dir, path)
-    else:
-      abs_path = root_dir
+  def _ScanInternal(self, root_dir, path, filters, path_stat=None, follow_symlinks=False, abs_path=None):
+    if abs_path is None:
+      if path != '.':
+        abs_path = os.path.join(root_dir, path)
+      else:
+        abs_path = root_dir
+    if path_stat is None:
       path_stat = os.lstat(abs_path)
 
     if (stat.S_ISSOCK(path_stat.st_mode) or stat.S_ISCHR(path_stat.st_mode)
         or stat.S_ISBLK(path_stat.st_mode) or stat.S_ISFIFO(path_stat.st_mode)):
       return
 
-    yield PathEnumerator.PathData(path, path_stat, follow_symlinks=follow_symlinks)
+    canonical_path = CanonicalizePath(path)
+    yield PathEnumerator.PathData(canonical_path, path_stat, follow_symlinks=follow_symlinks)
 
     if stat.S_ISDIR(path_stat.st_mode) and not stat.S_ISLNK(path_stat.st_mode):
       child_entries = list(os.scandir(abs_path))
-      current_filters = self._UpdateFilters(root_dir, path, child_entries, filters)
-      for child_entry in sorted(child_entries, key=lambda p: p.name):
-        if path != '.':
-          child_path = os.path.join(path, child_entry.name)
+      current_filters = self._UpdateFilters(root_dir, canonical_path, child_entries, filters)
+      for child_entry in sorted(child_entries, key=lambda p: CanonicalizePath(p.name)):
+        child_name = CanonicalizePath(child_entry.name)
+        if canonical_path != '.':
+          child_path = os.path.join(canonical_path, child_name)
         else:
-          child_path = child_entry.name
+          child_path = child_name
         matches, follow_symlinks = self._FiltersMatch(child_path, child_entry, current_filters)
         if not matches:
           continue
         for result in self._ScanInternal(
             root_dir, child_path, current_filters,
-            path_stat=Stat(child_entry.path, follow_symlinks=follow_symlinks), follow_symlinks=follow_symlinks):
+            path_stat=Stat(child_entry.path, follow_symlinks=follow_symlinks), follow_symlinks=follow_symlinks,
+            abs_path=child_entry.path):
           yield result
 
   def _FiltersMatch(self, path, path_entry, filters):
@@ -2737,7 +2753,7 @@ class PathEnumerator(object):
       elif isinstance(a_filter, FilterRuleDirMerge):
         new_filters.append(a_filter)
         for child_entry in child_entries:
-          if a_filter.filename == child_entry.name:
+          if a_filter.filename == CanonicalizePath(child_entry.name):
             new_filters.extend(self._ParseFilterMergeFile(child_entry.path, path))
       else:
         new_filters.append(a_filter)
@@ -2844,22 +2860,25 @@ class Manifest(object):
     return sorted(self.path_map.keys())
 
   def GetPathInfo(self, path):
-    return self.path_map.get(path)
+    return self.path_map.get(CanonicalizePath(path))
 
   def HasPath(self, path):
-    return path in self.path_map
+    return CanonicalizePath(path) in self.path_map
 
   def GetPathMap(self):
     return self.path_map
 
   def AddPathInfo(self, path_info, allow_replace=False):
+    path = CanonicalizePath(path_info.path)
+    path_info.path = path
     if not allow_replace:
-      if path_info.path in self.path_map:
+      if path in self.path_map:
         raise Exception('Cannot add path info (%s): already in map (%s)'
-                        % (path_info, self.path_map[path_info.path]))
-    self.path_map[path_info.path] = path_info
+                        % (path_info, self.path_map[path]))
+    self.path_map[path] = path_info
 
   def RemovePathInfo(self, path):
+    path = CanonicalizePath(path)
     path_info = self.path_map[path]
     del self.path_map[path]
     return path_info
