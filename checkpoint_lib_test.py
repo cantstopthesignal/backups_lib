@@ -756,7 +756,8 @@ class CreateFromGoogleDriveTestCase(BaseTestCase):
                         '.f....... par/f1.gdoc',
                         '.f....... par/f2'])
       f1_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f1.gdoc')
-      AssertEquals(['com.google.drivefs.item-id#S'], lib.Xattr(f1_checkpoint).keys())
+      AssertEquals(['com.google.drivefs.item-id#S'],
+                   [k for k in lib.Xattr(f1_checkpoint).keys() if k != 'com.apple.provenance'])
       AssertEquals(b'FAKE_ID', lib.Xattr(f1_checkpoint)[lib.GOOGLE_DRIVE_FILE_XATTR_KEY])
       f2_checkpoint = os.path.join(checkpoint1.GetContentRootPath(), 'par/f2')
       AssertFileContents('abc', f2_checkpoint)
@@ -1074,7 +1075,8 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> f_\\r'])
-      AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(k for k in lib.Xattr(os.path.join(checkpoint2.GetContentRootPath(), 'f3')).keys()
+                          if k != 'com.apple.provenance'),
                    ['com.apple.lastuseddate#PS', 'com.apple.metadata:kMDLabel_123', 'example'])
     finally:
       checkpoint2.Close()
@@ -1159,7 +1161,8 @@ class ApplyTestCase(BaseTestCase):
                         '.f....... par!/f2',
                         '.f....... par!/f_\\r',
                         '.L....... par!/ln2 -> INVALID'])
-      AssertEquals(sorted(lib.Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()),
+      AssertEquals(sorted(k for k in lib.Xattr(os.path.join(checkpoint5.GetContentRootPath(), 'f3')).keys()
+                          if k != 'com.apple.provenance'),
                    ['com.apple.lastuseddate#PS', 'com.apple.metadata:kMDLabel_123', 'example'])
     finally:
       checkpoint5.Close()
