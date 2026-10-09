@@ -140,6 +140,17 @@ class DiffTestCase(BaseTestCase):
       expected_success=False,
       expected_output=['*** Error: Manifest file %s/.metadata/manifest.pbdata should exist' % parent1])
 
+    SetMTime(root_dir1, 1510000000)
+    SetMTime(root_dir2, 1510000000)
+    SetMTime(file1, 1510000001)
+    SetMTime(file1_2, 1510000001)
+    SetMTime(parent1, 1510000002)
+    SetMTime(parent1_2, 1510000002)
+    SetMTime(file2, 1510000001)
+    SetMTime(file2_2, 1510000001)
+    SetMTime(ln1, 1510000004)
+    SetMTime(ln1_2, 1510000004)
+
     DoSync(root_dir1, expected_output=None)
     DoSync(root_dir2, expected_output=None)
 
@@ -1167,7 +1178,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
             'Verifying checksums in %s...' % lib.EscapePath(image_path),
             'Verifying source tree matches...',
-            re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
+            re.compile('^Created image %s [(]13[0-9]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(lib.EscapePath(image_path)))])
         AssertDiskImageFormat('UDZO', image_path, password='abc $ [ "')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
@@ -1270,7 +1281,7 @@ class ImageFromFolderWithEncryptionTestCase(BaseTestCase):
             'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
             'Verifying checksums in %s...' % lib.EscapePath(image_path),
             'Verifying source tree matches...',
-            re.compile('^Created image %s [(]13[67]([.][0-9])?kb[)]; Source size 1kb$'
+            re.compile('^Created image %s [(]13[0-9]([.][0-9])?kb[)]; Source size 1kb$'
                        % re.escape(lib.EscapePath(image_path)))])
         AssertDiskImageFormat('UDZO', image_path, password='abc $ [ "')
         AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '130kb', '140kb')
@@ -2725,7 +2736,8 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
       DoSync(
         root_dir, upgrade_ignored_xattrs=True,
         expected_output=['.f......x f1',
-                         'Paths: 2 total (3b), 1 synced (3b)']
+                         'Paths: 2 total (3b), 1 synced (3b)',
+                         'Upgraded manifest ignored xattrs']
       )
 
       # Manifest on disk should now have new_ignored
@@ -2733,9 +2745,32 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
       manifest_upgraded.Read()
       AssertEquals(True, lib.AreIgnoredXattrsEqual(new_ignored, manifest_upgraded.GetIgnoredXattrKeys()))
 
+      # Subsequent sync with --upgrade-ignored-xattrs: already up to date, prints nothing extra
+      DoSync(
+        root_dir, upgrade_ignored_xattrs=True,
+        expected_output=['Paths: 2 total (3b)']
+      )
+
       # Subsequent verify runs clean without warnings
       DoVerify(root_dir, checksum_all=True,
                expected_output=['Paths: 2 total (3b), 1 checksummed (3b)'])
+
+    # Test upgrade when no files have changed xattrs (0 synced paths)
+    newer_ignored = list(new_ignored) + ['yet.another.key']
+    with ReplaceIgnoredXattrKeys(newer_ignored):
+      DoSync(
+        root_dir, upgrade_ignored_xattrs=True,
+        expected_output=[
+          'Paths: 2 total (3b)',
+          'Upgraded manifest ignored xattrs'
+        ]
+      )
+
+      # Already upgraded, subsequent run prints nothing extra
+      DoSync(
+        root_dir, upgrade_ignored_xattrs=True,
+        expected_output=['Paths: 2 total (3b)']
+      )
 
   def testLegacyManifestHistoricalInference(self):
     with TempDir() as test_dir:
@@ -2813,7 +2848,8 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
     DoSync(
       root_dir, upgrade_ignored_xattrs=True,
       expected_output=['.f......x f1',
-                       'Paths: 2 total (3b), 1 synced (3b)']
+                       'Paths: 2 total (3b), 1 synced (3b)',
+                       'Upgraded manifest ignored xattrs']
     )
 
     # Manifest on disk should now have recorded current ignored xattrs
@@ -2821,6 +2857,12 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
     manifest_upgraded.Read()
     AssertEquals(True, manifest_upgraded.HasRecordedIgnoredXattrs())
     AssertEquals(True, lib.AreIgnoredXattrsEqual(lib.IGNORED_XATTR_KEYS, manifest_upgraded.GetIgnoredXattrKeys()))
+
+    # Subsequent sync with --upgrade-ignored-xattrs: already up to date, prints nothing extra
+    DoSync(
+      root_dir, upgrade_ignored_xattrs=True,
+      expected_output=['Paths: 2 total (3b)']
+    )
 
     # Subsequent verify runs clean without warnings
     DoVerify(root_dir, checksum_all=True,

@@ -401,6 +401,9 @@ class ChecksumsSyncer(object):
       if not self.dry_run:
         os.rename(self.manifest.GetPath(), self.basis_manifest.GetPath())
 
+    if manifest_headers_differ:
+      print('Upgraded manifest ignored xattrs', file=self.output)
+
     return True
 
   def _SyncInternal(self):
