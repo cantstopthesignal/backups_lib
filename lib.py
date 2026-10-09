@@ -1898,8 +1898,15 @@ def Rsync(src_path, dest_path, output, dry_run=False, verbose=False, link_dest=N
     src_path = MakeRsyncDirname(src_path)
     dest_path = MakeRsyncDirname(dest_path)
 
+  # NOTE: rsync 3.5.1 introduced an upstream regression where combining -n (--dry-run),
+  # -X (--xattrs), and --link-dest causes gen_entry_copy_xattrs to unconditionally attempt
+  # opening non-existent destination subdirectories (openat fails with ENOENT / exit code 23).
+  # As a workaround, omit -X when performing a dry run with --link-dest. We may want to undo
+  # this workaround once upstream rsync (e.g. 3.5.2+) fixes this regression.
+  archive_flag = '-a' if (dry_run and link_dest is not None) else '-aX'
+
   cmd = [GetRsyncBin(),
-         '-aX',
+         archive_flag,
          '--numeric-ids',
          '--no-specials',
          '--no-devices']
