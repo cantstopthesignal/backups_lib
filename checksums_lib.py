@@ -387,6 +387,9 @@ class ChecksumsSyncer(object):
        not lib.AreIgnoredXattrsEqual(self.basis_manifest.GetIgnoredXattrKeys(),
                                      self.manifest.GetIgnoredXattrKeys())))
 
+    if manifest_headers_differ:
+      print('Upgraded manifest ignored xattrs', file=self.output)
+
     if self.total_synced_paths or manifest_headers_differ:
       if not self.dry_run:
         self.manifest.Write()
@@ -400,9 +403,6 @@ class ChecksumsSyncer(object):
 
       if not self.dry_run:
         os.rename(self.manifest.GetPath(), self.basis_manifest.GetPath())
-
-    if manifest_headers_differ:
-      print('Upgraded manifest ignored xattrs', file=self.output)
 
     return True
 

@@ -2772,6 +2772,34 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
         expected_output=['Paths: 2 total (3b)']
       )
 
+    # Test upgrade with --interactive shows 'Upgraded manifest ignored xattrs' before 'Apply update?'
+    even_newer_ignored = list(newer_ignored) + ['interactive.key']
+    with ReplaceIgnoredXattrKeys(even_newer_ignored):
+      with InteractiveCheckerReadyResults(
+          checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
+        interactive_checker.AddReadyResult(False)
+        DoSync(
+          root_dir, upgrade_ignored_xattrs=True, interactive=True,
+          expected_success=False,
+          expected_output=[
+            'Paths: 2 total (3b)',
+            'Upgraded manifest ignored xattrs',
+            'Apply update? (y/N): n',
+            '*** Cancelled ***'
+          ]
+        )
+      with InteractiveCheckerReadyResults(
+          checksums_lib.ChecksumsSyncer.INTERACTIVE_CHECKER) as interactive_checker:
+        interactive_checker.AddReadyResult(True)
+        DoSync(
+          root_dir, upgrade_ignored_xattrs=True, interactive=True,
+          expected_output=[
+            'Paths: 2 total (3b)',
+            'Upgraded manifest ignored xattrs',
+            'Apply update? (y/N): y'
+          ]
+        )
+
   def testLegacyManifestHistoricalInference(self):
     with TempDir() as test_dir:
       self.RunLegacyTest(test_dir)
