@@ -2694,7 +2694,7 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
       DoVerify(
         root_dir, checksum_all=True,
         expected_output=[
-          'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+          '*** Warning: Manifest ignored xattrs are out of date compared to current configuration',
           '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
           'Paths: 2 total (3b), 1 checksummed (3b)'
         ])
@@ -2708,7 +2708,7 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
       DoSync(
         root_dir,
         expected_output=[
-          'Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
+          '*** Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
           'Paths: 2 total (3b)'
         ])
 
@@ -2764,10 +2764,10 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
     DoVerify(
       root_dir, checksum_all=True,
       expected_output=[
-        'Warning: Manifest does not record ignored xattrs;'
+        '*** Warning: Manifest does not record ignored xattrs;'
         ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
         % (epoch5_date, epoch5_desc),
-        'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+        '*** Warning: Manifest ignored xattrs are out of date compared to current configuration',
         '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
         'Paths: 2 total (3b), 1 checksummed (3b)'
       ])
@@ -2781,10 +2781,10 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
     DoVerify(
       root_dir, checksum_all=True, legacy_xattr_date='2024-05-01',
       expected_output=[
-        'Warning: Manifest does not record ignored xattrs;'
+        '*** Warning: Manifest does not record ignored xattrs;'
         ' using historical implied ignored xattrs based on specified legacy date (2024-05-01) (Epoch: %s)'
         % epoch5_desc,
-        'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+        '*** Warning: Manifest ignored xattrs are out of date compared to current configuration',
         '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
         'Paths: 2 total (3b), 1 checksummed (3b)'
       ])
@@ -2793,10 +2793,10 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
     DoSync(
       root_dir,
       expected_output=[
-        'Warning: Manifest does not record ignored xattrs;'
+        '*** Warning: Manifest does not record ignored xattrs;'
         ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
         % (epoch5_date, epoch5_desc),
-        'Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
+        '*** Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
         'Paths: 2 total (3b)'
       ])
 

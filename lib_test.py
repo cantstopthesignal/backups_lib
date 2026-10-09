@@ -1413,7 +1413,7 @@ class ManifestIgnoredXattrsTestCase(BaseTestCase):
       success = verifier.Verify()
       output_str = output.getvalue()
       AssertEquals(True, success)
-      AssertEquals(True, 'Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
+      AssertEquals(True, '*** Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
 
 
 class HistoricalIgnoredXattrsTestCase(BaseTestCase):
@@ -1532,9 +1532,9 @@ class HistoricalIgnoredXattrsTestCase(BaseTestCase):
       success = verifier.Verify()
       output_str = output.getvalue()
       AssertEquals(True, success)
-      AssertEquals(True, 'Warning: Manifest does not record ignored xattrs;' in output_str)
+      AssertEquals(True, '*** Warning: Manifest does not record ignored xattrs;' in output_str)
       AssertEquals(True, 'Added com.apple.macl' in output_str)
-      AssertEquals(True, 'Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
+      AssertEquals(True, '*** Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
 
 
 if __name__ == '__main__':

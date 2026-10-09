@@ -3242,13 +3242,13 @@ class ManifestVerifier(object):
 
     if not self.ignore_xattrs and self.warn_out_of_date_ignored_xattrs:
       if was_inferred:
-        print('Warning: Manifest does not record ignored xattrs;'
+        print('*** Warning: Manifest does not record ignored xattrs;'
               ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
                 source_desc, epoch_desc), file=self.output)
         if not AreIgnoredXattrsEqual(effective_ignored_xattrs, IGNORED_XATTR_KEYS):
-          print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+          print('*** Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
       elif not AreIgnoredXattrsEqual(effective_ignored_xattrs, IGNORED_XATTR_KEYS):
-        print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+        print('*** Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
 
     missing_paths = []
     for path in self.manifest.GetPaths():

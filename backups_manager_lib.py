@@ -1312,14 +1312,14 @@ class BackupsVerifier(object):
       lib.GetManifestLegacyIgnoredXattrs(
         manifest, manifest_path=backup.GetManifestPath(), legacy_date=self.legacy_xattr_date))
     if was_inferred:
-      print('Warning: Backup %s manifest does not record ignored xattrs;'
+      print('*** Warning: Backup %s manifest does not record ignored xattrs;'
             ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
               backup.GetName(), source_desc, epoch_desc), file=self.output)
       if not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
-        print('Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
+        print('*** Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
         print('  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)', file=self.output)
     elif not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
-      print('Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
+      print('*** Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
       print('  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)', file=self.output)
 
     if self.full:

@@ -3402,7 +3402,7 @@ class UpgradeBackupsIgnoredXattrsTestCase(BaseTestCase):
       DoVerifyBackups(
         config,
         expected_output=['Verifying 2020-01-01-120000...',
-                         'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+                         '*** Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
                          '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
                          'Paths: 4 total, 3 checksummed (0b)'])
 
@@ -3487,10 +3487,10 @@ class UpgradeBackupsIgnoredXattrsTestCase(BaseTestCase):
       config,
       expected_output=[
         'Verifying 2020-01-01-120000...',
-        'Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
+        '*** Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
         ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
         % (epoch5_date, epoch5_desc),
-        'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+        '*** Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
         '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
         'Paths: 4 total, 3 checksummed (0b)'])
 
@@ -3510,10 +3510,10 @@ class UpgradeBackupsIgnoredXattrsTestCase(BaseTestCase):
       config, legacy_xattr_date='2024-05-01',
       expected_output=[
         'Verifying 2020-01-01-120000...',
-        'Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
+        '*** Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
         ' using historical implied ignored xattrs based on specified legacy date (2024-05-01) (Epoch: %s)'
         % epoch5_desc,
-        'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+        '*** Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
         '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
         'Paths: 4 total, 3 checksummed (0b)'])
 
