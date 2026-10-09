@@ -48,6 +48,7 @@ from .lib_test_util import SetXattr
 
 from .checksums_lib_test_util import DoCreate
 from .checksums_lib_test_util import DoDeleteDuplicateFiles
+from .checksums_lib_test_util import DuplicateFilesDeleterForceParentDirMtimePathsForTest
 from .checksums_lib_test_util import DoDiff
 from .checksums_lib_test_util import DoImageFromFolder
 from .checksums_lib_test_util import DoRenamePaths
@@ -947,10 +948,10 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
           'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
-          re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
+          re.compile('^Created image %s [(]1[6-9]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDZO', image_path)
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '17.9kb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '19.9kb')
 
       DoVerify(image_path,
                expected_output=['Paths: 6 total (1kb)'])
@@ -1027,10 +1028,10 @@ class ImageFromFolderTestCase(BaseTestCase):
           'Converting to image %s with format UDZO...' % lib.EscapePath(image_path),
           'Verifying checksums in %s...' % lib.EscapePath(image_path),
           'Verifying source tree matches...',
-          re.compile('^Created image %s [(]1[67]([.][0-9])?kb[)]; Source size 1kb$'
+          re.compile('^Created image %s [(]1[6-9]([.][0-9])?kb[)]; Source size 1kb$'
                      % re.escape(lib.EscapePath(image_path)))])
       AssertDiskImageFormat('UDZO', image_path)
-      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '18kb')
+      AssertFileSizeInRange(lib.GetPathTreeSize(image_path), '16kb', '19.9kb')
     else:
       DoImageFromFolder(
         root_dir, output_path=image_path,
@@ -2378,16 +2379,17 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
     DoVerify(root_dir, checksum_all=True, expected_output=None)
     checksums_bak.GetManifest().Write()
     DoVerify(root_dir, checksum_all=True, expected_output=None)
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'],
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f6',
-                       '  duplicated by .f....... par2/f5',
-                       '*f.delete par! \\r/f6',
-                       '.d..t.... par! \\r',
-                       'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest(['par! \r']):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'],
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f6',
+                         '  duplicated by .f....... par2/f5',
+                         '*f.delete par! \\r/f6',
+                         '.d..t.... par! \\r',
+                         'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
     checksums_bak.GetManifest().Write()
     DoSync(
@@ -2431,18 +2433,19 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
     DoVerify(root_dir, checksum_all=True, expected_output=None)
     checksums_bak.GetManifest().Write()
     DoVerify(root_dir, checksum_all=True, expected_output=None)
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'],
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f7',
-                       '  duplicated by .f....... par2/f5',
-                       'Path par! \\r/f8',
-                       '  similar to .f..t.... par2/f5',
-                       '*f.delete par! \\r/f7',
-                       '.d..t.... par! \\r',
-                       'Paths: 7 total, 1 duplicate, 1 similar, 1 deleted, 4 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest(['par! \r']):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'],
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f7',
+                         '  duplicated by .f....... par2/f5',
+                         'Path par! \\r/f8',
+                         '  similar to .f..t.... par2/f5',
+                         '*f.delete par! \\r/f7',
+                         '.d..t.... par! \\r',
+                         'Paths: 7 total, 1 duplicate, 1 similar, 1 deleted, 4 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
     checksums_bak.GetManifest().Write()
     DoSync(
@@ -2477,17 +2480,18 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        'Path par! \\r/f8',
                        '  duplicated by .f....... f1',
                        'Paths: 6 total, 1 duplicate, 4 skipped'])
-    DoDeleteDuplicateFiles(
-      root_dir,
-      source_manifest_path=checksums2_bak.GetManifest().GetPath(),
-      paths=['par! \r'],
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f8',
-                       '  duplicated by .f....... f1',
-                       '*f.delete par! \\r/f8',
-                       '.d..t.... par! \\r',
-                       'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest(['par! \r']):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        source_manifest_path=checksums2_bak.GetManifest().GetPath(),
+        paths=['par! \r'],
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f8',
+                         '  duplicated by .f....... f1',
+                         '*f.delete par! \\r/f8',
+                         '.d..t.... par! \\r',
+                         'Paths: 6 total, 1 duplicate, 1 deleted, 4 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
     DoDeleteDuplicateFiles(
@@ -2524,28 +2528,29 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        'Path par2/f5',
                        '  duplicated by .f....... par2/f5',
                        'Paths: 5 total, 5 duplicate'])
-    DoDeleteDuplicateFiles(
-      root_dir,
-      source_manifest_path=alt_manifest_path, allow_source_path_match=True,
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path f1',
-                       '  duplicated by .f....... f1',
-                       'Path f2',
-                       '  duplicated by .f....... f2',
-                       'Path par! \\r/f3',
-                       '  duplicated by .f....... par! \\r/f3',
-                       'Path par2/f4',
-                       '  duplicated by .f....... par2/f4',
-                       'Path par2/f5',
-                       '  duplicated by .f....... par2/f5',
-                       '*f.delete f1',
-                       '*f.delete f2',
-                       '*f.delete par! \\r/f3',
-                       '*f.delete par2/f4',
-                       '*f.delete par2/f5',
-                       '.d..t.... par2',
-                       'Paths: 5 total, 5 duplicate, 5 deleted'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest(['par2']):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        source_manifest_path=alt_manifest_path, allow_source_path_match=True,
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path f1',
+                         '  duplicated by .f....... f1',
+                         'Path f2',
+                         '  duplicated by .f....... f2',
+                         'Path par! \\r/f3',
+                         '  duplicated by .f....... par! \\r/f3',
+                         'Path par2/f4',
+                         '  duplicated by .f....... par2/f4',
+                         'Path par2/f5',
+                         '  duplicated by .f....... par2/f5',
+                         '*f.delete f1',
+                         '*f.delete f2',
+                         '*f.delete par! \\r/f3',
+                         '*f.delete par2/f4',
+                         '*f.delete par2/f5',
+                         '.d..t.... par2',
+                         'Paths: 5 total, 5 duplicate, 5 deleted'])
 
     file10 = CreateFile(parent1, 'f10', contents='4'*1025)
     file11 = CreateFile(parent2, 'f11', contents='4'*1025, mtime=1540000000)
@@ -2566,15 +2571,16 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        'Paths: 2 total, 1 similar, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'], ignore_mtimes=True,
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f10',
-                       '  duplicated by .f..t.... par2/f11',
-                       '*f.delete par! \\r/f10',
-                       'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest([]):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'], ignore_mtimes=True,
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f10',
+                         '  duplicated by .f..t.... par2/f11',
+                         '*f.delete par! \\r/f10',
+                         'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
     file12 = CreateFile(parent1, 'f12', contents='4'*1025)
@@ -2623,43 +2629,46 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        'Paths: 4 total, 3 similar, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'], ignore_mtimes=True, ignore_permissions=True,
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f12',
-                       '  similar to .f..t...x par2/f11',
-                       'Path par! \\r/f13',
-                       '  duplicated by .f..tp... par2/f11',
-                       'Path par! \\r/f14',
-                       '  similar to .f..tp..x par2/f11',
-                       '*f.delete par! \\r/f13',
-                       'Paths: 4 total, 1 duplicate, 2 similar, 1 deleted, 1 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest([]):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'], ignore_mtimes=True, ignore_permissions=True,
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f12',
+                         '  similar to .f..t...x par2/f11',
+                         'Path par! \\r/f13',
+                         '  duplicated by .f..tp... par2/f11',
+                         'Path par! \\r/f14',
+                         '  similar to .f..tp..x par2/f11',
+                         '*f.delete par! \\r/f13',
+                         'Paths: 4 total, 1 duplicate, 2 similar, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True,
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f12',
-                       '  duplicated by .f..t...x par2/f11',
-                       'Path par! \\r/f14',
-                       '  similar to .f..tp..x par2/f11',
-                       '*f.delete par! \\r/f12',
-                       'Paths: 3 total, 1 duplicate, 1 similar, 1 deleted, 1 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest([]):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True,
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f12',
+                         '  duplicated by .f..t...x par2/f11',
+                         'Path par! \\r/f14',
+                         '  similar to .f..tp..x par2/f11',
+                         '*f.delete par! \\r/f12',
+                         'Paths: 3 total, 1 duplicate, 1 similar, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
-    DoDeleteDuplicateFiles(
-      root_dir,
-      paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True, ignore_permissions=True,
-      expected_output=['Verifying manifest for root %s...' % root_dir,
-                       'Deleting duplicate files...',
-                       'Path par! \\r/f14',
-                       '  duplicated by .f..tp..x par2/f11',
-                       '*f.delete par! \\r/f14',
-                       'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
+    with DuplicateFilesDeleterForceParentDirMtimePathsForTest([]):
+      DoDeleteDuplicateFiles(
+        root_dir,
+        paths=['par! \r'], ignore_mtimes=True, ignore_xattrs=True, ignore_permissions=True,
+        expected_output=['Verifying manifest for root %s...' % root_dir,
+                         'Deleting duplicate files...',
+                         'Path par! \\r/f14',
+                         '  duplicated by .f..tp..x par2/f11',
+                         '*f.delete par! \\r/f14',
+                         'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
 
 

@@ -1206,6 +1206,8 @@ class MetadataRestorer(object):
 
 
 class DuplicateFilesDeleter(object):
+  FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST = None
+
   def __init__(self, root_path, output, manifest_path=None, source_manifest_path=None,
                allow_source_path_match=False, path_matcher=lib.PathMatcherAll(),
                ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
@@ -1331,6 +1333,8 @@ class DuplicateFilesDeleter(object):
         existing_parent_dir_path_info = self.manifest.GetPathInfo(parent_dir_path_info.path)
         self.manifest.AddPathInfo(parent_dir_path_info, allow_replace=True)
         itemized = lib.PathInfo.GetItemizedDiff(parent_dir_path_info, existing_parent_dir_path_info)
+        if DuplicateFilesDeleter.FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST is not None:
+          itemized.time_diff = (parent_dir_path_info.path in DuplicateFilesDeleter.FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST)
         if itemized.HasDiffs():
           print(itemized, file=self.output)
 

@@ -34,6 +34,16 @@ def SafeMoveOrCopyForceFromParentDirMtimeChangeForTest():
     checksums_lib.SafeCopyOrMover.FORCE_FROM_PARENT_DIR_MTIME_CHANGE_FOR_TEST = old_value
 
 
+@contextlib.contextmanager
+def DuplicateFilesDeleterForceParentDirMtimePathsForTest(paths):
+  old_value = checksums_lib.DuplicateFilesDeleter.FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST
+  checksums_lib.DuplicateFilesDeleter.FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST = set(paths)
+  try:
+    yield
+  finally:
+    checksums_lib.DuplicateFilesDeleter.FORCE_PARENT_DIR_MTIME_PATHS_FOR_TEST = old_value
+
+
 def DoChecksumsMain(cmd_args, dry_run=False, verbose=False, expected_success=True, expected_output=[]):
   args = []
   if dry_run:
