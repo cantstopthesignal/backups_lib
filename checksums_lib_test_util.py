@@ -88,7 +88,7 @@ def DoDiff(path1, path2, root_path1=None, root_path2=None, manifest_path1=None, 
 
 def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checksum_all=False,
              no_filters=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
-             paths=[], expected_success=True, expected_output=[]):
+             legacy_xattr_date=None, paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['verify', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -102,6 +102,8 @@ def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checks
     cmd_args.append('--ignore-permissions')
   if ignore_xattrs:
     cmd_args.append('--ignore-xattrs')
+  if legacy_xattr_date is not None:
+    cmd_args.extend(['--legacy-xattr-date', legacy_xattr_date])
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
@@ -109,7 +111,8 @@ def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checks
 
 
 def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, interactive=False,
-           detect_renames=True, upgrade_ignored_xattrs=False, paths=[], expected_success=True, expected_output=[]):
+           detect_renames=True, upgrade_ignored_xattrs=False, legacy_xattr_date=None, paths=[],
+           expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -121,6 +124,8 @@ def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, int
     cmd_args.append('--no-detect-renames')
   if upgrade_ignored_xattrs:
     cmd_args.append('--upgrade-ignored-xattrs')
+  if legacy_xattr_date is not None:
+    cmd_args.extend(['--legacy-xattr-date', legacy_xattr_date])
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,

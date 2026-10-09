@@ -2,6 +2,7 @@ import abc
 import argparse
 import array
 import binascii
+import collections
 import contextlib
 import difflib
 import errno
@@ -408,6 +409,224 @@ IGNORED_XATTR_KEYS = [
   'user.drive.stableid',
   re.compile('^com[.]apple[.]metadata:kMDLabel_.*$'),
 ]
+
+
+HISTORICAL_IGNORED_XATTR_EPOCHS = [
+  (
+    1602131169,
+    '2020-10-07',
+    'Initial baseline',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.quarantine',
+    ],
+  ),
+  (
+    1620865124,
+    '2021-05-12',
+    'Added com.apple.macl',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.quarantine',
+    ],
+  ),
+  (
+    1631840609,
+    '2021-09-16',
+    'Added user.drive (members, md5)',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.quarantine',
+      'user.drive.can_manage_team_drive_members',
+      'user.drive.md5',
+    ],
+  ),
+  (
+    1631895628,
+    '2021-09-17',
+    'Added user.drive (shortcut, stableid)',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.quarantine',
+      'user.drive.can_manage_team_drive_members',
+      'user.drive.md5',
+      'user.drive.shortcut.target.stableid',
+      'user.drive.stableid',
+    ],
+  ),
+  (
+    1714511578,
+    '2024-04-30',
+    'Added com.apple.provenance',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.provenance',
+      'com.apple.quarantine',
+      'user.drive.can_manage_team_drive_members',
+      'user.drive.md5',
+      'user.drive.shortcut.target.stableid',
+      'user.drive.stableid',
+    ],
+  ),
+  (
+    1788629327,
+    '2026-09-05',
+    'Added com.docker.grpcfuse.ownership',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.provenance',
+      'com.apple.quarantine',
+      'com.docker.grpcfuse.ownership',
+      'user.drive.can_manage_team_drive_members',
+      'user.drive.md5',
+      'user.drive.shortcut.target.stableid',
+      'user.drive.stableid',
+    ],
+  ),
+  (
+    1788893940,
+    '2026-09-08',
+    'Added com.apple.metadata:kMDLabel_* regex',
+    [
+      'com.apple.avkit.thumbnailCacheEncryptionKey',
+      'com.apple.avkit.thumbnailCacheIdentifier',
+      'com.apple.diskimages.recentcksum',
+      'com.apple.lastuseddate#PS',
+      'com.apple.macl',
+      'com.apple.provenance',
+      'com.apple.quarantine',
+      'com.docker.grpcfuse.ownership',
+      'user.drive.can_manage_team_drive_members',
+      'user.drive.md5',
+      'user.drive.shortcut.target.stableid',
+      'user.drive.stableid',
+      re.compile('^com[.]apple[.]metadata:kMDLabel_.*$'),
+    ],
+  ),
+]
+
+
+def ParseTimestamp(timestamp_input):
+  if timestamp_input is None:
+    return None
+  if isinstance(timestamp_input, (int, float)):
+    return float(timestamp_input)
+  if isinstance(timestamp_input, str):
+    s = timestamp_input.strip()
+    if re.match(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}$', s):
+      return float(time.mktime(time.strptime(s, '%Y-%m-%d-%H%M%S')))
+    if re.match(r'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$', s):
+      return float(time.mktime(time.strptime(s, '%Y-%m-%d %H:%M:%S')))
+    if re.match(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$', s):
+      return float(time.mktime(time.strptime(s, '%Y-%m-%d')))
+    try:
+      return float(s)
+    except ValueError:
+      raise ValueError('Invalid date/timestamp format: %r' % timestamp_input)
+  raise ValueError('Unsupported timestamp type: %r' % type(timestamp_input))
+
+
+def GetHistoricalIgnoredXattrs(timestamp=None):
+  if timestamp is None:
+    return (list(IGNORED_XATTR_KEYS), 'Current configuration', time.strftime('%Y-%m-%d'))
+  ts = ParseTimestamp(timestamp)
+  matched_epoch = HISTORICAL_IGNORED_XATTR_EPOCHS[0]
+  for epoch in HISTORICAL_IGNORED_XATTR_EPOCHS:
+    epoch_ts, epoch_date, epoch_desc, epoch_keys = epoch
+    if ts >= epoch_ts:
+      matched_epoch = epoch
+    else:
+      break
+  return (list(matched_epoch[3]), matched_epoch[2], matched_epoch[1])
+
+
+class ManifestLegacyIgnoredXattrsResult(
+    collections.namedtuple('ManifestLegacyIgnoredXattrsResult',
+                           ['ignored_keys', 'was_inferred', 'epoch_desc', 'source_desc'])):
+  """Result of resolving legacy or recorded ignored xattr keys for a manifest.
+
+  Attributes:
+    ignored_keys (list): The list of effective ignored xattr keys/patterns to use
+      (either recorded in the manifest, or historically inferred).
+    was_inferred (bool): True if the ignored xattr keys were inferred using
+      historical epochs (because the manifest is a legacy manifest that lacked
+      an embedded ignored xattr list), False if they were explicitly recorded.
+    epoch_desc (str or None): A human-readable description of the matched
+      historical epoch (e.g. 'Added com.apple.provenance'), or None if not inferred.
+    source_desc (str or None): A human-readable description of where the timestamp
+      used for inference came from (e.g. 'manifest modification time (2024-05-01)'
+      or 'specified legacy date (2021-06-01)'), or None if not inferred.
+  """
+
+
+def GetManifestLegacyIgnoredXattrs(manifest, manifest_path=None, legacy_date=None):
+  """Resolves the ignored xattr keys for a manifest, looking up historical epochs if legacy.
+
+  If the manifest explicitly records its ignored xattrs (a modern manifest),
+  those recorded keys are returned directly with was_inferred=False.
+
+  If the manifest does not record ignored xattrs (a legacy manifest), this function
+  infers which historical ignored xattrs were active when the manifest was created
+  or last written, based on either an explicitly specified legacy_date or the
+  modification time (st_mtime) of the manifest file on disk.
+
+  Args:
+    manifest: The Manifest instance to inspect.
+    manifest_path: Optional path to the manifest file on disk. Defaults to manifest.path.
+    legacy_date: Optional explicit timestamp or date string (e.g. '2021-06-01')
+      to override historical inference instead of using the manifest file's mtime.
+
+  Returns:
+    ManifestLegacyIgnoredXattrsResult with attributes:
+      ignored_keys (list): The effective ignored xattr keys/patterns to use.
+      was_inferred (bool): True if keys were historically inferred, False if recorded.
+      epoch_desc (str or None): Description of the matched historical epoch, or None.
+      source_desc (str or None): Description of timestamp origin (e.g. mtime or flag), or None.
+  """
+  if manifest.HasRecordedIgnoredXattrs():
+    return ManifestLegacyIgnoredXattrsResult(manifest.GetIgnoredXattrKeys(), False, None, None)
+
+  timestamp = None
+  source_desc = None
+  if legacy_date is not None:
+    timestamp = ParseTimestamp(legacy_date)
+    source_desc = 'specified legacy date (%s)' % legacy_date
+  else:
+    if manifest_path is None:
+      manifest_path = manifest.path
+    if manifest_path and os.path.exists(manifest_path):
+      timestamp = os.stat(manifest_path).st_mtime
+      source_desc = 'manifest modification time (%s)' % time.strftime('%Y-%m-%d', time.localtime(timestamp))
+
+  if timestamp is not None:
+    keys, epoch_desc, epoch_date = GetHistoricalIgnoredXattrs(timestamp)
+    return ManifestLegacyIgnoredXattrsResult(keys, True, epoch_desc, source_desc or epoch_date)
+  else:
+    return ManifestLegacyIgnoredXattrsResult(
+      list(IGNORED_XATTR_KEYS), True, 'Current configuration', 'current configuration')
 
 
 def IgnoredXattrSortKey(item):
@@ -2991,7 +3210,7 @@ class ManifestVerifier(object):
   def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True,
                checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
                verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
-               warn_out_of_date_ignored_xattrs=True):
+               warn_out_of_date_ignored_xattrs=True, legacy_xattr_date=None):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
@@ -3007,17 +3226,22 @@ class ManifestVerifier(object):
     self.ignore_permissions = ignore_permissions
     self.ignore_xattrs = ignore_xattrs
     self.warn_out_of_date_ignored_xattrs = warn_out_of_date_ignored_xattrs
+    self.legacy_xattr_date = legacy_xattr_date
 
   def Verify(self):
-    manifest_ignored_xattrs = self.manifest.GetIgnoredXattrKeys()
-    if manifest_ignored_xattrs is None:
-      effective_ignored_xattrs = IGNORED_XATTR_KEYS
-    elif not AreIgnoredXattrsEqual(manifest_ignored_xattrs, IGNORED_XATTR_KEYS):
-      if not self.ignore_xattrs and self.warn_out_of_date_ignored_xattrs:
+    (effective_ignored_xattrs, was_inferred, epoch_desc, source_desc) = (
+      GetManifestLegacyIgnoredXattrs(
+        self.manifest, manifest_path=self.manifest.path, legacy_date=self.legacy_xattr_date))
+
+    if not self.ignore_xattrs and self.warn_out_of_date_ignored_xattrs:
+      if was_inferred:
+        print('Warning: Manifest does not record ignored xattrs;'
+              ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
+                source_desc, epoch_desc), file=self.output)
+        if not AreIgnoredXattrsEqual(effective_ignored_xattrs, IGNORED_XATTR_KEYS):
+          print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+      elif not AreIgnoredXattrsEqual(effective_ignored_xattrs, IGNORED_XATTR_KEYS):
         print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
-      effective_ignored_xattrs = manifest_ignored_xattrs
-    else:
-      effective_ignored_xattrs = manifest_ignored_xattrs
 
     missing_paths = []
     for path in self.manifest.GetPaths():

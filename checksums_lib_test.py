@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), os.path.pardir))
@@ -2726,6 +2727,95 @@ class UpgradeIgnoredXattrsTestCase(BaseTestCase):
       # Subsequent verify runs clean without warnings
       DoVerify(root_dir, checksum_all=True,
                expected_output=['Paths: 2 total (3b), 1 checksummed (3b)'])
+
+  def testLegacyManifestHistoricalInference(self):
+    with TempDir() as test_dir:
+      self.RunLegacyTest(test_dir)
+
+  def RunLegacyTest(self, test_dir):
+    root_dir = CreateDir(test_dir, 'root')
+
+    # Epoch 5 timestamp: 2024-05-01 (between 1714511578 (2024-04-30) and 1788629327 (2026-09-05))
+    epoch5_ts = 1714600000.0
+    epoch5_date = time.strftime('%Y-%m-%d', time.localtime(epoch5_ts))
+    epoch5_desc = 'Added com.apple.provenance'
+    epoch5_keys = lib.GetHistoricalIgnoredXattrs(epoch5_ts)[0]
+
+    with ReplaceIgnoredXattrKeys(epoch5_keys):
+      DoCreate(root_dir, expected_output=None)
+
+      file1 = CreateFile(root_dir, 'f1', contents='ABC')
+      xattr_obj = lib.Xattr(file1)
+      # com.docker.grpcfuse.ownership is NOT ignored in epoch 5, but IS ignored in current configuration
+      xattr_obj['com.docker.grpcfuse.ownership'] = b'1000:1000'
+
+      DoSync(root_dir, expected_output=None)
+
+    manifest_path = os.path.join(root_dir, '.metadata', lib.MANIFEST_FILENAME)
+
+    # Convert to legacy manifest (pb.ignored_xattrs unset) and set mtime to epoch 5
+    manifest = lib.Manifest(manifest_path)
+    manifest.Read()
+    manifest.SetIgnoredXattrKeys(None)
+    manifest.Write()
+    os.utime(manifest_path, (epoch5_ts, epoch5_ts))
+
+    # Verify should infer epoch from manifest mtime, warn, and succeed
+    DoVerify(
+      root_dir, checksum_all=True,
+      expected_output=[
+        'Warning: Manifest does not record ignored xattrs;'
+        ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
+        % (epoch5_date, epoch5_desc),
+        'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+        '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
+        'Paths: 2 total (3b), 1 checksummed (3b)'
+      ])
+
+    # Ensure manifest on disk was not modified by verify
+    manifest_after_verify = lib.Manifest(manifest_path)
+    manifest_after_verify.Read()
+    AssertEquals(False, manifest_after_verify.HasRecordedIgnoredXattrs())
+
+    # Verify with explicit --legacy-xattr-date override
+    DoVerify(
+      root_dir, checksum_all=True, legacy_xattr_date='2024-05-01',
+      expected_output=[
+        'Warning: Manifest does not record ignored xattrs;'
+        ' using historical implied ignored xattrs based on specified legacy date (2024-05-01) (Epoch: %s)'
+        % epoch5_desc,
+        'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+        '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
+        'Paths: 2 total (3b), 1 checksummed (3b)'
+      ])
+
+    # Sync without --upgrade-ignored-xattrs: warns, retains legacy status
+    DoSync(
+      root_dir,
+      expected_output=[
+        'Warning: Manifest does not record ignored xattrs;'
+        ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
+        % (epoch5_date, epoch5_desc),
+        'Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
+        'Paths: 2 total (3b)'
+      ])
+
+    # Sync WITH --upgrade-ignored-xattrs: upgrades manifest to latest
+    DoSync(
+      root_dir, upgrade_ignored_xattrs=True,
+      expected_output=['.f......x f1',
+                       'Paths: 2 total (3b), 1 synced (3b)']
+    )
+
+    # Manifest on disk should now have recorded current ignored xattrs
+    manifest_upgraded = lib.Manifest(manifest_path)
+    manifest_upgraded.Read()
+    AssertEquals(True, manifest_upgraded.HasRecordedIgnoredXattrs())
+    AssertEquals(True, lib.AreIgnoredXattrsEqual(lib.IGNORED_XATTR_KEYS, manifest_upgraded.GetIgnoredXattrKeys()))
+
+    # Subsequent verify runs clean without warnings
+    DoVerify(root_dir, checksum_all=True,
+             expected_output=['Paths: 2 total (3b), 1 checksummed (3b)'])
 
 
 if __name__ == '__main__':

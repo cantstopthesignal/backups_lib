@@ -102,6 +102,9 @@ class Checksums(object):
   def GetManifest(self):
     return self.manifest
 
+  def GetManifestPath(self):
+    return self.manifest.GetPath()
+
 
 class ChecksumsCreator(object):
   def __init__(self, root_path, output, manifest_path=None, dry_run=False, verbose=False):
@@ -215,7 +218,8 @@ class ChecksumsVerifier(object):
                path_matcher=lib.PathMatcherAll(), checksum_path_matcher=lib.PathMatcherNone(),
                dry_run=False, verbose=False,
                encryption_manager=None, hdiutil_verify=True, filters=CHECKSUM_FILTERS,
-               ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False):
+               ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
+               legacy_xattr_date=None):
     if root_or_image_path is None:
       raise Exception('root_or_image_path cannot be None')
     self.root_or_image_path = root_or_image_path
@@ -232,6 +236,7 @@ class ChecksumsVerifier(object):
     self.ignore_mtimes = ignore_mtimes
     self.ignore_permissions = ignore_permissions
     self.ignore_xattrs = ignore_xattrs
+    self.legacy_xattr_date = legacy_xattr_date
 
   def Verify(self):
     if lib.IsLikelyPathToDiskImage(self.root_or_image_path):
@@ -250,10 +255,18 @@ class ChecksumsVerifier(object):
       return False
 
     manifest = self.checksums.GetManifest()
-    manifest_ignored_xattrs = manifest.GetIgnoredXattrKeys()
-    if (manifest_ignored_xattrs is not None and
-        not lib.AreIgnoredXattrsEqual(manifest_ignored_xattrs, lib.IGNORED_XATTR_KEYS)):
-      if not self.ignore_xattrs:
+    (effective_ignored_xattrs, was_inferred, epoch_desc, source_desc) = (
+      lib.GetManifestLegacyIgnoredXattrs(
+        manifest, manifest_path=self.checksums.GetManifestPath(), legacy_date=self.legacy_xattr_date))
+    if not self.ignore_xattrs:
+      if was_inferred:
+        print('Warning: Manifest does not record ignored xattrs;'
+              ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
+                source_desc, epoch_desc), file=self.output)
+        if not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
+          print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+          print('  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)', file=self.output)
+      elif not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
         print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
         print('  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)', file=self.output)
 
@@ -264,7 +277,8 @@ class ChecksumsVerifier(object):
         filters=self.filters, manifest_on_top=False, checksum_path_matcher=self.checksum_path_matcher,
         escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose,
         ignore_mtimes=self.ignore_mtimes, ignore_permissions=self.ignore_permissions,
-        ignore_xattrs=self.ignore_xattrs, warn_out_of_date_ignored_xattrs=False)
+        ignore_xattrs=self.ignore_xattrs, warn_out_of_date_ignored_xattrs=False,
+        legacy_xattr_date=self.legacy_xattr_date)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
 
@@ -289,7 +303,7 @@ class ChecksumsSyncer(object):
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
                detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
-               upgrade_ignored_xattrs=False):
+               upgrade_ignored_xattrs=False, legacy_xattr_date=None):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -302,6 +316,7 @@ class ChecksumsSyncer(object):
     self.dry_run = dry_run
     self.verbose = verbose
     self.upgrade_ignored_xattrs = upgrade_ignored_xattrs
+    self.legacy_xattr_date = legacy_xattr_date
     self.effective_ignored_xattrs = None
     self.checksums = None
     self.basis_manifest = None
@@ -335,17 +350,25 @@ class ChecksumsSyncer(object):
     self.manifest.SetPath(GetManifestNewPath(self.basis_manifest.GetPath()))
     self.scan_manifest = lib.Manifest()
 
-    basis_ignored_xattrs = self.basis_manifest.GetIgnoredXattrKeys()
-    manifest_out_of_date = (basis_ignored_xattrs is not None and
-                            not lib.AreIgnoredXattrsEqual(basis_ignored_xattrs, lib.IGNORED_XATTR_KEYS))
+    (effective_ignored_xattrs, was_inferred, epoch_desc, source_desc) = (
+      lib.GetManifestLegacyIgnoredXattrs(
+        self.basis_manifest, manifest_path=self.checksums.GetManifestPath(),
+        legacy_date=self.legacy_xattr_date))
+    manifest_out_of_date = not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS)
     if self.upgrade_ignored_xattrs:
       self.effective_ignored_xattrs = list(lib.IGNORED_XATTR_KEYS)
       self.manifest.SetIgnoredXattrKeys(list(lib.IGNORED_XATTR_KEYS))
     else:
-      if manifest_out_of_date:
+      if was_inferred:
+        print('Warning: Manifest does not record ignored xattrs;'
+              ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
+                source_desc, epoch_desc), file=self.output)
+        if manifest_out_of_date:
+          print('Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)', file=self.output)
+      elif manifest_out_of_date:
         print('Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)', file=self.output)
-      self.effective_ignored_xattrs = basis_ignored_xattrs if basis_ignored_xattrs is not None else list(lib.IGNORED_XATTR_KEYS)
-      self.manifest.SetIgnoredXattrKeys(basis_ignored_xattrs)
+      self.effective_ignored_xattrs = effective_ignored_xattrs
+      self.manifest.SetIgnoredXattrKeys(self.basis_manifest.GetIgnoredXattrKeys())
 
     self.escape_key_detector = lib.EscapeKeyDetector()
     escape_key_pressed = False
@@ -360,8 +383,9 @@ class ChecksumsSyncer(object):
 
     manifest_headers_differ = (
       self.upgrade_ignored_xattrs and
-      not lib.AreIgnoredXattrsEqual(self.basis_manifest.GetIgnoredXattrKeys(),
-                                    self.manifest.GetIgnoredXattrKeys()))
+      (not self.basis_manifest.HasRecordedIgnoredXattrs() or
+       not lib.AreIgnoredXattrsEqual(self.basis_manifest.GetIgnoredXattrKeys(),
+                                     self.manifest.GetIgnoredXattrKeys())))
 
     if self.total_synced_paths or manifest_headers_differ:
       if not self.dry_run:
@@ -1369,6 +1393,7 @@ def DoVerify(args, output):
   parser.add_argument('--ignore-mtimes', action='store_true')
   parser.add_argument('--ignore-permissions', action='store_true')
   parser.add_argument('--ignore-xattrs', action='store_true')
+  parser.add_argument('--legacy-xattr-date')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -1385,7 +1410,7 @@ def DoVerify(args, output):
     verbose=args.verbose, encryption_manager=lib.EncryptionManager(output=output),
     hdiutil_verify=cmd_args.hdiutil_verify, filters=filters,
     ignore_mtimes=cmd_args.ignore_mtimes, ignore_permissions=cmd_args.ignore_permissions,
-    ignore_xattrs=cmd_args.ignore_xattrs)
+    ignore_xattrs=cmd_args.ignore_xattrs, legacy_xattr_date=cmd_args.legacy_xattr_date)
   return checksums_verifier.Verify()
 
 
@@ -1397,6 +1422,7 @@ def DoSync(args, output):
   parser.add_argument('--interactive', action='store_true')
   parser.add_argument('--no-detect-renames', dest='detect_renames', action='store_false')
   parser.add_argument('--upgrade-ignored-xattrs', action='store_true')
+  parser.add_argument('--legacy-xattr-date')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -1407,7 +1433,8 @@ def DoSync(args, output):
     checksum_all=cmd_args.checksum_all, interactive=cmd_args.interactive,
     detect_renames=cmd_args.detect_renames, path_matcher=path_matcher,
     dry_run=args.dry_run, verbose=args.verbose,
-    upgrade_ignored_xattrs=cmd_args.upgrade_ignored_xattrs)
+    upgrade_ignored_xattrs=cmd_args.upgrade_ignored_xattrs,
+    legacy_xattr_date=cmd_args.legacy_xattr_date)
   return checksums_syncer.Sync()
 
 

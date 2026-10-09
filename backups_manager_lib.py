@@ -1240,7 +1240,7 @@ class BackupsLister(object):
 class BackupsVerifier(object):
   def __init__(self, config, output, min_backup=None, max_backup=None, full=True,
                continue_on_error=False, hdiutil_verify=True, encryption_manager=None,
-               checksum_all=True, dry_run=False, verbose=False):
+               checksum_all=True, dry_run=False, verbose=False, legacy_xattr_date=None):
     self.config = config
     self.output = output
     self.min_backup = min_backup
@@ -1252,6 +1252,7 @@ class BackupsVerifier(object):
     self.checksum_all = checksum_all
     self.dry_run = dry_run
     self.verbose = verbose
+    self.legacy_xattr_date = legacy_xattr_date
 
   def Verify(self):
     errors_encountered = False
@@ -1307,15 +1308,19 @@ class BackupsVerifier(object):
     manifest = lib.Manifest(backup.GetManifestPath())
     manifest.Read()
 
-    manifest_ignored_xattrs = manifest.GetIgnoredXattrKeys()
-    if manifest_ignored_xattrs is None:
-      effective_ignored_xattrs = lib.IGNORED_XATTR_KEYS
-    elif not lib.AreIgnoredXattrsEqual(manifest_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
+    (effective_ignored_xattrs, was_inferred, epoch_desc, source_desc) = (
+      lib.GetManifestLegacyIgnoredXattrs(
+        manifest, manifest_path=backup.GetManifestPath(), legacy_date=self.legacy_xattr_date))
+    if was_inferred:
+      print('Warning: Backup %s manifest does not record ignored xattrs;'
+            ' using historical implied ignored xattrs based on %s (Epoch: %s)' % (
+              backup.GetName(), source_desc, epoch_desc), file=self.output)
+      if not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
+        print('Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
+        print('  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)', file=self.output)
+    elif not lib.AreIgnoredXattrsEqual(effective_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
       print('Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
       print('  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)', file=self.output)
-      effective_ignored_xattrs = manifest_ignored_xattrs
-    else:
-      effective_ignored_xattrs = manifest_ignored_xattrs
 
     if self.full:
       return self._VerifyBackupFull(
@@ -2407,6 +2412,7 @@ def DoVerifyBackups(args, output):
   parser.add_argument('--continue-on-error', action='store_true')
   parser.add_argument('--no-hdiutil-verify', dest='hdiutil_verify', action='store_false')
   parser.add_argument('--no-checksum-all', dest='checksum_all', action='store_false')
+  parser.add_argument('--legacy-xattr-date')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2415,7 +2421,8 @@ def DoVerifyBackups(args, output):
     config, output=output, min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     full=cmd_args.full, continue_on_error=cmd_args.continue_on_error,
     hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(output=output),
-    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose)
+    checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose,
+    legacy_xattr_date=cmd_args.legacy_xattr_date)
   return verifier.Verify()
 
 
@@ -2657,7 +2664,8 @@ def DoDeleteLocalContentInBackupScope(args, output):
 
 class BackupsIgnoredXattrsUpgrader(object):
   def __init__(self, config, output, min_backup=None, max_backup=None,
-               force=False, encryption_manager=None, dry_run=False, verbose=False):
+               force=False, encryption_manager=None, dry_run=False, verbose=False,
+               legacy_xattr_date=None):
     self.config = config
     self.output = output
     self.min_backup = min_backup
@@ -2666,6 +2674,7 @@ class BackupsIgnoredXattrsUpgrader(object):
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.legacy_xattr_date = legacy_xattr_date
 
   def Upgrade(self):
     print('Upgrading ignored xattrs in backups to latest: %s' % ', '.join(
@@ -2709,9 +2718,11 @@ class BackupsIgnoredXattrsUpgrader(object):
     manifest = lib.Manifest(backup.GetManifestPath())
     manifest.Read()
 
-    old_ignored_xattrs = manifest.GetIgnoredXattrKeys()
-    if (old_ignored_xattrs is not None and
-        lib.AreIgnoredXattrsEqual(old_ignored_xattrs, lib.IGNORED_XATTR_KEYS) and
+    (effective_old_xattrs, was_inferred, epoch_desc, source_desc) = (
+      lib.GetManifestLegacyIgnoredXattrs(
+        manifest, manifest_path=backup.GetManifestPath(), legacy_date=self.legacy_xattr_date))
+    if (manifest.HasRecordedIgnoredXattrs() and
+        lib.AreIgnoredXattrsEqual(effective_old_xattrs, lib.IGNORED_XATTR_KEYS) and
         not self.force):
       print('Backup %s ignored xattrs already up to date.' % backup.GetName(), file=self.output)
       return
@@ -2766,6 +2777,7 @@ def DoUpgradeBackupsIgnoredXattrs(args, output):
   parser.add_argument('--min-backup')
   parser.add_argument('--max-backup')
   parser.add_argument('--force', action='store_true')
+  parser.add_argument('--legacy-xattr-date')
   cmd_args = parser.parse_args(args.cmd_args)
 
   config = GetBackupsConfigFromArgs(cmd_args)
@@ -2774,7 +2786,8 @@ def DoUpgradeBackupsIgnoredXattrs(args, output):
     config, output=output, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup, force=cmd_args.force,
     encryption_manager=lib.EncryptionManager(output=output),
-    dry_run=args.dry_run, verbose=args.verbose)
+    dry_run=args.dry_run, verbose=args.verbose,
+    legacy_xattr_date=cmd_args.legacy_xattr_date)
   return upgrader.Upgrade()
 
 

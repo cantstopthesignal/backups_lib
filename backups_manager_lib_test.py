@@ -3442,6 +3442,107 @@ class UpgradeBackupsIgnoredXattrsTestCase(BaseTestCase):
       DoVerifyBackups(config, expected_output=['Verifying 2020-01-01-120000...',
                                                'Paths: 4 total, 3 checksummed (0b)'])
 
+  def testLegacyManifestHistoricalInference(self):
+    if platform.system() != lib.PLATFORM_DARWIN:
+      return
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunLegacyTest(test_dir)
+
+  def RunLegacyTest(self, test_dir):
+    config = CreateConfig(test_dir)
+
+    # Epoch 5 timestamp: 2024-05-01 (between 1714511578 (2024-04-30) and 1788629327 (2026-09-05))
+    epoch5_ts = 1714600000.0
+    epoch5_date = time.strftime('%Y-%m-%d', time.localtime(epoch5_ts))
+    epoch5_desc = 'Added com.apple.provenance'
+    epoch5_keys = lib.GetHistoricalIgnoredXattrs(epoch5_ts)[0]
+
+    with ReplaceIgnoredXattrKeys(epoch5_keys):
+      CreateBackupsBundle(config)
+      with lib.ImageAttacher(config.image_path, config.mount_path, readonly=False,
+                             browseable=False) as attacher:
+        f1_path = os.path.join(attacher.GetMountPoint(), backups_manager_lib.BACKUPS_SUBDIR,
+                               '2020-01-01-120000', 'Root', 'f1')
+        lib.Xattr(f1_path)['com.docker.grpcfuse.ownership'] = b'1000:1000'
+
+      CreateLatestManifestCheckpoint(config)
+
+      # Make manifest legacy (pb.ignored_xattrs unset) and set manifest file mtime to epoch 5
+      backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=False, browseable=False)
+      try:
+        backup1 = backups_manager.GetBackup('2020-01-01-120000')
+        manifest_path = backup1.GetManifestPath()
+        manifest = lib.Manifest(manifest_path)
+        manifest.Read()
+        manifest.SetIgnoredXattrKeys(None)
+        manifest.Write()
+        os.utime(manifest_path, (epoch5_ts, epoch5_ts))
+      finally:
+        backups_manager.Close()
+
+    # Under current configuration, verify-backups infers epoch from manifest file mtime
+    DoVerifyBackups(
+      config,
+      expected_output=[
+        'Verifying 2020-01-01-120000...',
+        'Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
+        ' using historical implied ignored xattrs based on manifest modification time (%s) (Epoch: %s)'
+        % (epoch5_date, epoch5_desc),
+        'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+        '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
+        'Paths: 4 total, 3 checksummed (0b)'])
+
+    # Ensure manifest on disk was not modified and no .bak file exists
+    backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+    try:
+      backup1 = backups_manager.GetBackup('2020-01-01-120000')
+      manifest_after_verify = lib.Manifest(backup1.GetManifestPath())
+      manifest_after_verify.Read()
+      AssertEquals(False, manifest_after_verify.HasRecordedIgnoredXattrs())
+      AssertEquals(False, os.path.exists(lib.GetManifestBackupPath(backup1.GetManifestPath())))
+    finally:
+      backups_manager.Close()
+
+    # Verify with explicit --legacy-xattr-date override
+    DoVerifyBackups(
+      config, legacy_xattr_date='2024-05-01',
+      expected_output=[
+        'Verifying 2020-01-01-120000...',
+        'Warning: Backup 2020-01-01-120000 manifest does not record ignored xattrs;'
+        ' using historical implied ignored xattrs based on specified legacy date (2024-05-01) (Epoch: %s)'
+        % epoch5_desc,
+        'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+        '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
+        'Paths: 4 total, 3 checksummed (0b)'])
+
+    # Run upgrade-backups-ignored-xattrs
+    expected_upgrade_output = [
+      'Upgrading ignored xattrs in backups to latest: %s' % ', '.join(
+        [lib.EscapeIgnoredXattr(s) for s in lib.IGNORED_XATTR_KEYS]),
+      'Checking backup 2020-01-01-120000...',
+      'Paths: 1 paths with xattrs, 1 xattrs changed, 4 paths']
+
+    DoUpgradeBackupsIgnoredXattrs(config, dry_run=True, expected_output=expected_upgrade_output)
+    DoUpgradeBackupsIgnoredXattrs(config, expected_output=expected_upgrade_output)
+
+    # Manifest should now be upgraded, recording current ignored xattrs, and .bak file exists
+    backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+    try:
+      backup1 = backups_manager.GetBackup('2020-01-01-120000')
+      manifest_upgraded = lib.Manifest(backup1.GetManifestPath())
+      manifest_upgraded.Read()
+      AssertEquals(True, manifest_upgraded.HasRecordedIgnoredXattrs())
+      AssertEquals(True, lib.AreIgnoredXattrsEqual(manifest_upgraded.GetIgnoredXattrKeys(), lib.IGNORED_XATTR_KEYS))
+      AssertEquals(True, os.path.exists(lib.GetManifestBackupPath(backup1.GetManifestPath())))
+    finally:
+      backups_manager.Close()
+
+    # Subsequent verify-backups runs clean without warnings
+    DoVerifyBackups(config, expected_output=['Verifying 2020-01-01-120000...',
+                                             'Paths: 4 total, 3 checksummed (0b)'])
+
 
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()

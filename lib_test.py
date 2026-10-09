@@ -1416,5 +1416,126 @@ class ManifestIgnoredXattrsTestCase(BaseTestCase):
       AssertEquals(True, 'Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
 
 
+class HistoricalIgnoredXattrsTestCase(BaseTestCase):
+  def testParseTimestamp(self):
+    AssertEquals(1600000000.0, lib.ParseTimestamp(1600000000))
+    AssertEquals(1600000000.5, lib.ParseTimestamp(1600000000.5))
+    AssertEquals(1600000000.0, lib.ParseTimestamp('1600000000'))
+    AssertEquals(None, lib.ParseTimestamp(None))
+
+    # Test YYYY-MM-DD
+    ts1 = lib.ParseTimestamp('2021-05-12')
+    AssertEquals(time.strftime('%Y-%m-%d', time.localtime(ts1)), '2021-05-12')
+
+    # Test YYYY-MM-DD HH:MM:SS
+    ts2 = lib.ParseTimestamp('2021-05-12 17:18:44')
+    AssertEquals(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts2)), '2021-05-12 17:18:44')
+
+    # Test backup name YYYY-MM-DD-HHMMSS
+    ts3 = lib.ParseTimestamp('2021-05-12-171844')
+    AssertEquals(ts2, ts3)
+
+    try:
+      lib.ParseTimestamp('invalid-date')
+      raise Exception('Expected ValueError')
+    except ValueError:
+      pass
+
+  def testGetHistoricalIgnoredXattrs(self):
+    # None -> current configuration
+    current_keys, desc, dt = lib.GetHistoricalIgnoredXattrs(None)
+    AssertEquals(True, lib.AreIgnoredXattrsEqual(current_keys, lib.IGNORED_XATTR_KEYS))
+
+    # Pre-2020 -> Epoch 1 (initial baseline)
+    keys_pre, desc_pre, dt_pre = lib.GetHistoricalIgnoredXattrs('2019-01-01')
+    AssertEquals('Initial baseline', desc_pre)
+    AssertEquals(5, len(keys_pre))
+    AssertEquals(False, 'com.apple.macl' in keys_pre)
+
+    # 2021-05-15 -> Epoch 2 (added com.apple.macl)
+    keys_ep2, desc_ep2, dt_ep2 = lib.GetHistoricalIgnoredXattrs('2021-05-15')
+    AssertEquals('Added com.apple.macl', desc_ep2)
+    AssertEquals(6, len(keys_ep2))
+    AssertEquals(True, 'com.apple.macl' in keys_ep2)
+    AssertEquals(False, 'com.apple.provenance' in keys_ep2)
+
+    # 2024-05-01 -> Epoch 5 (added com.apple.provenance)
+    keys_ep5, desc_ep5, dt_ep5 = lib.GetHistoricalIgnoredXattrs('2024-05-01')
+    AssertEquals('Added com.apple.provenance', desc_ep5)
+    AssertEquals(True, 'com.apple.provenance' in keys_ep5)
+    AssertEquals(False, 'com.docker.grpcfuse.ownership' in keys_ep5)
+
+    # Future date -> Epoch 7 (latest historical epoch)
+    keys_future, desc_future, dt_future = lib.GetHistoricalIgnoredXattrs('2030-01-01')
+    AssertEquals(True, lib.AreIgnoredXattrsEqual(keys_future, lib.IGNORED_XATTR_KEYS))
+
+  def testGetManifestLegacyIgnoredXattrs(self):
+    with TempDir() as test_dir:
+      manifest_path = os.path.join(test_dir, 'test_manifest.pbdata')
+
+      # Modern manifest with recorded keys
+      manifest = lib.Manifest(manifest_path)
+      manifest.SetIgnoredXattrKeys(['recorded.key'])
+      res = lib.GetManifestLegacyIgnoredXattrs(manifest)
+      AssertEquals(['recorded.key'], res.ignored_keys)
+      AssertEquals(False, res.was_inferred)
+      AssertEquals(None, res.epoch_desc)
+
+      # Legacy manifest without recorded keys, file mtime set to 2021-05-15
+      pb = lib.staged_backup_pb2.ManifestProto()
+      with open(manifest_path, 'wb') as f:
+        f.write(pb.SerializeToString())
+      mtime_2021 = lib.ParseTimestamp('2021-05-15')
+      os.utime(manifest_path, (mtime_2021, mtime_2021))
+
+      legacy_manifest = lib.Manifest(manifest_path)
+      legacy_manifest.Read()
+      res_legacy = lib.GetManifestLegacyIgnoredXattrs(legacy_manifest, manifest_path=manifest_path)
+      AssertEquals(True, res_legacy.was_inferred)
+      AssertEquals('Added com.apple.macl', res_legacy.epoch_desc)
+      AssertEquals(True, 'com.apple.macl' in res_legacy.ignored_keys)
+      AssertEquals(False, 'com.apple.provenance' in res_legacy.ignored_keys)
+
+      # Legacy manifest with explicit legacy_date override
+      res_override = lib.GetManifestLegacyIgnoredXattrs(
+        legacy_manifest, manifest_path=manifest_path, legacy_date='2024-05-01')
+      AssertEquals(True, res_override.was_inferred)
+      AssertEquals('Added com.apple.provenance', res_override.epoch_desc)
+      AssertEquals(True, 'com.apple.provenance' in res_override.ignored_keys)
+
+  def testManifestVerifierLegacyInferredWarning(self):
+    with TempDir() as test_dir:
+      src_dir = CreateDir(test_dir, 'src')
+      manifest_path = os.path.join(test_dir, 'manifest.pbdata')
+
+      keys_2021, _, _ = lib.GetHistoricalIgnoredXattrs('2021-05-15')
+
+      manifest = lib.Manifest(manifest_path)
+      manifest.SetIgnoredXattrKeys(None)
+      root_path_info = lib.PathInfo.FromPath('.', src_dir, ignored_xattr_keys=keys_2021)
+      manifest.AddPathInfo(root_path_info)
+      file1 = CreateFile(src_dir, 'f1', contents='content')
+      path_info1 = lib.PathInfo.FromPath('f1', file1, ignored_xattr_keys=keys_2021)
+      path_info1.sha256 = lib.Sha256(file1)
+      manifest.AddPathInfo(path_info1)
+      manifest.Write()
+
+      mtime_2021 = lib.ParseTimestamp('2021-05-15')
+      os.utime(manifest_path, (mtime_2021, mtime_2021))
+
+      loaded_manifest = lib.Manifest(manifest_path)
+      loaded_manifest.Read()
+      AssertEquals(False, loaded_manifest.HasRecordedIgnoredXattrs())
+
+      output = io.StringIO()
+      verifier = lib.ManifestVerifier(loaded_manifest, src_dir, output=output)
+      success = verifier.Verify()
+      output_str = output.getvalue()
+      AssertEquals(True, success)
+      AssertEquals(True, 'Warning: Manifest does not record ignored xattrs;' in output_str)
+      AssertEquals(True, 'Added com.apple.macl' in output_str)
+      AssertEquals(True, 'Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
+
+
 if __name__ == '__main__':
   test_main.RunCurrentFileUnitTests()

@@ -178,7 +178,7 @@ def DoListBackups(config, dry_run=False, verbose=False, expected_output=[]):
 
 def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
                     full=True, continue_on_error=False, checksum_all=True,
-                    expected_success=True, expected_output=[]):
+                    legacy_xattr_date=None, expected_success=True, expected_output=[]):
   cmd_args = ['verify-backups',
               '--backups-config', config.path]
   if min_backup is not None:
@@ -191,12 +191,15 @@ def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
     cmd_args.append('--continue-on-error')
   if not checksum_all:
     cmd_args.append('--no-checksum-all')
+  if legacy_xattr_date is not None:
+    cmd_args.extend(['--legacy-xattr-date', legacy_xattr_date])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,
                 expected_output=expected_output)
 
 
 def DoUpgradeBackupsIgnoredXattrs(config, dry_run=False, min_backup=None, max_backup=None,
-                                  force=False, verbose=False, expected_success=True, expected_output=[]):
+                                  force=False, verbose=False, legacy_xattr_date=None,
+                                  expected_success=True, expected_output=[]):
   cmd_args = ['upgrade-backups-ignored-xattrs',
               '--backups-config', config.path]
   if min_backup is not None:
@@ -205,6 +208,8 @@ def DoUpgradeBackupsIgnoredXattrs(config, dry_run=False, min_backup=None, max_ba
     cmd_args.extend(['--max-backup', max_backup])
   if force:
     cmd_args.append('--force')
+  if legacy_xattr_date is not None:
+    cmd_args.extend(['--legacy-xattr-date', legacy_xattr_date])
   DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
                 expected_output=expected_output)
 
