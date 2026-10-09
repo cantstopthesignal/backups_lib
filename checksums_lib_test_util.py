@@ -109,7 +109,7 @@ def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checks
 
 
 def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, interactive=False,
-           detect_renames=True, paths=[], expected_success=True, expected_output=[]):
+           detect_renames=True, upgrade_ignored_xattrs=False, paths=[], expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
@@ -119,6 +119,8 @@ def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, int
     cmd_args.append('--interactive')
   if not detect_renames:
     cmd_args.append('--no-detect-renames')
+  if upgrade_ignored_xattrs:
+    cmd_args.append('--upgrade-ignored-xattrs')
   for path in paths:
     cmd_args.extend(['--path', path])
   DoChecksumsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,

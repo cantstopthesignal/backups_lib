@@ -23,6 +23,20 @@ message PathInfoProto {
   bool google_drive_remote_file = 12;
 }
 
+message IgnoredXattrPatternProto {
+  enum MatchType {
+    EXACT = 0;
+    REGEX = 1;
+  }
+  string pattern = 1;
+  MatchType match_type = 2;
+}
+
+message IgnoredXattrsProto {
+  repeated IgnoredXattrPatternProto patterns = 1;
+}
+
 message ManifestProto {
   repeated PathInfoProto path_infos = 1;
+  IgnoredXattrsProto ignored_xattrs = 2;
 }

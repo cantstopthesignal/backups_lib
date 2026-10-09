@@ -432,6 +432,53 @@ def KeyMatchesIgnoredKeys(key, ignored_keys):
   return False
 
 
+def AreIgnoredXattrsEqual(list1, list2):
+  if list1 is None or list2 is None:
+    return list1 is list2
+  if len(list1) != len(list2):
+    return False
+  sorted1 = sorted(list1, key=IgnoredXattrSortKey)
+  sorted2 = sorted(list2, key=IgnoredXattrSortKey)
+  for item1, item2 in zip(sorted1, sorted2):
+    if isinstance(item1, re.Pattern) and isinstance(item2, re.Pattern):
+      if item1.pattern != item2.pattern:
+        return False
+    elif not isinstance(item1, re.Pattern) and not isinstance(item2, re.Pattern):
+      if item1 != item2:
+        return False
+    else:
+      return False
+  return True
+
+
+def IgnoredXattrsToProto(ignored_xattr_keys, pb_ignored_xattrs):
+  del pb_ignored_xattrs.patterns[:]
+  for key in sorted(ignored_xattr_keys, key=IgnoredXattrSortKey):
+    pattern_pb = pb_ignored_xattrs.patterns.add()
+    if isinstance(key, re.Pattern):
+      pattern_pb.pattern = key.pattern
+      pattern_pb.match_type = staged_backup_pb2.IgnoredXattrPatternProto.MatchType.REGEX
+    else:
+      pattern_pb.pattern = key
+      pattern_pb.match_type = staged_backup_pb2.IgnoredXattrPatternProto.MatchType.EXACT
+
+
+def IgnoredXattrsFromProto(pb_ignored_xattrs):
+  keys = []
+  for pattern_pb in pb_ignored_xattrs.patterns:
+    if pattern_pb.match_type == staged_backup_pb2.IgnoredXattrPatternProto.MatchType.REGEX:
+      keys.append(re.compile(pattern_pb.pattern))
+    else:
+      keys.append(pattern_pb.pattern)
+  keys.sort(key=IgnoredXattrSortKey)
+  return keys
+
+
+def XattrHashToSummaryString(xattr_hash):
+  if xattr_hash is not None:
+    return binascii.b2a_hex(xattr_hash)[:6].decode('ascii')
+
+
 @contextlib.contextmanager
 def Chdir(new_cwd):
   old_cwd = os.getcwd()
@@ -2041,14 +2088,21 @@ class ItemizedPathChange:
     self.xattr_diff = xattr_diff
     self.link_dest = link_dest
 
-  def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS):
+  def HasDiffs(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS,
+               ignore_xattr_diffs=False):
     if not ignore_uid_diffs and self.uid_diff:
       return True
     if not ignore_gid_diffs and self.gid_diff:
       return True
+    if not ignore_xattr_diffs and self.xattr_diff:
+      return True
     return (self.new_path or self.replace_path or self.delete_path or self.error_path
-            or self.checksum_diff or self.size_diff or self.time_diff or self.permission_diff
-            or self.xattr_diff)
+            or self.checksum_diff or self.size_diff or self.time_diff or self.permission_diff)
+
+  def OnlyHasXattrDiff(self, ignore_uid_diffs=IGNORE_UID_DIFFS, ignore_gid_diffs=IGNORE_GID_DIFFS):
+    return self.xattr_diff and not self.HasDiffs(
+      ignore_uid_diffs=ignore_uid_diffs, ignore_gid_diffs=ignore_gid_diffs,
+      ignore_xattr_diffs=True)
 
   def GetItemizedShortCode(self):
     if self.path_type == PathInfo.TYPE_DIR:
@@ -2501,15 +2555,31 @@ class Manifest(object):
     manifest.Read()
     return manifest
 
-  def __init__(self, path=None):
+  def __init__(self, path=None, ignored_xattr_keys=None):
     self.path = path
     self.path_map = {}
+    if ignored_xattr_keys is not None:
+      self.ignored_xattr_keys = list(ignored_xattr_keys)
+    else:
+      self.ignored_xattr_keys = list(IGNORED_XATTR_KEYS)
 
   def GetPath(self):
     return self.path
 
   def SetPath(self, path):
     self.path = path
+
+  def GetIgnoredXattrKeys(self):
+    return self.ignored_xattr_keys
+
+  def SetIgnoredXattrKeys(self, ignored_xattr_keys):
+    if ignored_xattr_keys is not None:
+      self.ignored_xattr_keys = list(ignored_xattr_keys)
+    else:
+      self.ignored_xattr_keys = None
+
+  def HasRecordedIgnoredXattrs(self):
+    return self.ignored_xattr_keys is not None
 
   def Read(self):
     if not os.path.isfile(self.path):
@@ -2523,11 +2593,19 @@ class Manifest(object):
         path_info = PathInfo.FromProto(path_info_pb)
         self.path_map[path_info.path] = path_info
 
+      if pb.HasField('ignored_xattrs'):
+        self.ignored_xattr_keys = IgnoredXattrsFromProto(pb.ignored_xattrs)
+      else:
+        self.ignored_xattr_keys = None
+
   def Write(self):
     pb = staged_backup_pb2.ManifestProto()
     for path in sorted(self.path_map.keys()):
       path_info = self.path_map[path]
       path_info.ToProto(pb.path_infos.add())
+
+    if self.ignored_xattr_keys is not None:
+      IgnoredXattrsToProto(self.ignored_xattr_keys, pb.ignored_xattrs)
 
     pb_data = pb.SerializeToString()
 
@@ -2564,7 +2642,9 @@ class Manifest(object):
     return len(self.path_map)
 
   def Clone(self):
-    clone = Manifest(self.path)
+    clone = Manifest(self.path, ignored_xattr_keys=self.ignored_xattr_keys)
+    if self.ignored_xattr_keys is None:
+      clone.ignored_xattr_keys = None
     for path, path_info in list(self.path_map.items()):
       clone.path_map[path] = path_info.Clone()
     return clone
@@ -2910,7 +2990,8 @@ class ManifestVerifierStats(object):
 class ManifestVerifier(object):
   def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True,
                checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
-               verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False):
+               verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
+               warn_out_of_date_ignored_xattrs=True):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
@@ -2925,8 +3006,19 @@ class ManifestVerifier(object):
     self.ignore_mtimes = ignore_mtimes
     self.ignore_permissions = ignore_permissions
     self.ignore_xattrs = ignore_xattrs
+    self.warn_out_of_date_ignored_xattrs = warn_out_of_date_ignored_xattrs
 
   def Verify(self):
+    manifest_ignored_xattrs = self.manifest.GetIgnoredXattrKeys()
+    if manifest_ignored_xattrs is None:
+      effective_ignored_xattrs = IGNORED_XATTR_KEYS
+    elif not AreIgnoredXattrsEqual(manifest_ignored_xattrs, IGNORED_XATTR_KEYS):
+      if not self.ignore_xattrs and self.warn_out_of_date_ignored_xattrs:
+        print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+      effective_ignored_xattrs = manifest_ignored_xattrs
+    else:
+      effective_ignored_xattrs = manifest_ignored_xattrs
+
     missing_paths = []
     for path in self.manifest.GetPaths():
       if self.path_matcher.Matches(path):
@@ -2945,7 +3037,8 @@ class ManifestVerifier(object):
       self._HandleMissingPaths(missing_paths, next_present_path=path)
 
       full_path = os.path.join(self.src_root, path)
-      src_path_info = PathInfo.FromPath(path, full_path)
+      src_path_info = PathInfo.FromPath(
+        path, full_path, ignored_xattr_keys=effective_ignored_xattrs)
       self.stats.total_paths += 1
       if src_path_info.size is not None:
         self.stats.total_size += src_path_info.size

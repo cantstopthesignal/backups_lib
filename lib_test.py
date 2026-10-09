@@ -334,6 +334,27 @@ class ItemizedPathChangeTestCase(BaseTestCase):
     AssertEquals(b'\x1b[%s.f......x\x1b[1;m path' % lib.TERM_COLOR_PURPLE.encode('ascii'),
                  ReadItemizedTty(lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, xattr_diff=True)))
 
+    itemized_no_diff = lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE)
+    AssertEquals(False, itemized_no_diff.HasDiffs())
+    AssertEquals(False, itemized_no_diff.OnlyHasXattrDiff())
+
+    itemized_xattr_only = lib.ItemizedPathChange('path', lib.PathInfo.TYPE_FILE, xattr_diff=True)
+    AssertEquals(True, itemized_xattr_only.HasDiffs())
+    AssertEquals(False, itemized_xattr_only.HasDiffs(ignore_xattr_diffs=True))
+    AssertEquals(True, itemized_xattr_only.OnlyHasXattrDiff())
+
+    itemized_xattr_and_size = lib.ItemizedPathChange(
+      'path', lib.PathInfo.TYPE_FILE, xattr_diff=True, size_diff=True)
+    AssertEquals(True, itemized_xattr_and_size.HasDiffs())
+    AssertEquals(True, itemized_xattr_and_size.HasDiffs(ignore_xattr_diffs=True))
+    AssertEquals(False, itemized_xattr_and_size.OnlyHasXattrDiff())
+
+    itemized_xattr_and_mtime = lib.ItemizedPathChange(
+      'path', lib.PathInfo.TYPE_FILE, xattr_diff=True, time_diff=True)
+    AssertEquals(True, itemized_xattr_and_mtime.HasDiffs())
+    AssertEquals(True, itemized_xattr_and_mtime.HasDiffs(ignore_xattr_diffs=True))
+    AssertEquals(False, itemized_xattr_and_mtime.OnlyHasXattrDiff())
+
 
 class CompactTestCase(BaseTestCase):
   def test(self):
@@ -1316,6 +1337,83 @@ class ImageAttacherTestCase(BaseTestCase):
         AssertEquals(True, 'noowners' in mount_lines[0])
     finally:
       attacher.Close()
+
+
+class ManifestIgnoredXattrsTestCase(BaseTestCase):
+  def testAreIgnoredXattrsEqual(self):
+    AssertEquals(True, lib.AreIgnoredXattrsEqual([], []))
+    AssertEquals(True, lib.AreIgnoredXattrsEqual(None, None))
+    AssertEquals(False, lib.AreIgnoredXattrsEqual([], None))
+    AssertEquals(False, lib.AreIgnoredXattrsEqual(None, []))
+
+    list1 = ['a', 'b', re.compile('^foo.*$')]
+    list2 = ['b', 'a', re.compile('^foo.*$')]
+    AssertEquals(True, lib.AreIgnoredXattrsEqual(list1, list2))
+
+    list3 = ['a', 'b', re.compile('^bar.*$')]
+    AssertEquals(False, lib.AreIgnoredXattrsEqual(list1, list3))
+
+    list4 = ['a', 'b']
+    AssertEquals(False, lib.AreIgnoredXattrsEqual(list1, list4))
+
+  def testManifestIgnoredXattrsRoundTrip(self):
+    with TempDir() as test_dir:
+      manifest_path = os.path.join(test_dir, 'manifest.pbdata')
+      manifest = lib.Manifest(manifest_path)
+      custom_keys = ['custom.xattr1', 'custom.xattr2', re.compile('^custom[.]regex_.*$')]
+      manifest.SetIgnoredXattrKeys(custom_keys)
+
+      file1 = CreateFile(test_dir, 'f1', contents='hello')
+      path_info1 = lib.PathInfo.FromPath('f1', file1)
+      manifest.AddPathInfo(path_info1)
+      manifest.Write()
+
+      loaded_manifest = lib.Manifest(manifest_path)
+      loaded_manifest.Read()
+
+      AssertEquals(True, loaded_manifest.HasRecordedIgnoredXattrs())
+      AssertEquals(True, lib.AreIgnoredXattrsEqual(custom_keys, loaded_manifest.GetIgnoredXattrKeys()))
+
+      cloned = loaded_manifest.Clone()
+      AssertEquals(True, lib.AreIgnoredXattrsEqual(custom_keys, cloned.GetIgnoredXattrKeys()))
+
+  def testLegacyManifestRead(self):
+    with TempDir() as test_dir:
+      manifest_path = os.path.join(test_dir, 'legacy_manifest.pbdata')
+      pb = lib.staged_backup_pb2.ManifestProto()
+      path_info_pb = pb.path_infos.add()
+      path_info_pb.path = 'f1'
+      path_info_pb.path_type = lib.staged_backup_pb2.PathInfoProto.PathType.FILE
+      with open(manifest_path, 'wb') as f:
+        f.write(pb.SerializeToString())
+
+      loaded_manifest = lib.Manifest(manifest_path)
+      loaded_manifest.Read()
+      AssertEquals(False, loaded_manifest.HasRecordedIgnoredXattrs())
+      AssertEquals(None, loaded_manifest.GetIgnoredXattrKeys())
+
+  def testManifestVerifierOutOfDateWarning(self):
+    with TempDir() as test_dir:
+      src_dir = CreateDir(test_dir, 'src')
+      manifest_path = os.path.join(test_dir, 'manifest.pbdata')
+      manifest = lib.Manifest(manifest_path)
+      old_keys = ['old.xattr']
+      manifest.SetIgnoredXattrKeys(old_keys)
+
+      root_path_info = lib.PathInfo.FromPath('.', src_dir, ignored_xattr_keys=old_keys)
+      manifest.AddPathInfo(root_path_info)
+
+      file1 = CreateFile(src_dir, 'f1', contents='content')
+      path_info1 = lib.PathInfo.FromPath('f1', file1, ignored_xattr_keys=old_keys)
+      manifest.AddPathInfo(path_info1)
+      manifest.Write()
+
+      output = io.StringIO()
+      verifier = lib.ManifestVerifier(manifest, src_dir, output=output)
+      success = verifier.Verify()
+      output_str = output.getvalue()
+      AssertEquals(True, success)
+      AssertEquals(True, 'Warning: Manifest ignored xattrs are out of date compared to current configuration' in output_str)
 
 
 if __name__ == '__main__':

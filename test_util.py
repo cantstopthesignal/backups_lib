@@ -32,6 +32,16 @@ def TempDir():
       print('Test: Failed to remove tree %s' % path)
 
 
+@contextlib.contextmanager
+def ReplaceIgnoredXattrKeys(new_value=[]):
+  old_ignored_xattr_keys = lib.IGNORED_XATTR_KEYS
+  lib.IGNORED_XATTR_KEYS = new_value
+  try:
+    yield
+  finally:
+    lib.IGNORED_XATTR_KEYS = old_ignored_xattr_keys
+
+
 def AssertEquals(a, b, allow_regex_match=False):
   if allow_regex_match and type(a) == re.Pattern:
     if not a.match(b):

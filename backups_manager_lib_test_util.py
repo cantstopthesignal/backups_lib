@@ -195,6 +195,20 @@ def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
                 expected_output=expected_output)
 
 
+def DoUpgradeBackupsIgnoredXattrs(config, dry_run=False, min_backup=None, max_backup=None,
+                                  force=False, verbose=False, expected_success=True, expected_output=[]):
+  cmd_args = ['upgrade-backups-ignored-xattrs',
+              '--backups-config', config.path]
+  if min_backup is not None:
+    cmd_args.extend(['--min-backup', min_backup])
+  if max_backup is not None:
+    cmd_args.extend(['--max-backup', max_backup])
+  if force:
+    cmd_args.append('--force')
+  DoBackupsMain(cmd_args, dry_run=dry_run, verbose=verbose, expected_success=expected_success,
+                expected_output=expected_output)
+
+
 def DoAddMissingManifestsToBackups(config, expected_output=[]):
   cmd_args = ['add-missing-manifests-to-backups',
               '--backups-config', config.path]

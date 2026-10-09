@@ -29,6 +29,7 @@ COMMAND_DELETE_IN_BACKUPS = 'delete-in-backups'
 COMMAND_MARK_BACKUPS_NOT_PRUNEABLE = 'mark-backups-not-pruneable'
 COMMAND_RESTORE_META = 'restore-meta'
 COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE = 'delete-local-content-in-backup-scope'
+COMMAND_UPGRADE_BACKUPS_IGNORED_XATTRS = 'upgrade-backups-ignored-xattrs'
 
 COMMANDS = [
   COMMAND_CREATE_BACKUP,
@@ -48,6 +49,7 @@ COMMANDS = [
   COMMAND_MARK_BACKUPS_NOT_PRUNEABLE,
   COMMAND_RESTORE_META,
   COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE,
+  COMMAND_UPGRADE_BACKUPS_IGNORED_XATTRS,
 ]
 
 
@@ -1305,13 +1307,29 @@ class BackupsVerifier(object):
     manifest = lib.Manifest(backup.GetManifestPath())
     manifest.Read()
 
+    manifest_ignored_xattrs = manifest.GetIgnoredXattrKeys()
+    if manifest_ignored_xattrs is None:
+      effective_ignored_xattrs = lib.IGNORED_XATTR_KEYS
+    elif not lib.AreIgnoredXattrsEqual(manifest_ignored_xattrs, lib.IGNORED_XATTR_KEYS):
+      print('Warning: Backup %s manifest ignored xattrs are out of date' % backup.GetName(), file=self.output)
+      print('  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)', file=self.output)
+      effective_ignored_xattrs = manifest_ignored_xattrs
+    else:
+      effective_ignored_xattrs = manifest_ignored_xattrs
+
     if self.full:
-      return self._VerifyBackupFull(backup, manifest, last_manifest, escape_key_detector)
+      return self._VerifyBackupFull(
+        backup, manifest, last_manifest, escape_key_detector,
+        ignored_xattr_keys=effective_ignored_xattrs)
     else:
       return self._VerifyBackupFast(
-        backup, manifest, last_backup, last_manifest, escape_key_detector)
+        backup, manifest, last_backup, last_manifest, escape_key_detector,
+        ignored_xattr_keys=effective_ignored_xattrs)
 
-  def _VerifyBackupFull(self, backup, manifest, last_manifest, escape_key_detector):
+  def _VerifyBackupFull(self, backup, manifest, last_manifest, escape_key_detector,
+                        ignored_xattr_keys=None):
+    if ignored_xattr_keys is None:
+      ignored_xattr_keys = lib.IGNORED_XATTR_KEYS
     dev_inodes_to_sha256 = {}
     if last_manifest is not None:
       for path in last_manifest.GetPaths():
@@ -1330,7 +1348,7 @@ class BackupsVerifier(object):
       path = enumerated_path.GetPath()
       num_paths += 1
       full_path = os.path.join(backup.GetContentRootPath(), path)
-      path_info = lib.PathInfo.FromPath(path, full_path)
+      path_info = lib.PathInfo.FromPath(path, full_path, ignored_xattr_keys=ignored_xattr_keys)
       if path_info.HasFileContents():
         assert path_info.dev_inode is not None
         path_info.sha256 = dev_inodes_to_sha256.get(path_info.dev_inode)
@@ -1369,7 +1387,10 @@ class BackupsVerifier(object):
 
     return (not itemized_results, new_manifest)
 
-  def _VerifyBackupFast(self, backup, manifest, last_backup, last_manifest, escape_key_detector):
+  def _VerifyBackupFast(self, backup, manifest, last_backup, last_manifest, escape_key_detector,
+                        ignored_xattr_keys=None):
+    if ignored_xattr_keys is None:
+      ignored_xattr_keys = lib.IGNORED_XATTR_KEYS
     if last_manifest is None and last_backup is not None:
       last_manifest = lib.Manifest(last_backup.GetManifestPath())
       last_manifest.Read()
@@ -1399,7 +1420,7 @@ class BackupsVerifier(object):
       num_unique += 1
 
       full_path = os.path.join(backup.GetContentRootPath(), path)
-      new_path_info = lib.PathInfo.FromPath(path, full_path)
+      new_path_info = lib.PathInfo.FromPath(path, full_path, ignored_xattr_keys=ignored_xattr_keys)
       if path_info.HasFileContents():
         if last_manifest is not None:
           assert path_info.sha256
@@ -2634,6 +2655,129 @@ def DoDeleteLocalContentInBackupScope(args, output):
   return local_content_deleter.DeleteLocalContent()
 
 
+class BackupsIgnoredXattrsUpgrader(object):
+  def __init__(self, config, output, min_backup=None, max_backup=None,
+               force=False, encryption_manager=None, dry_run=False, verbose=False):
+    self.config = config
+    self.output = output
+    self.min_backup = min_backup
+    self.max_backup = max_backup
+    self.force = force
+    self.encryption_manager = encryption_manager
+    self.dry_run = dry_run
+    self.verbose = verbose
+
+  def Upgrade(self):
+    print('Upgrading ignored xattrs in backups to latest: %s' % ', '.join(
+      [lib.EscapeIgnoredXattr(s) for s in lib.IGNORED_XATTR_KEYS]), file=self.output)
+
+    backups_manager = BackupsManager.Open(
+      self.config, readonly=False, encryption_manager=self.encryption_manager,
+      dry_run=self.dry_run)
+    try:
+      skipped_backups = []
+      escape_key_detector = lib.EscapeKeyDetector()
+      try:
+        for backup in backups_manager.GetBackupList():
+          if escape_key_detector.WasEscapePressed():
+            print('*** Cancelled at backup %s' % backup, file=self.output)
+            return False
+
+          if ((self.min_backup is not None and backup.GetName() < self.min_backup)
+              or (self.max_backup is not None and backup.GetName() > self.max_backup)):
+            skipped_backups.append(backup)
+            continue
+
+          PrintSkippedBackups(skipped_backups, self.output)
+          skipped_backups = []
+
+          self._UpgradeBackup(backup)
+
+        PrintSkippedBackups(skipped_backups, self.output)
+      finally:
+        escape_key_detector.Shutdown()
+    finally:
+      backups_manager.Close()
+    return True
+
+  def _UpgradeBackup(self, backup):
+    print('Checking backup %s...' % backup.GetName(), file=self.output)
+
+    if not os.path.exists(backup.GetManifestPath()):
+      raise Exception('*** Error: Manifest file missing for %s' % backup)
+
+    manifest = lib.Manifest(backup.GetManifestPath())
+    manifest.Read()
+
+    old_ignored_xattrs = manifest.GetIgnoredXattrKeys()
+    if (old_ignored_xattrs is not None and
+        lib.AreIgnoredXattrsEqual(old_ignored_xattrs, lib.IGNORED_XATTR_KEYS) and
+        not self.force):
+      print('Backup %s ignored xattrs already up to date.' % backup.GetName(), file=self.output)
+      return
+
+    new_ignored_xattrs = list(lib.IGNORED_XATTR_KEYS)
+
+    num_paths = 0
+    num_xattr = 0
+    num_xattr_changed = 0
+
+    for path in manifest.GetPaths():
+      num_paths += 1
+      path_info = manifest.GetPathInfo(path)
+      if path_info.xattr_hash is not None:
+        num_xattr += 1
+        full_path = os.path.join(backup.GetContentRootPath(), path)
+        new_path_info = lib.PathInfo.FromPath(
+          path, full_path, ignored_xattr_keys=new_ignored_xattrs)
+        xattr_changed = False
+        if path_info.xattr_hash != new_path_info.xattr_hash:
+          old_hash_str = lib.XattrHashToSummaryString(path_info.xattr_hash)
+          new_hash_str = lib.XattrHashToSummaryString(new_path_info.xattr_hash)
+          path_info.xattr_hash = new_path_info.xattr_hash
+          if self.verbose:
+            print('Updated xattr for %s from %s to %s' % (
+              lib.EscapePath(path), old_hash_str, new_hash_str), file=self.output)
+          xattr_changed = True
+        if path_info.xattr_keys != new_path_info.xattr_keys:
+          if self.verbose:
+            print('Updated xattr list for %s from %r to %r' % (
+              lib.EscapePath(path), path_info.xattr_keys, new_path_info.xattr_keys), file=self.output)
+          path_info.xattr_keys = new_path_info.xattr_keys
+          xattr_changed = True
+        if xattr_changed:
+          num_xattr_changed += 1
+
+    manifest.SetIgnoredXattrKeys(new_ignored_xattrs)
+
+    if not self.dry_run:
+      manifest_bak_path = lib.GetManifestBackupPath(backup.GetManifestPath())
+      shutil.copy(backup.GetManifestPath(), manifest_bak_path)
+      assert os.path.exists(manifest_bak_path)
+      manifest.Write()
+
+    print('Paths: %d paths with xattrs, %d xattrs changed, %d paths' % (
+      num_xattr, num_xattr_changed, num_paths), file=self.output)
+
+
+def DoUpgradeBackupsIgnoredXattrs(args, output):
+  parser = argparse.ArgumentParser()
+  AddBackupsConfigArgs(parser)
+  parser.add_argument('--min-backup')
+  parser.add_argument('--max-backup')
+  parser.add_argument('--force', action='store_true')
+  cmd_args = parser.parse_args(args.cmd_args)
+
+  config = GetBackupsConfigFromArgs(cmd_args)
+
+  upgrader = BackupsIgnoredXattrsUpgrader(
+    config, output=output, min_backup=cmd_args.min_backup,
+    max_backup=cmd_args.max_backup, force=cmd_args.force,
+    encryption_manager=lib.EncryptionManager(output=output),
+    dry_run=args.dry_run, verbose=args.verbose)
+  return upgrader.Upgrade()
+
+
 def DoCommand(args, output):
   if args.command == COMMAND_CREATE_BACKUP:
     return DoCreateBackup(args, output=output)
@@ -2669,6 +2813,8 @@ def DoCommand(args, output):
     return DoRestoreMeta(args, output=output)
   elif args.command == COMMAND_DELETE_LOCAL_CONTENT_IN_BACKUP_SCOPE:
     return DoDeleteLocalContentInBackupScope(args, output=output)
+  elif args.command == COMMAND_UPGRADE_BACKUPS_IGNORED_XATTRS:
+    return DoUpgradeBackupsIgnoredXattrs(args, output=output)
 
   print('*** Error: Unknown command %s' % args.command, file=output)
   return False

@@ -33,6 +33,7 @@ from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import GetRsyncCreatedDirectoryOutputLines
 from .test_util import RenameFile
+from .test_util import ReplaceIgnoredXattrKeys
 from .test_util import SetMTime
 from .test_util import TempDir
 
@@ -271,7 +272,7 @@ class VerifyTestCase(BaseTestCase):
         expected_output=['>d+++++++ .metadata',
                          '>f+++++++ .metadata/manifest.pbdata',
                          '>f+++++++ par/.adjoined_checksums_filter',
-                         'Paths: 6 total (122b), 3 mismatched (117b)'])
+                         re.compile(r'^Paths: 6 total \([0-9]+b\), 3 mismatched \([0-9]+b\)$')])
 
   def testIgnoreMetadata(self):
     with TempDir() as test_dir:
@@ -2659,6 +2660,72 @@ class DeleteDuplicateFilesTestCase(BaseTestCase):
                        '*f.delete par! \\r/f14',
                        'Paths: 2 total, 1 duplicate, 1 deleted, 1 skipped'])
     DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+
+class UpgradeIgnoredXattrsTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    old_ignored = list(lib.IGNORED_XATTR_KEYS)
+    new_ignored = list(lib.IGNORED_XATTR_KEYS) + ['my.new.ignored.key']
+
+    root_dir = CreateDir(test_dir, 'root')
+
+    with ReplaceIgnoredXattrKeys(old_ignored):
+      DoCreate(root_dir, expected_output=None)
+
+      file1 = CreateFile(root_dir, 'f1', contents='ABC')
+      xattr_obj = lib.Xattr(file1)
+      xattr_obj['my.new.ignored.key'] = b'val'
+
+      DoSync(root_dir, expected_output=None)
+
+      # Under old_ignored, verify passes cleanly
+      DoVerify(root_dir, checksum_all=True, expected_output=None)
+
+    # Under new_ignored, manifest's old_ignored is out of date
+    with ReplaceIgnoredXattrKeys(new_ignored):
+      manifest_path = os.path.join(root_dir, '.metadata', lib.MANIFEST_FILENAME)
+
+      # Verify should warn, suggest sync --upgrade-ignored-xattrs, make no changes, and succeed
+      DoVerify(
+        root_dir, checksum_all=True,
+        expected_output=[
+          'Warning: Manifest ignored xattrs are out of date compared to current configuration',
+          '  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)',
+          'Paths: 2 total (3b), 1 checksummed (3b)'
+        ])
+
+      # Ensure manifest on disk was not modified by verify
+      manifest_after_verify = lib.Manifest(manifest_path)
+      manifest_after_verify.Read()
+      AssertEquals(True, lib.AreIgnoredXattrsEqual(old_ignored, manifest_after_verify.GetIgnoredXattrKeys()))
+
+      # Sync without --upgrade-ignored-xattrs: warns, retains older keys
+      DoSync(
+        root_dir,
+        expected_output=[
+          'Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)',
+          'Paths: 2 total (3b)'
+        ])
+
+      # Sync WITH --upgrade-ignored-xattrs: upgrades manifest to latest
+      DoSync(
+        root_dir, upgrade_ignored_xattrs=True,
+        expected_output=['.f......x f1',
+                         'Paths: 2 total (3b), 1 synced (3b)']
+      )
+
+      # Manifest on disk should now have new_ignored
+      manifest_upgraded = lib.Manifest(manifest_path)
+      manifest_upgraded.Read()
+      AssertEquals(True, lib.AreIgnoredXattrsEqual(new_ignored, manifest_upgraded.GetIgnoredXattrKeys()))
+
+      # Subsequent verify runs clean without warnings
+      DoVerify(root_dir, checksum_all=True,
+               expected_output=['Paths: 2 total (3b), 1 checksummed (3b)'])
 
 
 if __name__ == '__main__':

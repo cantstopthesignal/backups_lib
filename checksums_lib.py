@@ -249,6 +249,14 @@ class ChecksumsVerifier(object):
       print('*** Error: %s' % e.args[0], file=self.output)
       return False
 
+    manifest = self.checksums.GetManifest()
+    manifest_ignored_xattrs = manifest.GetIgnoredXattrKeys()
+    if (manifest_ignored_xattrs is not None and
+        not lib.AreIgnoredXattrsEqual(manifest_ignored_xattrs, lib.IGNORED_XATTR_KEYS)):
+      if not self.ignore_xattrs:
+        print('Warning: Manifest ignored xattrs are out of date compared to current configuration', file=self.output)
+        print('  (To upgrade manifest, run: sync --upgrade-ignored-xattrs)', file=self.output)
+
     escape_key_detector = lib.EscapeKeyDetector()
     try:
       verifier = lib.ManifestVerifier(
@@ -256,7 +264,7 @@ class ChecksumsVerifier(object):
         filters=self.filters, manifest_on_top=False, checksum_path_matcher=self.checksum_path_matcher,
         escape_key_detector=escape_key_detector, path_matcher=self.path_matcher, verbose=self.verbose,
         ignore_mtimes=self.ignore_mtimes, ignore_permissions=self.ignore_permissions,
-        ignore_xattrs=self.ignore_xattrs)
+        ignore_xattrs=self.ignore_xattrs, warn_out_of_date_ignored_xattrs=False)
       verify_result = verifier.Verify()
       stats = verifier.GetStats()
 
@@ -280,7 +288,8 @@ class ChecksumsSyncer(object):
   INTERACTIVE_CHECKER = lib.InteractiveChecker()
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
-               detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False):
+               detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
+               upgrade_ignored_xattrs=False):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -292,6 +301,8 @@ class ChecksumsSyncer(object):
     self.path_matcher = path_matcher
     self.dry_run = dry_run
     self.verbose = verbose
+    self.upgrade_ignored_xattrs = upgrade_ignored_xattrs
+    self.effective_ignored_xattrs = None
     self.checksums = None
     self.basis_manifest = None
     self.manifest = None
@@ -324,6 +335,18 @@ class ChecksumsSyncer(object):
     self.manifest.SetPath(GetManifestNewPath(self.basis_manifest.GetPath()))
     self.scan_manifest = lib.Manifest()
 
+    basis_ignored_xattrs = self.basis_manifest.GetIgnoredXattrKeys()
+    manifest_out_of_date = (basis_ignored_xattrs is not None and
+                            not lib.AreIgnoredXattrsEqual(basis_ignored_xattrs, lib.IGNORED_XATTR_KEYS))
+    if self.upgrade_ignored_xattrs:
+      self.effective_ignored_xattrs = list(lib.IGNORED_XATTR_KEYS)
+      self.manifest.SetIgnoredXattrKeys(list(lib.IGNORED_XATTR_KEYS))
+    else:
+      if manifest_out_of_date:
+        print('Warning: Manifest ignored xattrs are out of date (run with --upgrade-ignored-xattrs to upgrade)', file=self.output)
+      self.effective_ignored_xattrs = basis_ignored_xattrs if basis_ignored_xattrs is not None else list(lib.IGNORED_XATTR_KEYS)
+      self.manifest.SetIgnoredXattrKeys(basis_ignored_xattrs)
+
     self.escape_key_detector = lib.EscapeKeyDetector()
     escape_key_pressed = False
     try:
@@ -335,7 +358,12 @@ class ChecksumsSyncer(object):
 
     self._PrintResults()
 
-    if self.total_synced_paths:
+    manifest_headers_differ = (
+      self.upgrade_ignored_xattrs and
+      not lib.AreIgnoredXattrsEqual(self.basis_manifest.GetIgnoredXattrKeys(),
+                                    self.manifest.GetIgnoredXattrKeys()))
+
+    if self.total_synced_paths or manifest_headers_differ:
       if not self.dry_run:
         self.manifest.Write()
 
@@ -361,7 +389,8 @@ class ChecksumsSyncer(object):
         continue
 
       full_path = os.path.join(self.root_path, path)
-      path_info = lib.PathInfo.FromPath(path, full_path)
+      path_info = lib.PathInfo.FromPath(
+        path, full_path, ignored_xattr_keys=self.effective_ignored_xattrs)
       self.scan_manifest.AddPathInfo(path_info)
       self.total_paths += 1
       if path_info.size is not None:
@@ -434,7 +463,7 @@ class ChecksumsSyncer(object):
         itemized.Print(output=self.output)
       return
     if path_info.HasFileContents():
-      if checksum_copied:
+      if checksum_copied and not (self.upgrade_ignored_xattrs and itemized.OnlyHasXattrDiff()):
         path_info.sha256 = lib.Sha256WithProgress(full_path, path_info, output=self.output)
         self.total_checksummed_paths += 1
         self.total_checksummed_size += path_info.size
@@ -1367,6 +1396,7 @@ def DoSync(args, output):
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--interactive', action='store_true')
   parser.add_argument('--no-detect-renames', dest='detect_renames', action='store_false')
+  parser.add_argument('--upgrade-ignored-xattrs', action='store_true')
   lib.AddPathsArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
@@ -1376,7 +1406,8 @@ def DoSync(args, output):
     cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
     checksum_all=cmd_args.checksum_all, interactive=cmd_args.interactive,
     detect_renames=cmd_args.detect_renames, path_matcher=path_matcher,
-    dry_run=args.dry_run, verbose=args.verbose)
+    dry_run=args.dry_run, verbose=args.verbose,
+    upgrade_ignored_xattrs=cmd_args.upgrade_ignored_xattrs)
   return checksums_syncer.Sync()
 
 

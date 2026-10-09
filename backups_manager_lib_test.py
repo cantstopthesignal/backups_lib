@@ -33,6 +33,7 @@ from .test_util import CreateFile
 from .test_util import CreateSymlink
 from .test_util import DeleteFileOrDir
 from .test_util import OverrideUmask
+from .test_util import ReplaceIgnoredXattrKeys
 from .test_util import SetMTime
 from .test_util import SetPacificTimezone
 from .test_util import TempDir
@@ -65,6 +66,7 @@ from .backups_manager_lib_test_util import DoListBackups
 from .backups_manager_lib_test_util import DoMarkBackupsNotPruneable
 from .backups_manager_lib_test_util import DoMergeIntoBackups
 from .backups_manager_lib_test_util import DoRestoreMeta
+from .backups_manager_lib_test_util import DoUpgradeBackupsIgnoredXattrs
 from .backups_manager_lib_test_util import DoVerifyBackups
 from .backups_manager_lib_test_util import SetLogThrottlerLogAlways
 from .backups_manager_lib_test_util import VerifyBackupManifest
@@ -3363,6 +3365,82 @@ class CreateBackupWithEmptySymlinkTestCase(BaseTestCase):
       config, backup_name='2020-01-03-120000',
       expected_success=False,
       expected_output=['*** Error: Symlink ln_empty destination is empty'])
+
+
+class UpgradeBackupsIgnoredXattrsTestCase(BaseTestCase):
+  def test(self):
+    if platform.system() != lib.PLATFORM_DARWIN:
+      return
+    with ApplyFakeDiskImageHelperLevel() as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    old_ignored = list(lib.IGNORED_XATTR_KEYS)
+    new_ignored = list(lib.IGNORED_XATTR_KEYS) + ['my.new.ignored.key']
+
+    config = CreateConfig(test_dir)
+
+    with ReplaceIgnoredXattrKeys(old_ignored):
+      CreateBackupsBundle(config)
+      with lib.ImageAttacher(config.image_path, config.mount_path, readonly=False,
+                             browseable=False) as attacher:
+        f1_path = os.path.join(attacher.GetMountPoint(), backups_manager_lib.BACKUPS_SUBDIR,
+                               '2020-01-01-120000', 'Root', 'f1')
+        lib.Xattr(f1_path)['my.new.ignored.key'] = b'val'
+
+      CreateLatestManifestCheckpoint(config)
+
+      # Initial verification passes
+      DoVerifyBackups(config, expected_output=['Verifying 2020-01-01-120000...',
+                                               'Paths: 4 total, 3 checksummed (0b)'])
+
+    # Under new_ignored, the backup's manifest ignored xattrs are out of date
+    with ReplaceIgnoredXattrKeys(new_ignored):
+      # verify-backups warns, makes no disk modifications, and succeeds
+      DoVerifyBackups(
+        config,
+        expected_output=['Verifying 2020-01-01-120000...',
+                         'Warning: Backup 2020-01-01-120000 manifest ignored xattrs are out of date',
+                         '  (To upgrade, run: staged_backup.py upgrade-backups-ignored-xattrs)',
+                         'Paths: 4 total, 3 checksummed (0b)'])
+
+      # Ensure manifest on disk was not modified and no .bak file exists
+      backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+      try:
+        backup1 = backups_manager.GetBackup('2020-01-01-120000')
+        manifest_after_verify = lib.Manifest(backup1.GetManifestPath())
+        manifest_after_verify.Read()
+        AssertEquals(True, lib.AreIgnoredXattrsEqual(old_ignored, manifest_after_verify.GetIgnoredXattrKeys()))
+        AssertEquals(False, os.path.exists(lib.GetManifestBackupPath(backup1.GetManifestPath())))
+      finally:
+        backups_manager.Close()
+
+      # Run upgrade-backups-ignored-xattrs
+      expected_upgrade_output = [
+        'Upgrading ignored xattrs in backups to latest: %s' % ', '.join(
+          [lib.EscapeIgnoredXattr(s) for s in new_ignored]),
+        'Checking backup 2020-01-01-120000...',
+        'Paths: 1 paths with xattrs, 1 xattrs changed, 4 paths']
+
+      DoUpgradeBackupsIgnoredXattrs(config, dry_run=True, expected_output=expected_upgrade_output)
+      DoUpgradeBackupsIgnoredXattrs(config, expected_output=expected_upgrade_output)
+
+      # Manifest should now be upgraded and .bak file should exist
+      backups_manager = backups_manager_lib.BackupsManager.Open(config, readonly=True, browseable=False)
+      try:
+        backup1 = backups_manager.GetBackup('2020-01-01-120000')
+        manifest_upgraded = lib.Manifest(backup1.GetManifestPath())
+        manifest_upgraded.Read()
+        AssertEquals(True, lib.AreIgnoredXattrsEqual(manifest_upgraded.GetIgnoredXattrKeys(), new_ignored))
+        AssertEquals(True, os.path.exists(lib.GetManifestBackupPath(backup1.GetManifestPath())))
+      finally:
+        backups_manager.Close()
+
+      # Subsequent verify-backups runs clean without warnings
+      DoVerifyBackups(config, expected_output=['Verifying 2020-01-01-120000...',
+                                               'Paths: 4 total, 3 checksummed (0b)'])
 
 
 if __name__ == '__main__':
