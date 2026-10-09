@@ -404,6 +404,56 @@ class FilterRuleMerge(object):
     return '<FilterRuleMerge %r>' % self.path
 
 
+class FilterRuleIgnoreDirMtimes(FilterRule):
+  def __init__(self, path):
+    self.path = CanonicalizePath(path)
+    self.regex = FilterRuleIgnoreDirMtimes.CompileRegex(self.path)
+
+  @staticmethod
+  def CompileRegex(matcher):
+    matcher = CanonicalizePath(DeEscapePath(matcher))
+    if matcher in ['/', '/.', '.', '']:
+      return re.compile(r'^(?:\./)?.*$')
+
+    regex_pieces = []
+    if matcher.startswith('/'):
+      regex_pieces.append('^')
+      matcher_i = 1
+    else:
+      regex_pieces.append('^(?:.*/)?')
+      matcher_i = 0
+
+    matcher_str = matcher[matcher_i:].rstrip('/')
+    matcher_i = 0
+    matcher_len = len(matcher_str)
+
+    while matcher_i < matcher_len:
+      c = matcher_str[matcher_i]
+      if c == '*':
+        if matcher_i + 1 < matcher_len and matcher_str[matcher_i + 1] == '*':
+          regex_pieces.append('.*')
+          matcher_i += 2
+          continue
+        regex_pieces.append('[^/]*')
+        matcher_i += 1
+        continue
+      if c in '?[\\':
+        raise UnsupportedMatcherError('Matcher %r not yet supported' % matcher)
+      regex_pieces.append(re.escape(c))
+      matcher_i += 1
+
+    regex_pieces.append('/(?:.*)?$')
+    return re.compile(''.join(regex_pieces))
+
+  def MatchesPath(self, path, path_stat=None):
+    if path_stat is not None and not stat.S_ISDIR(path_stat.st_mode):
+      return False
+    return FilterRule.MatchesPath(self.regex, path, path_stat)
+
+  def __str__(self):
+    return '<FilterRuleIgnoreDirMtimes %r>' % self.path
+
+
 IGNORED_XATTR_KEYS = [
   'com.apple.avkit.thumbnailCacheEncryptionKey',
   'com.apple.avkit.thumbnailCacheIdentifier',
@@ -1950,9 +2000,10 @@ def Rsync(src_path, dest_path, output, dry_run=False, verbose=False, link_dest=N
 
 class PathSyncer(object):
   class PathData(object):
-    def __init__(self, path, follow_symlinks=False):
+    def __init__(self, path, follow_symlinks=False, mtime_override=None):
       self.path = CanonicalizePath(path)
       self.follow_symlinks = follow_symlinks
+      self.mtime_override = mtime_override
 
     def GetPath(self):
       return self.path
@@ -1960,11 +2011,15 @@ class PathSyncer(object):
     def GetFollowSymlinks(self):
       return self.follow_symlinks
 
+    def GetMtimeOverride(self):
+      return self.mtime_override
+
     def __lt__(self, other):
       return self.path < other.path
 
   def __init__(self, path_datas, src_root_path, dest_root_path, output, dry_run=False, verbose=False):
     self.path_datas = path_datas
+    self.path_data_map = {p.GetPath(): p for p in path_datas}
     self.src_root_path = src_root_path
     self.dest_root_path = dest_root_path
     self.output = output
@@ -1980,7 +2035,8 @@ class PathSyncer(object):
   def _SyncPath(self, path_data):
     src_path = os.path.join(self.src_root_path, path_data.GetPath())
     path_info = PathInfo.FromPath(
-      path_data.GetPath(), src_path, follow_symlinks=path_data.GetFollowSymlinks())
+      path_data.GetPath(), src_path, follow_symlinks=path_data.GetFollowSymlinks(),
+      mtime_override=path_data.GetMtimeOverride())
     dest_path = os.path.join(self.dest_root_path, path_data.GetPath())
     if os.path.lexists(dest_path):
       dest_path_info = PathInfo.FromPath(path_data.GetPath(), dest_path)
@@ -2016,7 +2072,10 @@ class PathSyncer(object):
       return
     for (parent_dir, parent_dest_dir) in reversed(parent_dirs_to_sync):
       parent_src_dir = os.path.join(self.src_root_path, parent_dir)
-      parent_src_path_info = PathInfo.FromPath(parent_dir, parent_src_dir)
+      parent_path_data = self.path_data_map.get(parent_dir)
+      parent_mtime_override = parent_path_data.GetMtimeOverride() if parent_path_data else None
+      parent_src_path_info = PathInfo.FromPath(
+        parent_dir, parent_src_dir, mtime_override=parent_mtime_override)
       self._SyncDir(parent_src_path_info, None, parent_src_dir, parent_dest_dir)
 
   def _SyncDir(self, path_info, dest_path_info, src_path, dest_path, follow_symlinks=False):
@@ -2479,7 +2538,7 @@ class PathInfo(object):
                     xattr_keys=xattr_keys, google_drive_remote_file=google_drive_remote_file)
 
   @staticmethod
-  def FromPath(path, full_path, ignored_xattr_keys=None, follow_symlinks=False):
+  def FromPath(path, full_path, ignored_xattr_keys=None, follow_symlinks=False, mtime_override=None):
     path = CanonicalizePath(path)
     if ignored_xattr_keys is None:
       ignored_xattr_keys = IGNORED_XATTR_KEYS
@@ -2506,8 +2565,12 @@ class PathInfo(object):
       link_dest = CanonicalizePath(os.readlink(full_path))
     else:
       raise Exception('Unexpected file mode for %r: %d' % (full_path, stat_result.st_mode))
+    if mtime_override is not None:
+      mtime = int(mtime_override)
+    else:
+      mtime = int(stat_result.st_mtime)
     return PathInfo(path, path_type=path_type, mode=stat_result.st_mode, uid=stat_result.st_uid,
-                    gid=stat_result.st_gid, mtime=int(stat_result.st_mtime), size=size,
+                    gid=stat_result.st_gid, mtime=mtime, size=size,
                     link_dest=link_dest, sha256=sha256, xattr_hash=xattr_hash, xattr_keys=xattr_keys,
                     google_drive_remote_file=False,
                     dev_inode=(stat_result.st_dev, stat_result.st_ino))
@@ -2664,10 +2727,11 @@ class PathInfo(object):
 
 class PathEnumerator(object):
   class PathData(object):
-    def __init__(self, path, path_stat=None, follow_symlinks=False):
+    def __init__(self, path, path_stat=None, follow_symlinks=False, implied_mtime=None):
       self.path = CanonicalizePath(path)
       self.path_stat = path_stat
       self.follow_symlinks = follow_symlinks
+      self.implied_mtime = implied_mtime
 
     def GetPath(self):
       return self.path
@@ -2677,6 +2741,9 @@ class PathEnumerator(object):
 
     def GetFollowSymlinks(self):
       return self.follow_symlinks
+
+    def GetImpliedMtime(self):
+      return self.implied_mtime
 
   def __init__(self, root_dir, output, filters=[], verbose=False, use_rsync=False):
     self.root_dir = os.path.normpath(root_dir)
@@ -2696,6 +2763,13 @@ class PathEnumerator(object):
                                  verbose=self.verbose)):
       yield PathEnumerator.PathData(CanonicalizePath(path))
 
+  def _ShouldIgnoreDirMtime(self, path, path_stat, filters):
+    for a_filter in filters:
+      if isinstance(a_filter, FilterRuleIgnoreDirMtimes):
+        if a_filter.MatchesPath(path, path_stat):
+          return True
+    return False
+
   def _ScanInternal(self, root_dir, path, filters, path_stat=None, follow_symlinks=False, abs_path=None):
     if abs_path is None:
       if path != '.':
@@ -2707,28 +2781,45 @@ class PathEnumerator(object):
 
     if (stat.S_ISSOCK(path_stat.st_mode) or stat.S_ISCHR(path_stat.st_mode)
         or stat.S_ISBLK(path_stat.st_mode) or stat.S_ISFIFO(path_stat.st_mode)):
-      return
+      return None
 
     canonical_path = CanonicalizePath(path)
-    yield PathEnumerator.PathData(canonical_path, path_stat, follow_symlinks=follow_symlinks)
 
-    if stat.S_ISDIR(path_stat.st_mode) and not stat.S_ISLNK(path_stat.st_mode):
-      child_entries = list(os.scandir(abs_path))
-      current_filters = self._UpdateFilters(root_dir, canonical_path, child_entries, filters)
-      for child_entry in sorted(child_entries, key=lambda p: CanonicalizePath(p.name)):
-        child_name = CanonicalizePath(child_entry.name)
-        if canonical_path != '.':
-          child_path = os.path.join(canonical_path, child_name)
-        else:
-          child_path = child_name
-        matches, follow_symlinks = self._FiltersMatch(child_path, child_entry, current_filters)
-        if not matches:
-          continue
-        for result in self._ScanInternal(
-            root_dir, child_path, current_filters,
-            path_stat=Stat(child_entry.path, follow_symlinks=follow_symlinks), follow_symlinks=follow_symlinks,
-            abs_path=child_entry.path):
-          yield result
+    if not (stat.S_ISDIR(path_stat.st_mode) and not stat.S_ISLNK(path_stat.st_mode)):
+      yield PathEnumerator.PathData(canonical_path, path_stat, follow_symlinks=follow_symlinks)
+      return int(path_stat.st_mtime)
+
+    child_entries = list(os.scandir(abs_path))
+    current_filters = self._UpdateFilters(root_dir, canonical_path, child_entries, filters)
+    subtree_mtimes = []
+
+    for child_entry in sorted(child_entries, key=lambda p: CanonicalizePath(p.name)):
+      child_name = CanonicalizePath(child_entry.name)
+      if canonical_path != '.':
+        child_path = os.path.join(canonical_path, child_name)
+      else:
+        child_path = child_name
+      matches, child_follow_symlinks = self._FiltersMatch(child_path, child_entry, current_filters)
+      if not matches:
+        continue
+      child_stat = Stat(child_entry.path, follow_symlinks=child_follow_symlinks)
+      child_subtree_mtime = yield from self._ScanInternal(
+          root_dir, child_path, current_filters,
+          path_stat=child_stat, follow_symlinks=child_follow_symlinks,
+          abs_path=child_entry.path)
+      if child_subtree_mtime is not None:
+        subtree_mtimes.append(child_subtree_mtime)
+
+    max_mtime = max(subtree_mtimes) if subtree_mtimes else 0
+
+    if self._ShouldIgnoreDirMtime(canonical_path, path_stat, current_filters):
+      implied_mtime = max_mtime
+    else:
+      implied_mtime = None
+
+    yield PathEnumerator.PathData(
+        canonical_path, path_stat, follow_symlinks=follow_symlinks, implied_mtime=implied_mtime)
+    return max_mtime
 
   def _FiltersMatch(self, path, path_entry, filters):
     path_stat = os.lstat(path_entry.path)
@@ -2787,6 +2878,13 @@ class PathEnumerator(object):
           if matcher.startswith('/') and path != '.':
             matcher = '/%s%s' % (path, matcher)
           filters.append(FilterRuleFollowSymlink(matcher))
+        elif line.startswith('ignore-dir-mtimes'):
+          matcher = line[len('ignore-dir-mtimes'):].strip()
+          if not matcher:
+            matcher = '/' if path == '.' else ('/%s' % path)
+          elif matcher.startswith('/') and path != '.':
+            matcher = '/%s%s' % (path, matcher)
+          filters.append(FilterRuleIgnoreDirMtimes(matcher))
         elif line.rstrip():
           raise Exception('Unknown filter rule %r' % line.rstrip())
     return filters
@@ -3295,7 +3393,8 @@ class ManifestVerifier(object):
 
       full_path = os.path.join(self.src_root, path)
       src_path_info = PathInfo.FromPath(
-        path, full_path, ignored_xattr_keys=effective_ignored_xattrs)
+        path, full_path, ignored_xattr_keys=effective_ignored_xattrs,
+        mtime_override=enumerated_path.GetImpliedMtime())
       self.stats.total_paths += 1
       if src_path_info.size is not None:
         self.stats.total_size += src_path_info.size

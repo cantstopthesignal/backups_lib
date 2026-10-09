@@ -333,7 +333,9 @@ class CheckpointCreator(object):
   def _AddPathIfChanged(self, enumerated_path, allow_replace=False):
     path = enumerated_path.GetPath()
     full_path = os.path.join(self.src_root_dir, path)
-    path_info = lib.PathInfo.FromPath(path, full_path, follow_symlinks=enumerated_path.GetFollowSymlinks())
+    path_info = lib.PathInfo.FromPath(
+      path, full_path, follow_symlinks=enumerated_path.GetFollowSymlinks(),
+      mtime_override=enumerated_path.GetImpliedMtime())
     if path_info.path_type == lib.PathInfo.TYPE_SYMLINK and not path_info.link_dest:
       print('*** Error: Symlink %s destination is empty' % lib.EscapePath(path), file=self.output)
       return False
@@ -421,7 +423,8 @@ class CheckpointCreator(object):
       for path in paths_to_sync_set:
         enumerated_path = self.enumerated_path_map[path]
         path_datas_to_sync.append(lib.PathSyncer.PathData(
-          enumerated_path.GetPath(), follow_symlinks=enumerated_path.GetFollowSymlinks()))
+          enumerated_path.GetPath(), follow_symlinks=enumerated_path.GetFollowSymlinks(),
+          mtime_override=enumerated_path.GetImpliedMtime()))
 
       path_syncer = lib.PathSyncer(
         path_datas_to_sync,

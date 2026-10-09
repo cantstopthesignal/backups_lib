@@ -1188,6 +1188,42 @@ class PathEnumeratorTestCase(BaseTestCase):
                                'ln2/ln5;follow-symlinks',
                                'ln2/ln5/f2'])
 
+      with TempDir() as test_dir3:
+        dir1 = CreateDir(test_dir3, 'd1')
+        file1 = CreateFile(dir1, 'f1')
+        os.utime(file1, (1000, 1000))
+        sub1 = CreateDir(dir1, 'sub')
+        file2 = CreateFile(sub1, 'f2')
+        os.utime(file2, (2000, 2000))
+        dir2 = CreateDir(test_dir3, 'd2')
+
+        CreateFile(test_dir3, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                   contents=['ignore-dir-mtimes /d1',
+                             'ignore-dir-mtimes /d2'])
+
+        enumerated = {
+          p.GetPath(): p for p in lib.PathEnumerator(
+            test_dir3, output=sys.stdout, filters=checkpoint_lib.STAGED_BACKUP_DEFAULT_FILTERS).Scan()
+        }
+        AssertEquals(2000, enumerated['d1'].GetImpliedMtime())
+        AssertEquals(2000, enumerated['d1/sub'].GetImpliedMtime())
+        AssertEquals(0, enumerated['d2'].GetImpliedMtime())
+        AssertEquals(None, enumerated['.'].GetImpliedMtime())
+
+      with TempDir() as test_dir4:
+        dir1 = CreateDir(test_dir4, 'd1')
+        file1 = CreateFile(dir1, 'f1')
+        os.utime(file1, (1500, 1500))
+        CreateFile(dir1, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                   contents=['ignore-dir-mtimes /'],
+                   mtime=1500)
+        enumerated = {
+          p.GetPath(): p for p in lib.PathEnumerator(
+            test_dir4, output=sys.stdout, filters=checkpoint_lib.STAGED_BACKUP_DEFAULT_FILTERS).Scan()
+        }
+        AssertEquals(1500, enumerated['d1'].GetImpliedMtime())
+        AssertEquals(None, enumerated['.'].GetImpliedMtime())
+
 
 class FilterRuleTestCase(BaseTestCase):
   def test(self):
@@ -1235,6 +1271,33 @@ class FilterRuleTestCase(BaseTestCase):
     DoFilterRuleTest(True, 'c?', 'a',  expect_matcher_exception=True)
     DoFilterRuleTest(True, 'c\\\\', 'a',  expect_matcher_exception=True)
     DoFilterRuleTest(True, '[a-b]', 'a',  expect_matcher_exception=True)
+
+    def DoFilterRuleIgnoreDirMtimesTest(expected_match, matcher, path, is_dir=False, expect_matcher_exception=False):
+      class FakeStat:
+        def __init__(self, is_dir=False):
+          self.st_mode = is_dir and 16877 or 33188
+
+      try:
+        rule = lib.FilterRuleIgnoreDirMtimes(matcher)
+      except lib.UnsupportedMatcherError as e:
+        AssertEquals(True, expect_matcher_exception)
+      else:
+        AssertEquals(False, expect_matcher_exception)
+        AssertEquals(expected_match, rule.MatchesPath(path, path_stat=FakeStat(is_dir=is_dir)))
+
+    DoFilterRuleIgnoreDirMtimesTest(True, '/dir', 'dir', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '/dir', 'dir/sub', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '/dir', 'dir/sub/sub2', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(False, '/dir', 'dir', is_dir=False)
+    DoFilterRuleIgnoreDirMtimesTest(False, '/dir', 'dir/file', is_dir=False)
+    DoFilterRuleIgnoreDirMtimesTest(False, '/dir', 'dir_other', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(False, '/dir', 'other/dir', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, 'dir', 'other/dir', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, 'dir', 'other/dir/sub', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '/', '.', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '/', 'dir', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '.', '.', is_dir=True)
+    DoFilterRuleIgnoreDirMtimesTest(True, '.', 'dir/sub', is_dir=True)
 
 
 class EncryptionManagerTestCase(BaseTestCase):

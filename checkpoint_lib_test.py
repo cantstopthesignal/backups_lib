@@ -724,6 +724,76 @@ class CreateWithFilterMergeTestCase(BaseTestCase):
       checkpoint1.Close()
 
 
+class CreateWithIgnoreDirMtimesTestCase(BaseTestCase):
+  def test(self):
+    with TempDir() as test_dir:
+      with ApplyFakeDiskImageHelperLevel() as should_run:
+        if should_run:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    checkpoints_dir = CreateDir(test_dir, 'checkpoints')
+    src_root = CreateDir(test_dir, 'src')
+    gdrive = CreateDir(src_root, 'gdrive')
+    sub = CreateDir(gdrive, 'sub')
+    empty = CreateDir(gdrive, 'empty')
+    file1 = CreateFile(gdrive, 'f1', contents='content1')
+    os.utime(file1, (1000, 1000))
+    file2 = CreateFile(sub, 'f2', contents='content2')
+    os.utime(file2, (2000, 2000))
+
+    CreateFile(src_root, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+               contents=['ignore-dir-mtimes /gdrive'])
+
+    checkpoint1, manifest1 = DoCreate(
+      src_root, checkpoints_dir, '1',
+      expected_output=['>d+++++++ .',
+                       '>f+++++++ .staged_backup_filter',
+                       '>d+++++++ gdrive',
+                       '>d+++++++ gdrive/empty',
+                       '>f+++++++ gdrive/f1',
+                       '>d+++++++ gdrive/sub',
+                       '>f+++++++ gdrive/sub/f2',
+                       'Transferring 7 paths (42b)'])
+    try:
+      VerifyCheckpointContents(manifest1, checkpoint1.GetContentRootPath())
+      AssertEquals(2000, manifest1.GetPathInfo('gdrive').mtime)
+      AssertEquals(2000, manifest1.GetPathInfo('gdrive/sub').mtime)
+      AssertEquals(0, manifest1.GetPathInfo('gdrive/empty').mtime)
+    finally:
+      checkpoint1.Close()
+
+    # Simulate Google Drive modifying directory modification times on source without modifying files
+    os.utime(gdrive, (99999, 99999))
+    os.utime(sub, (88888, 88888))
+
+    # Creating incremental checkpoint 2 using checkpoint 1 as basis should detect NO changes
+    checkpoint2, manifest2 = DoCreate(
+      src_root, checkpoints_dir, '2',
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      expected_output=[])
+    try:
+      AssertEquals(2000, manifest2.GetPathInfo('gdrive').mtime)
+      AssertEquals(2000, manifest2.GetPathInfo('gdrive/sub').mtime)
+      AssertEquals(0, manifest2.GetPathInfo('gdrive/empty').mtime)
+    finally:
+      checkpoint2.Close()
+
+    # Now actually modify file1
+    os.utime(file1, (3000, 3000))
+    checkpoint3, manifest3 = DoCreate(
+      src_root, checkpoints_dir, '3',
+      last_checkpoint_path=checkpoint2.GetImagePath(),
+      expected_output=['.d..t.... gdrive',
+                       '.f..t.... gdrive/f1',
+                       'Transferring 2 of 7 paths (8b of 42b)'])
+    try:
+      AssertEquals(3000, manifest3.GetPathInfo('gdrive').mtime)
+      AssertEquals(2000, manifest3.GetPathInfo('gdrive/sub').mtime)
+    finally:
+      checkpoint3.Close()
+
+
 class CreateFromGoogleDriveTestCase(BaseTestCase):
   def test(self):
     with TempDir() as test_dir:
