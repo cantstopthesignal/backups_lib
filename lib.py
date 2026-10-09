@@ -1160,6 +1160,8 @@ class DiskImageHelperDarwin(DiskImageHelper):
       input=encrypted and password.encode('utf8') or b'')
     if p.wait():
       lines = error_output.decode('utf8').strip().split('\n')
+      lines = [l for l in lines if l and not
+               (l.startswith("hdiutil: WARNING: 'hdiutil attach") and 'is deprecated.' in l)]
       if len(lines) == 1 and lines[0].endswith('- Authentication error'):
         raise DiskImageHelperAuthenticationError()
       raise Exception('Command %s failed: stdout: %r, stderr: %r'
@@ -1210,7 +1212,7 @@ class DiskImageHelperDarwin(DiskImageHelper):
 
   def GetImageEncryptionDetails(self, image_path):
     cmd = ['hdiutil', 'isencrypted', image_path]
-    for i in range(5):
+    for i in range(20):
       p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            text=True)
       with p.stdout:
@@ -1768,14 +1770,19 @@ def GetDiskImageLimits(image_path, encryption_manager, encrypted=None, image_uui
     password = encryption_manager.GetPassword(
       image_path, image_uuid, try_last_password=False)
   p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT, text=True)
-  if encrypted:
-    p.stdin.write(password)
-  p.stdin.close()
-  with p.stdout:
-    hdiutil_output = p.stdout.read()
-  if p.wait():
-    raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
+                       stderr=subprocess.PIPE, text=True)
+  hdiutil_output, stderr_output = p.communicate(
+    input=password if encrypted else None)
+  if p.returncode:
+    raise Exception('Command %s failed: stdout: %r, stderr: %r'
+                    % (' '.join([ shlex.quote(a) for a in cmd ]),
+                       hdiutil_output, stderr_output))
+
+  stderr_text = stderr_output.strip()
+  if stderr_text:
+    for line in stderr_text.split('\n'):
+      if not re.match(r"^hdiutil: WARNING: 'hdiutil resize .*' is deprecated\. Please use 'diskutil image resize .*' instead\.$", line):
+        raise Exception('Unexpected stderr from hdiutil resize -limits: %r' % line)
 
   lines = hdiutil_output.strip().split('\n')
   if len(lines) != 1:

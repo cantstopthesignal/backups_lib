@@ -78,6 +78,11 @@ def AssertLinesEqual(a_lines, b_lines):
       RaiseNotEqual('line %r does not match %r' % (a_line, b_line.pattern))
 
 
+ALLOWLISTED_IMAGEINFO_STDERR_PATTERNS = [
+  re.compile(r"^hdiutil: WARNING: 'hdiutil imageinfo .*' is deprecated\. Please use 'diskutil image info .*' instead\.$"),
+]
+
+
 def AssertDiskImageFormat(image_format, image_path, password=None):
   if platform.system() == lib.PLATFORM_DARWIN:
     cmd = ['hdiutil', 'imageinfo', '-plist']
@@ -85,14 +90,18 @@ def AssertDiskImageFormat(image_format, image_path, password=None):
       cmd.append('-stdinpass')
     cmd.append(image_path)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    with p.stdin:
-      if password is not None:
-        p.stdin.write(password.encode('utf8'))
-    with p.stdout:
-      output = p.stdout.read()
-    if p.wait():
-      raise Exception('Command %s failed' % ' '.join([ shlex.quote(a) for a in cmd ]))
+                         stderr=subprocess.PIPE)
+    output, stderr_output = p.communicate(
+      input=password.encode('utf8') if password is not None else None)
+    if p.returncode:
+      raise Exception('Command %s failed: stdout: %r, stderr: %r'
+                      % (' '.join([ shlex.quote(a) for a in cmd ]),
+                         output, stderr_output))
+    stderr_text = stderr_output.decode('utf8').strip()
+    if stderr_text:
+      for line in stderr_text.split('\n'):
+        if not any(pattern.match(line) for pattern in ALLOWLISTED_IMAGEINFO_STDERR_PATTERNS):
+          raise Exception('Unexpected stderr from hdiutil imageinfo: %r' % line)
     plist_data = plistlib.loads(output)
     AssertEquals(image_format, plist_data['Format'])
     if password is not None:

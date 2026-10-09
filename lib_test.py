@@ -1340,6 +1340,42 @@ class ImageAttacherTestCase(BaseTestCase):
       attacher.Close()
 
 
+class GetDiskImageLimitsTestCase(BaseTestCase):
+  def test(self):
+    with ApplyFakeDiskImageHelperLevel(
+        min_fake_disk_image_level=lib_test_util.FAKE_DISK_IMAGE_LEVEL_NONE, test_case=self) as should_run:
+      if should_run:
+        with TempDir() as test_dir:
+          self.RunTest(test_dir)
+
+  def RunTest(self, test_dir):
+    if platform.system() != lib.PLATFORM_DARWIN:
+      return
+
+    # Unencrypted image
+    image_path = os.path.join(test_dir, 'image.sparsebundle')
+    lib.CreateDiskImage(image_path, volume_name='test')
+    current_blocks, min_blocks = lib.GetDiskImageLimits(image_path, encryption_manager=None)
+    self.assertGreater(current_blocks, 0)
+    self.assertGreater(min_blocks, 0)
+    self.assertLessEqual(min_blocks, current_blocks)
+
+    # Encrypted image
+    encryption_manager = lib.EncryptionManager(output=None)
+    enc_image_path = os.path.join(test_dir, 'enc_image.sparsebundle')
+    with HandleGetPass(
+        expected_prompts=['Enter a new password to secure "enc_image.sparsebundle": ',
+                          'Re-enter new password: '],
+        returned_passwords=['mypassword', 'mypassword']):
+      lib.CreateDiskImage(enc_image_path, volume_name='test_enc', encrypt=True,
+                          encryption_manager=encryption_manager)
+    enc_current_blocks, enc_min_blocks = lib.GetDiskImageLimits(
+        enc_image_path, encryption_manager=encryption_manager)
+    self.assertGreater(enc_current_blocks, 0)
+    self.assertGreater(enc_min_blocks, 0)
+    self.assertLessEqual(enc_min_blocks, enc_current_blocks)
+
+
 class ManifestIgnoredXattrsTestCase(BaseTestCase):
   def testAreIgnoredXattrsEqual(self):
     AssertEquals(True, lib.AreIgnoredXattrsEqual([], []))
