@@ -358,9 +358,14 @@ def DoMergeIntoBackups(config, dry_run=False, min_backup=None, max_backup=None,
 
 
 def DoDeleteInBackups(config, dry_run=False, min_backup=None, max_backup=None,
-                      paths=[], expected_success=True, expected_output=[]):
+                      paths=[], collapse=True, collapse_dirs=None, expected_success=True, expected_output=[]):
   cmd_args = ['delete-in-backups',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if min_backup is not None:
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
@@ -385,9 +390,15 @@ def DoMarkBackupsNotPruneable(config, backup_names=[], min_backup=None, max_back
                 expected_output=expected_output)
 
 
-def DoRestoreMeta(config, mtimes=False, modes=False, paths=[], dry_run=False, expected_success=True, expected_output=[]):
+def DoRestoreMeta(config, mtimes=False, modes=False, paths=[], collapse=True, collapse_dirs=None,
+                  dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['restore-meta',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if mtimes:
     cmd_args.append('--mtimes')
   if modes:
@@ -398,9 +409,15 @@ def DoRestoreMeta(config, mtimes=False, modes=False, paths=[], dry_run=False, ex
                 expected_output=expected_output)
 
 
-def DoDeleteLocalContentInBackupScope(config, paths=[], dry_run=False, expected_success=True, expected_output=[]):
+def DoDeleteLocalContentInBackupScope(config, paths=[], collapse=True, collapse_dirs=None,
+                                      dry_run=False, expected_success=True, expected_output=[]):
   cmd_args = ['delete-local-content-in-backup-scope',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   for path in paths:
     cmd_args.extend(['--path', path])
   DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success,

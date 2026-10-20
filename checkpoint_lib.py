@@ -214,7 +214,7 @@ class CheckpointCreator(object):
   def __init__(self, src_root_dir, checkpoints_root_dir, name, output, basis_path=None, basis_manifest=None,
                dry_run=False, verbose=False, checksum_all=False, manifest_only=False, encrypt=True,
                encryption_manager=None, filters=STAGED_BACKUP_DEFAULT_FILTERS,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     if src_root_dir is None:
       raise Exception('src_root_dir cannot be None')
     self.src_root_dir = src_root_dir
@@ -233,6 +233,7 @@ class CheckpointCreator(object):
     self.checkpoint = None
     self.manifest = None
     self.path_infos_to_sync = []
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.path_enumerator = lib.PathEnumerator(src_root_dir, output, filters=filters, verbose=verbose)
     self.enumerated_path_map = {}
@@ -486,7 +487,9 @@ class CheckpointCreator(object):
     if not self.pending_path_printouts:
       return
     sha256_to_pathinfos = self.manifest.CreateSha256ToPathInfosMap()
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
+    printer.AddRollupRules(self.path_enumerator.GetRollupRules())
     for itemized, basis_path_info, path_info in self.pending_path_printouts:
       dup_analyze_result = None
       if itemized.HasDiffs():
@@ -517,7 +520,7 @@ class CheckpointCreator(object):
 class CheckpointApplier(object):
   def __init__(self, src_checkpoint_path, dest_root, output, dry_run=False, verbose=False,
                checksum_all=False, strict_replace=False, encryption_manager=None,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.src_checkpoint_path = src_checkpoint_path
     self.src_checkpoint = None
     self.src_manifest = None
@@ -528,8 +531,10 @@ class CheckpointApplier(object):
     self.checksum_all = checksum_all
     self.strict_replace = strict_replace
     self.encryption_manager = encryption_manager
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
-    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                                    collapse=self.collapse)
     self.paths_to_sync = []
     self.existing_files_to_sync = []
     self.paths_to_delete = []
@@ -549,7 +554,6 @@ class CheckpointApplier(object):
 
   def _ApplyInternal(self):
     self.src_manifest = lib.Manifest.Load(self.src_checkpoint.GetManifestPath())
-
     new_paths = self.src_manifest.GetPaths()
 
     for enumerated_path in self.path_enumerator.Scan():
@@ -778,13 +782,14 @@ def DoCreateCheckpoint(args, output):
   else:
     basis_manifest = None
 
+  collapse = lib.GetCollapseFromArgs(cmd_args)
   collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
 
   checkpoint_creator = CheckpointCreator(
     cmd_args.src_root, cmd_args.checkpoints_dir, name=cmd_args.checkpoint_name, output=output,
     basis_path=basis_path, basis_manifest=basis_manifest, dry_run=args.dry_run, verbose=args.verbose,
     checksum_all=cmd_args.checksum_all, manifest_only=cmd_args.manifest_only, encrypt=cmd_args.encrypt,
-    encryption_manager=encryption_manager, filters=filters, collapse_dirs=collapse_dirs)
+    encryption_manager=encryption_manager, filters=filters, collapse=collapse, collapse_dirs=collapse_dirs)
   return checkpoint_creator.Create()
 
 
@@ -797,13 +802,14 @@ def DoApplyCheckpoint(args, output):
   lib.AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
+  collapse = lib.GetCollapseFromArgs(cmd_args)
   collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
 
   checkpoint_applier = CheckpointApplier(
     cmd_args.src_checkpoint_path, cmd_args.dest_root, output, dry_run=args.dry_run, verbose=args.verbose,
     checksum_all=cmd_args.checksum_all, strict_replace=cmd_args.strict_replace,
     encryption_manager=lib.EncryptionManager(output=output),
-    collapse_dirs=collapse_dirs)
+    collapse=collapse, collapse_dirs=collapse_dirs)
   return checkpoint_applier.Apply()
 
 

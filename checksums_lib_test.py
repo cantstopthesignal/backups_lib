@@ -877,6 +877,74 @@ class SyncTestCase(BaseTestCase):
         '  >f+++++++ - 2 subpaths (28b)',
         'Paths: 16 total (7kb), 3 synced (28b), 2 checksummed (28b)'])
 
+    CreateFile(root_dir, checksums_lib.FILTER_DIR_MERGE_FILENAME,
+               contents=['rollup *.sparsebundle',
+                         'rollup /Library/Preferences'])
+    sparsebundle_dir = CreateDir(root_dir, 'backup.sparsebundle')
+    bands_dir = CreateDir(sparsebundle_dir, 'bands')
+    CreateFile(bands_dir, '0001', contents='band1')
+    CreateFile(bands_dir, '0002', contents='band2')
+
+    lib_dir = CreateDir(root_dir, 'Library')
+    lib_pref_dir = CreateDir(lib_dir, 'Preferences')
+    CreateFile(lib_pref_dir, 'test.plist', contents='plist1')
+
+    other_dir = CreateDir(root_dir, 'other')
+    other_lib_dir = CreateDir(other_dir, 'Library')
+    other_pref_dir = CreateDir(other_lib_dir, 'Preferences')
+    CreateFile(other_pref_dir, 'other.plist', contents='plist2')
+
+    DoSync(
+      root_dir, dry_run=True,
+      expected_output=[
+        '>f+++++++ .adjoined_checksums_filter',
+        '>d+++++++ Library',
+        '*d.rollup Library/Preferences/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 1 subpath (6b)',
+        '*d.rollup backup.sparsebundle/',
+        '  >d+++++++ - 2 subpaths',
+        '  >f+++++++ - 2 subpaths (10b)',
+        '>d+++++++ other',
+        '>d+++++++ other/Library',
+        '>d+++++++ other/Library/Preferences',
+        '>f+++++++ other/Library/Preferences/other.plist',
+        'Paths: 28 total (7.1kb), 12 synced (72b), 5 checksummed (72b)'])
+
+    DoSync(
+      root_dir, dry_run=True, collapse=False,
+      expected_output=[
+        '>f+++++++ .adjoined_checksums_filter',
+        '>d+++++++ Library',
+        '>d+++++++ Library/Preferences',
+        '>f+++++++ Library/Preferences/test.plist',
+        '>d+++++++ backup.sparsebundle',
+        '>d+++++++ backup.sparsebundle/bands',
+        '>f+++++++ backup.sparsebundle/bands/0001',
+        '>f+++++++ backup.sparsebundle/bands/0002',
+        '>d+++++++ other',
+        '>d+++++++ other/Library',
+        '>d+++++++ other/Library/Preferences',
+        '>f+++++++ other/Library/Preferences/other.plist',
+        'Paths: 28 total (7.1kb), 12 synced (72b), 5 checksummed (72b)'])
+
+    DoSync(
+      root_dir,
+      expected_output=[
+        '>f+++++++ .adjoined_checksums_filter',
+        '>d+++++++ Library',
+        '*d.rollup Library/Preferences/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 1 subpath (6b)',
+        '*d.rollup backup.sparsebundle/',
+        '  >d+++++++ - 2 subpaths',
+        '  >f+++++++ - 2 subpaths (10b)',
+        '>d+++++++ other',
+        '>d+++++++ other/Library',
+        '>d+++++++ other/Library/Preferences',
+        '>f+++++++ other/Library/Preferences/other.plist',
+        'Paths: 28 total (7.1kb), 12 synced (72b), 5 checksummed (72b)'])
+
 
 class RenamePathsTestCase(BaseTestCase):
   def test(self):

@@ -326,6 +326,72 @@ class CreateDryRunTestCase(BaseTestCase):
                        '.f..t.... par!/f_\\r',
                        'Transferring 5 of 8 paths (48b of 48b)'])
 
+    filter_file = CreateFile(src_root, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                             contents=['rollup *.sparsebundle',
+                                       'rollup /Library/Preferences'])
+    sparsebundle_dir = CreateDir(src_root, 'backup.sparsebundle')
+    bands_dir = CreateDir(sparsebundle_dir, 'bands')
+    CreateFile(bands_dir, '0001', contents='band1')
+    CreateFile(bands_dir, '0002', contents='band2')
+
+    lib_dir = CreateDir(src_root, 'Library')
+    lib_pref_dir = CreateDir(lib_dir, 'Preferences')
+    CreateFile(lib_pref_dir, 'test.plist', contents='plist1')
+
+    other_dir = CreateDir(src_root, 'other')
+    other_lib_dir = CreateDir(other_dir, 'Library')
+    other_pref_dir = CreateDir(other_lib_dir, 'Preferences')
+    CreateFile(other_pref_dir, 'other.plist', contents='plist2')
+
+    SetMTime(src_root)
+
+    DoCreate(
+      src_root, checkpoints_dir, 'filter_rollup_test', dry_run=True,
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      expected_output=[
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (31b)',
+        '>f+++++++ .staged_backup_filter',
+        '>d+++++++ Library',
+        '*d.rollup Library/Preferences/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 1 subpath (6b)',
+        '*d.rollup backup.sparsebundle/',
+        '  >d+++++++ - 2 subpaths',
+        '  >f+++++++ - 2 subpaths (10b)',
+        '>d+++++++ other',
+        '>d+++++++ other/Library',
+        '>d+++++++ other/Library/Preferences',
+        '>f+++++++ other/Library/Preferences/other.plist',
+        '>fcs..... par!/f2',
+        '.f..t.... par!/f_\\r',
+        'Transferring 17 of 20 paths (120b of 120b)'])
+
+    DoCreate(
+      src_root, checkpoints_dir, 'filter_rollup_test_no_collapse', dry_run=True,
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      collapse=False,
+      expected_output=[
+        '>d+++++++ .git',
+        '>f+++++++ .git/HEAD',
+        '>f+++++++ .git/index',
+        '>f+++++++ .staged_backup_filter',
+        '>d+++++++ Library',
+        '>d+++++++ Library/Preferences',
+        '>f+++++++ Library/Preferences/test.plist',
+        '>d+++++++ backup.sparsebundle',
+        '>d+++++++ backup.sparsebundle/bands',
+        '>f+++++++ backup.sparsebundle/bands/0001',
+        '>f+++++++ backup.sparsebundle/bands/0002',
+        '>d+++++++ other',
+        '>d+++++++ other/Library',
+        '>d+++++++ other/Library/Preferences',
+        '>f+++++++ other/Library/Preferences/other.plist',
+        '>fcs..... par!/f2',
+        '.f..t.... par!/f_\\r',
+        'Transferring 17 of 20 paths (120b of 120b)'])
+
 
 class CreateTestCase(BaseTestCase):
   def test(self):

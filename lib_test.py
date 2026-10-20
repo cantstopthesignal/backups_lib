@@ -377,6 +377,17 @@ class ItemizedRollupPrinterTestCase(BaseTestCase):
     empty_printer = lib.ItemizedRollupPrinter(io.StringIO(), collapse_dirs=[])
     AssertEquals(None, empty_printer.FindCollapseRoot('proj/.git/HEAD'))
 
+    # When collapse=True and collapse_dirs=[], dynamic rollup_rules still work:
+    rule_printer = lib.ItemizedRollupPrinter(io.StringIO(), collapse_dirs=[], collapse=True)
+    rule_printer.AddRollupRule(lib.FilterRuleRollup('*.sparsebundle', base_dir='.'))
+    AssertEquals('test.sparsebundle', rule_printer.FindCollapseRoot('test.sparsebundle/bands/01'))
+
+    # When collapse=False, neither collapse_dirs nor rollup_rules collapse:
+    no_collapse_printer = lib.ItemizedRollupPrinter(io.StringIO(), collapse_dirs=['.git'], collapse=False)
+    no_collapse_printer.AddRollupRule(lib.FilterRuleRollup('*.sparsebundle', base_dir='.'))
+    AssertEquals(None, no_collapse_printer.FindCollapseRoot('proj/.git/HEAD'))
+    AssertEquals(None, no_collapse_printer.FindCollapseRoot('test.sparsebundle/bands/01'))
+
   def testRollupMultiLine(self):
     out = io.StringIO()
     printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], colorize=False)
@@ -459,6 +470,90 @@ class ItemizedRollupPrinterTestCase(BaseTestCase):
     expected_subdelta = '  \033[%s>f+++++++\033[%s - 1 subpath (100b)' % (
       lib.TERM_COLOR_GREEN, lib.TERM_COLOR_RESET)
     AssertLinesEqual(out.getvalue().strip().split('\n'), [expected_header, expected_subdelta])
+
+  def testFilterRuleRollupAnchored(self):
+    out = io.StringIO()
+    rule = lib.FilterRuleRollup('/Library/Preferences', base_dir='.')
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=[], rollup_rules=[rule], colorize=False)
+
+    printer.Print(lib.ItemizedPathChange('Library/Preferences/com.apple.finder.plist', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Library/Preferences/ByHost/com.apple.foo.plist', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Users/alice/Library/Preferences/com.apple.finder.plist', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Flush()
+
+    expected = [
+      '*d.rollup Library/Preferences/',
+      '  >f+++++++ - 2 subpaths',
+      '>f+++++++ Users/alice/Library/Preferences/com.apple.finder.plist',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testFilterRuleRollupGlobPattern(self):
+    out = io.StringIO()
+    rule = lib.FilterRuleRollup('*.sparsebundle', base_dir='.')
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=[], rollup_rules=[rule], colorize=False)
+
+    printer.Print(lib.ItemizedPathChange('Backups/MyMac.sparsebundle/Info.plist', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Backups/MyMac.sparsebundle/bands/001', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Backups/RegularDir/file.txt', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Other.sparsebundle/bands/002', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Flush()
+
+    expected = [
+      '*d.rollup Backups/MyMac.sparsebundle/',
+      '  >f+++++++ - 2 subpaths',
+      '>f+++++++ Backups/RegularDir/file.txt',
+      '*d.rollup Other.sparsebundle/',
+      '  >f+++++++ - 1 subpath',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testFilterRuleRollupSubdirBaseDir(self):
+    out = io.StringIO()
+    rule = lib.FilterRuleRollup('*.sparsebundle', base_dir='Backups')
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=[], rollup_rules=[rule], colorize=False)
+
+    printer.Print(lib.ItemizedPathChange('Backups/MyMac.sparsebundle/bands/001', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Other/MyMac.sparsebundle/bands/001', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Flush()
+
+    expected = [
+      '*d.rollup Backups/MyMac.sparsebundle/',
+      '  >f+++++++ - 1 subpath',
+      '>f+++++++ Other/MyMac.sparsebundle/bands/001',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testFilterRuleRollupOutermostPrecedence(self):
+    out = io.StringIO()
+    rule = lib.FilterRuleRollup('*.sparsebundle', base_dir='.')
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], rollup_rules=[rule], colorize=False)
+
+    # .git inside MyMac.sparsebundle should be rolled up under MyMac.sparsebundle/
+    printer.Print(lib.ItemizedPathChange('Backups/MyMac.sparsebundle/.git/HEAD', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Print(lib.ItemizedPathChange('Backups/MyMac.sparsebundle/bands/001', lib.PathInfo.TYPE_FILE, new_path=True))
+    printer.Flush()
+
+    expected = [
+      '*d.rollup Backups/MyMac.sparsebundle/',
+      '  >f+++++++ - 2 subpaths',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testPathEnumeratorDiscoversRollupRules(self):
+    with TempDir() as temp_dir:
+      CreateFile(temp_dir, '.staged_backup_filter',
+                 contents='rollup /Library/Preferences\nrollup *.sparsebundle\n')
+      out = io.StringIO()
+      printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], colorize=False)
+      filters = [lib.FilterRuleDirMerge('.staged_backup_filter')]
+      enumerator = lib.PathEnumerator(temp_dir, out, filters=filters, rollup_printer=printer)
+      list(enumerator.Scan())
+
+      rules = enumerator.GetRollupRules()
+      self.assertEqual(len(rules), 2)
+      self.assertTrue(any(r.MatchesDir('Library/Preferences') for r in rules))
+      self.assertTrue(any(r.MatchesDir('foo.sparsebundle') for r in rules))
 
 
 class CompactTestCase(BaseTestCase):
@@ -1353,6 +1448,27 @@ class PathEnumeratorTestCase(BaseTestCase):
         }
         AssertEquals(1500, enumerated['d1'].GetImpliedMtime())
         AssertEquals(None, enumerated['.'].GetImpliedMtime())
+
+      with TempDir() as test_dir5:
+        CreateDir(test_dir5, 'd1')
+        CreateFile(test_dir5, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                   contents=['rollup /Library/Preferences',
+                             'rollup *.sparsebundle'])
+        sub_dir = CreateDir(test_dir5, 'sub')
+        CreateFile(sub_dir, checkpoint_lib.STAGED_BACKUP_DIR_MERGE_FILENAME,
+                   contents=['rollup internal_dir'])
+
+        path_enumerator = lib.PathEnumerator(
+          test_dir5, output=sys.stdout, filters=checkpoint_lib.STAGED_BACKUP_DEFAULT_FILTERS)
+        list(path_enumerator.Scan())
+
+        rollup_rules = path_enumerator.GetRollupRules()
+        AssertEquals(3, len(rollup_rules))
+        AssertEquals(True, rollup_rules[0].MatchesDir('Library/Preferences'))
+        AssertEquals(False, rollup_rules[0].MatchesDir('other/Library/Preferences'))
+        AssertEquals(True, rollup_rules[1].MatchesDir('foo/bar.sparsebundle'))
+        AssertEquals(True, rollup_rules[2].MatchesDir('sub/internal_dir'))
+        AssertEquals(False, rollup_rules[2].MatchesDir('other/internal_dir'))
 
 
 class FilterRuleTestCase(BaseTestCase):

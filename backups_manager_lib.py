@@ -162,7 +162,7 @@ class PathsIntoBackupCopier(object):
                last_to_backup, last_to_manifest, path_matcher, output, verify_with_checksums=False,
                verify_hardlinks_with_checksums=True, deduplicate=True,
                deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE, dry_run=False,
-               verbose=False, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               verbose=False, collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     """
     Args:
         to_backup: None to create a new backup matching from_backup_or_checkpoint's name for the contents,
@@ -183,6 +183,7 @@ class PathsIntoBackupCopier(object):
     self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def Copy(self):
@@ -299,7 +300,8 @@ class PathsIntoBackupCopier(object):
         self.last_to_manifest, include_matching=not all_from_files_matched)
     else:
       itemizeds = result.to_manifest.GetItemized()
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
     for itemized in itemizeds:
       if (itemized.path_type == lib.PathInfo.TYPE_DIR
           and not self.path_matcher.Matches(itemized.path)):
@@ -546,7 +548,7 @@ def DeDuplicateBackups(backup, manifest, last_backup, last_manifest, output, min
 
 def DumpUniqueFilesInBackup(
     backup, previous_backup, next_backup, output, verbose=False,
-    ignore_matching_renames=False, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+    ignore_matching_renames=False, collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
   print("Finding unique files in backup %s..." % backup, file=output)
   compared_to_output = []
   if previous_backup is not None:
@@ -560,7 +562,8 @@ def DumpUniqueFilesInBackup(
   manifest.Read()
   num_paths = manifest.GetPathCount()
 
-  printer = lib.ItemizedRollupPrinter(output=output, collapse_dirs=collapse_dirs)
+  printer = lib.ItemizedRollupPrinter(output=output, collapse_dirs=collapse_dirs,
+                                      collapse=collapse)
 
   if previous_backup is None and next_backup is None:
     for itemized in manifest.GetItemized():
@@ -1092,7 +1095,7 @@ class BackupsManager(object):
 class BackupCreator:
   def __init__(self, config, output, name=None, encrypt=True, checksum_all=True,
                encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.name = name
@@ -1101,6 +1104,7 @@ class BackupCreator:
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def Create(self):
@@ -1122,14 +1126,14 @@ class BackupCreator:
       basis_path=basis_path, basis_manifest=basis_manifest, dry_run=self.dry_run,
       verbose=self.verbose, checksum_all=self.checksum_all, manifest_only=False,
       encrypt=self.encrypt, encryption_manager=self.encryption_manager, filters=filters,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
     return creator.Create()
 
 
 class CheckpointsToBackupsApplier:
   def __init__(self, config, output, encryption_manager=None, checksum_all=True,
                checksum_hardlinks=True, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
-               dry_run=False, verbose=False, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               dry_run=False, verbose=False, collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.encryption_manager = encryption_manager
@@ -1138,6 +1142,7 @@ class CheckpointsToBackupsApplier:
     self.deduplicate_min_file_size = deduplicate_min_file_size
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.manager = None
 
@@ -1195,7 +1200,7 @@ class CheckpointsToBackupsApplier:
       output=self.output, verify_with_checksums=self.checksum_all,
       verify_hardlinks_with_checksums=self.checksum_hardlinks,
       dry_run=self.dry_run, verbose=self.verbose,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
     result = copier.Copy()
     if not result.success:
       print(('*** Error: Failed to apply %s onto %s'
@@ -1261,7 +1266,7 @@ class BackupsVerifier(object):
   def __init__(self, config, output, min_backup=None, max_backup=None, full=True,
                continue_on_error=False, hdiutil_verify=True, encryption_manager=None,
                checksum_all=True, dry_run=False, verbose=False, legacy_xattr_date=None,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.min_backup = min_backup
@@ -1274,6 +1279,7 @@ class BackupsVerifier(object):
     self.dry_run = dry_run
     self.verbose = verbose
     self.legacy_xattr_date = legacy_xattr_date
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def Verify(self):
@@ -1400,7 +1406,8 @@ class BackupsVerifier(object):
     print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
     for itemized in itemized_results:
       manifest_path_info = manifest.GetPathInfo(itemized.path)
       new_manifest_path_info = new_manifest.GetPathInfo(itemized.path)
@@ -1479,7 +1486,8 @@ class BackupsVerifier(object):
     print('Paths: %s' % ', '.join(out_pieces), file=self.output)
 
     itemized_results = new_manifest.GetDiffItemized(manifest)
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
     for itemized in itemized_results:
       manifest_path_info = manifest.GetPathInfo(itemized.path)
       new_manifest_path_info = new_manifest.GetPathInfo(itemized.path)
@@ -1713,7 +1721,7 @@ class BackupsInteractiveDeleter(object):
 
   def __init__(self, config, output, backups_matcher=BackupsMatcher(), ignore_matching_renames=False,
                include_latest_backup=True, encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.backups_matcher = backups_matcher
@@ -1724,6 +1732,7 @@ class BackupsInteractiveDeleter(object):
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.manager = None
 
@@ -1782,13 +1791,13 @@ class BackupsInteractiveDeleter(object):
     DumpUniqueFilesInBackup(
       backup, previous_backup, next_backup, output=self.output, verbose=self.verbose,
       ignore_matching_renames=self.ignore_matching_renames,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
 
 
 class UniqueFilesInBackupsDumper(object):
   def __init__(self, config, output, backups_matcher=BackupsMatcher(), ignore_matching_renames=False,
                match_previous_only=False, match_next_only=False, encryption_manager=None,
-               dry_run=False, verbose=False, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               dry_run=False, verbose=False, collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.backups_matcher = backups_matcher
@@ -1798,6 +1807,7 @@ class UniqueFilesInBackupsDumper(object):
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.manager = None
 
@@ -1837,14 +1847,14 @@ class UniqueFilesInBackupsDumper(object):
     DumpUniqueFilesInBackup(
       backup, previous_backup, next_backup, output=self.output, verbose=self.verbose,
       ignore_matching_renames=self.ignore_matching_renames,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
 
 
 class PathsFromBackupsExtractor(object):
   def __init__(self, config, output, output_image_path=None, output_volume_name=None, paths=[],
                min_backup=None, max_backup=None, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
                encrypt=True, encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.output_image_path = output_image_path
@@ -1859,6 +1869,7 @@ class PathsFromBackupsExtractor(object):
     self.extracted_manager = None
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def ExtractPaths(self):
@@ -1936,7 +1947,7 @@ class PathsFromBackupsExtractor(object):
       to_backup=None, last_to_backup=last_extracted_backup, last_to_manifest=last_extracted_manifest,
       path_matcher=path_matcher, deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
     result = copier.Copy()
 
     if not result.success:
@@ -1952,7 +1963,7 @@ class IntoBackupsMerger(object):
   def __init__(self, config, output, from_image_path=None,
                min_backup=None, max_backup=None, deduplicate_min_file_size=DEDUP_MIN_FILE_SIZE,
                encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.from_image_path = from_image_path
@@ -1965,6 +1976,7 @@ class IntoBackupsMerger(object):
     self.from_backups_manager = None
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def Merge(self):
@@ -2060,7 +2072,7 @@ class IntoBackupsMerger(object):
       to_backup=backup, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=lib.PathMatcherAll(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
     result = copier.Copy()
 
     if not result.success:
@@ -2091,7 +2103,7 @@ class IntoBackupsMerger(object):
       to_backup=None, last_to_backup=last_backup, last_to_manifest=None,
       path_matcher=lib.PathMatcherAll(), deduplicate_min_file_size=self.deduplicate_min_file_size,
       output=self.output, dry_run=self.dry_run, verbose=self.verbose,
-      collapse_dirs=self.collapse_dirs)
+      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
     result = copier.Copy()
 
     if not result.success or not result.num_copied:
@@ -2106,7 +2118,7 @@ class IntoBackupsMerger(object):
 class PathsInBackupsDeleter(object):
   def __init__(self, config, output, min_backup=None, max_backup=None, paths=[],
                encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.min_backup = min_backup
@@ -2115,6 +2127,7 @@ class PathsInBackupsDeleter(object):
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
 
   def DeletePaths(self):
@@ -2155,7 +2168,8 @@ class PathsInBackupsDeleter(object):
     num_paths = manifest.GetPathCount()
 
     paths_to_delete = []
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
 
     path_matcher = lib.PathMatcherPathsAndPrefix(self.paths)
     for path in manifest.GetPaths():
@@ -2194,7 +2208,7 @@ class PathsInBackupsDeleter(object):
       verifier = lib.ManifestVerifier(manifest, backup.GetContentRootPath(), self.output,
                                       checksum_path_matcher=lib.PathMatcherNone(),
                                       verbose=self.verbose,
-                                      collapse_dirs=self.collapse_dirs)
+                                      collapse=self.collapse, collapse_dirs=self.collapse_dirs)
       if not verifier.Verify():
         raise Exception('*** Error: Failed to verify %s' % backup.GetName())
 
@@ -2235,7 +2249,7 @@ class BackupNotPruneableMarker(object):
 class MetadataRestorer:
   def __init__(self, config, output, mtimes=False, modes=False, path_matcher=lib.PathMatcherAll(),
                encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.mtimes = mtimes
@@ -2244,6 +2258,7 @@ class MetadataRestorer:
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.total_paths = 0
     self.total_updated_paths = 0
@@ -2275,7 +2290,9 @@ class MetadataRestorer:
       meta_strs.append('modes')
     print('Restoring metadata (%s)...' % ', '.join(meta_strs), file=self.output)
 
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
+    path_enumerator.SetRollupPrinter(printer)
     for enumerated_path in path_enumerator.Scan():
       self.total_paths += 1
 
@@ -2326,13 +2343,14 @@ class MetadataRestorer:
 class LocalContentInBackupScopeDeleter:
   def __init__(self, config, output, path_matcher=lib.PathMatcherAll(),
                encryption_manager=None, dry_run=False, verbose=False,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.config = config
     self.output = output
     self.path_matcher = path_matcher
     self.encryption_manager = encryption_manager
     self.dry_run = dry_run
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.total_paths = 0
     self.total_deleted_paths = 0
@@ -2346,7 +2364,9 @@ class LocalContentInBackupScopeDeleter:
     print('Deleting local content...', file=self.output)
 
     paths_to_delete = []
-    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                        collapse=self.collapse)
+    path_enumerator.SetRollupPrinter(printer)
 
     for enumerated_path in path_enumerator.Scan():
       self.total_paths += 1
@@ -2409,7 +2429,7 @@ def DoCreateBackup(args, output):
     config, output=output, name=cmd_args.backup_name, encrypt=cmd_args.encrypt,
     encryption_manager=lib.EncryptionManager(output=output), checksum_all=cmd_args.checksum_all,
     dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return creator.Create()
 
 
@@ -2429,7 +2449,7 @@ def DoApplyToBackups(args, output):
     checksum_all=cmd_args.checksum_all, checksum_hardlinks=cmd_args.checksum_hardlinks,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
     dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return applier.Apply()
 
 
@@ -2485,7 +2505,7 @@ def DoVerifyBackups(args, output):
     hdiutil_verify=cmd_args.hdiutil_verify, encryption_manager=lib.EncryptionManager(output=output),
     checksum_all=cmd_args.checksum_all, dry_run=args.dry_run, verbose=args.verbose,
     legacy_xattr_date=cmd_args.legacy_xattr_date,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return verifier.Verify()
 
 
@@ -2573,7 +2593,7 @@ def DoDeleteBackupsInteractive(args, output):
     ignore_matching_renames=cmd_args.ignore_matching_renames,
     include_latest_backup=cmd_args.include_latest_backup,
     encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return deleter.DeleteBackupsInteractively()
 
 
@@ -2602,7 +2622,7 @@ def DoDumpUniqueFilesInBackups(args, output):
     ignore_matching_renames=cmd_args.ignore_matching_renames,
     match_previous_only=cmd_args.match_previous_only, match_next_only=cmd_args.match_next_only,
     encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return dumper.DumpUniqueFiles()
 
 
@@ -2628,7 +2648,7 @@ def DoExtractFromBackups(args, output):
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size, encrypt=cmd_args.encrypt,
     encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return extractor.ExtractPaths()
 
 
@@ -2649,7 +2669,7 @@ def DoMergeIntoBackups(args, output):
     min_backup=cmd_args.min_backup, max_backup=cmd_args.max_backup,
     deduplicate_min_file_size=cmd_args.deduplicate_min_file_size,
     encryption_manager=lib.EncryptionManager(output=output), dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return merger.Merge()
 
 
@@ -2669,7 +2689,7 @@ def DoDeleteInBackups(args, output):
     config, output=output, paths=paths, min_backup=cmd_args.min_backup,
     max_backup=cmd_args.max_backup, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return deleter.DeletePaths()
 
 
@@ -2717,7 +2737,7 @@ def DoRestoreMeta(args, output):
     config, output=output, path_matcher=path_matcher, mtimes=cmd_args.mtimes,
     modes=cmd_args.modes, encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return metadata_restorer.RestoreMetadata()
 
 
@@ -2735,7 +2755,7 @@ def DoDeleteLocalContentInBackupScope(args, output):
     config, output=output, path_matcher=path_matcher,
     encryption_manager=lib.EncryptionManager(output=output),
     dry_run=args.dry_run, verbose=args.verbose,
-    collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
+    collapse=lib.GetCollapseFromArgs(cmd_args), collapse_dirs=lib.GetCollapseDirsFromArgs(cmd_args))
   return local_content_deleter.DeleteLocalContent()
 
 

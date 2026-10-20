@@ -304,7 +304,7 @@ class ChecksumsSyncer(object):
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
                detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
                upgrade_ignored_xattrs=False, legacy_xattr_date=None,
-               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -318,14 +318,17 @@ class ChecksumsSyncer(object):
     self.verbose = verbose
     self.upgrade_ignored_xattrs = upgrade_ignored_xattrs
     self.legacy_xattr_date = legacy_xattr_date
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
-    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                                    collapse=self.collapse)
     self.effective_ignored_xattrs = None
     self.checksums = None
     self.basis_manifest = None
     self.manifest = None
     self.scan_manifest = None
-    self.path_enumerator = lib.PathEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose)
+    self.path_enumerator = lib.PathEnumerator(root_path, output, filters=CHECKSUM_FILTERS, verbose=verbose,
+                                              rollup_printer=self.rollup_printer)
     self.escape_key_detector = None
     self.sha256_to_basis_pathinfos = None
     self.size_to_pathinfos = None
@@ -1441,6 +1444,7 @@ def DoSync(args, output):
   cmd_args = parser.parse_args(args.cmd_args)
 
   path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+  collapse = lib.GetCollapseFromArgs(cmd_args)
   collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
@@ -1450,7 +1454,7 @@ def DoSync(args, output):
     dry_run=args.dry_run, verbose=args.verbose,
     upgrade_ignored_xattrs=cmd_args.upgrade_ignored_xattrs,
     legacy_xattr_date=cmd_args.legacy_xattr_date,
-    collapse_dirs=collapse_dirs)
+    collapse=collapse, collapse_dirs=collapse_dirs)
   return checksums_syncer.Sync()
 
 

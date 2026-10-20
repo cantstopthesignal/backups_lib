@@ -7,6 +7,7 @@ import contextlib
 import difflib
 import errno
 import fcntl
+import fnmatch
 import getpass
 import hashlib
 import io
@@ -216,11 +217,13 @@ def AddCollapseArgs(parser):
   parser.add_argument('--collapse-dirs', default=','.join(DEFAULT_COLLAPSE_DIRS))
 
 
+def GetCollapseFromArgs(args):
+  return getattr(args, 'collapse', True)
+
+
 def GetCollapseDirsFromArgs(args):
-  if not getattr(args, 'collapse', True):
-    return []
   collapse_dirs_str = getattr(args, 'collapse_dirs', None)
-  if collapse_dirs_str:
+  if collapse_dirs_str is not None:
     return [d.strip() for d in collapse_dirs_str.split(',') if d.strip()]
   return list(DEFAULT_COLLAPSE_DIRS)
 
@@ -468,6 +471,52 @@ class FilterRuleIgnoreDirMtimes(FilterRule):
 
   def __str__(self):
     return '<FilterRuleIgnoreDirMtimes %r>' % self.path
+
+
+class FilterRuleRollup(FilterRule):
+  def __init__(self, matcher, base_dir='.'):
+    matcher = matcher.strip()
+    self.raw_matcher = matcher
+    self.base_dir = CanonicalizePath(base_dir) or '.'
+    if self.base_dir == '':
+      self.base_dir = '.'
+
+    if matcher.startswith('/'):
+      self.anchored = True
+      rel = matcher.lstrip('/').rstrip('/')
+      if self.base_dir != '.':
+        self.target_path = CanonicalizePath(os.path.join(self.base_dir, rel))
+      else:
+        self.target_path = CanonicalizePath(rel)
+      self.target_pattern = None
+    else:
+      self.anchored = False
+      self.target_pattern = CanonicalizePath(matcher.rstrip('/'))
+      self.target_path = None
+
+  def MatchesDir(self, candidate_dir):
+    candidate_dir = CanonicalizePath(candidate_dir).rstrip('/')
+    if not candidate_dir:
+      return False
+
+    if self.anchored:
+      return candidate_dir == self.target_path
+
+    if self.base_dir != '.':
+      if candidate_dir != self.base_dir and not candidate_dir.startswith(self.base_dir + '/'):
+        return False
+      rel_path = candidate_dir[len(self.base_dir):].lstrip('/')
+    else:
+      rel_path = candidate_dir
+
+    if '/' in self.target_pattern:
+      return fnmatch.fnmatch(rel_path, self.target_pattern) or fnmatch.fnmatch(rel_path, '*/' + self.target_pattern)
+    else:
+      dirname = os.path.basename(candidate_dir)
+      return fnmatch.fnmatch(dirname, self.target_pattern)
+
+  def __str__(self):
+    return '<FilterRuleRollup %r (base_dir=%r)>' % (self.raw_matcher, self.base_dir)
 
 
 IGNORED_XATTR_KEYS = [
@@ -2530,20 +2579,38 @@ class ItemizedPathChange:
 
 
 class ItemizedRollupPrinter(object):
-  def __init__(self, output, collapse_dirs=DEFAULT_COLLAPSE_DIRS, colorize=None):
+  def __init__(self, output, collapse_dirs=DEFAULT_COLLAPSE_DIRS, rollup_rules=None,
+               collapse=True, colorize=None):
     self.output = output
-    self.collapse_dirs = set(collapse_dirs) if collapse_dirs else set()
+    self.collapse = collapse
+    self.collapse_dirs = set(collapse_dirs) if (collapse and collapse_dirs) else set()
+    self.rollup_rules = list(rollup_rules) if (collapse and rollup_rules) else []
     self.colorize = output.isatty() if colorize is None else colorize
     self.current_root = None
     self.buffered_items = []
 
+  def AddRollupRule(self, rule):
+    if self.collapse and rule is not None:
+      self.rollup_rules.append(rule)
+
+  def AddRollupRules(self, rules):
+    if self.collapse and rules:
+      self.rollup_rules.extend(rules)
+
   def FindCollapseRoot(self, path):
-    if not self.collapse_dirs:
+    if not self.collapse:
+      return None
+    if not self.collapse_dirs and not self.rollup_rules:
       return None
     parts = path.split('/')
-    for i, part in enumerate(parts):
+    for i in range(len(parts)):
+      candidate = '/'.join(parts[:i + 1])
+      part = parts[i]
       if part in self.collapse_dirs:
-        return '/'.join(parts[:i + 1])
+        return candidate
+      for rule in self.rollup_rules:
+        if rule.MatchesDir(candidate):
+          return candidate
     return None
 
   def Print(self, itemized, first_path_info=None, second_path_info=None,
@@ -2892,12 +2959,29 @@ class PathEnumerator(object):
     def GetImpliedMtime(self):
       return self.implied_mtime
 
-  def __init__(self, root_dir, output, filters=[], verbose=False, use_rsync=False):
+  def __init__(self, root_dir, output, filters=[], verbose=False, use_rsync=False,
+               rollup_printer=None):
     self.root_dir = os.path.normpath(root_dir)
     self.output = output
     self.filters = filters
     self.verbose = verbose
     self.use_rsync = use_rsync
+    self.rollup_printer = rollup_printer
+    self.discovered_rollup_rules = []
+    for f in self.filters:
+      if isinstance(f, FilterRuleRollup):
+        self.discovered_rollup_rules.append(f)
+        if self.rollup_printer is not None:
+          self.rollup_printer.AddRollupRule(f)
+
+  def GetRollupRules(self):
+    return list(self.discovered_rollup_rules)
+
+  def SetRollupPrinter(self, rollup_printer):
+    self.rollup_printer = rollup_printer
+    if self.rollup_printer is not None:
+      for rule in self.discovered_rollup_rules:
+        self.rollup_printer.AddRollupRule(rule)
 
   def Scan(self):
     if self.use_rsync:
@@ -3032,6 +3116,13 @@ class PathEnumerator(object):
           elif matcher.startswith('/') and path != '.':
             matcher = '/%s%s' % (path, matcher)
           filters.append(FilterRuleIgnoreDirMtimes(matcher))
+        elif line.startswith('rollup '):
+          matcher = line[len('rollup '):].strip()
+          rule = FilterRuleRollup(matcher, base_dir=path)
+          filters.append(rule)
+          self.discovered_rollup_rules.append(rule)
+          if self.rollup_printer is not None:
+            self.rollup_printer.AddRollupRule(rule)
         elif line.rstrip():
           raise Exception('Unknown filter rule %r' % line.rstrip())
     return filters
@@ -3407,7 +3498,7 @@ class ManifestDiffDumper(object):
   def __init__(self, first_manifest, second_manifest, output, path_matcher=PathMatcherAll(),
                ignore_matching_renames=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
                ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False,
-               collapse_dirs=DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=DEFAULT_COLLAPSE_DIRS):
     self.first_manifest = first_manifest
     self.second_manifest = second_manifest
     self.output = output
@@ -3416,6 +3507,7 @@ class ManifestDiffDumper(object):
     self.ignore_uid_diffs = ignore_uid_diffs
     self.ignore_gid_diffs = ignore_gid_diffs
     self.verbose = verbose
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
     self.stats = DiffDumperStats()
 
@@ -3423,7 +3515,8 @@ class ManifestDiffDumper(object):
     sha256_to_first_pathinfos = self.first_manifest.CreateSha256ToPathInfosMap()
     sha256_to_second_pathinfos = self.second_manifest.CreateSha256ToPathInfosMap()
 
-    printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
+    printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                    collapse=self.collapse)
     all_paths = set(self.second_manifest.GetPathMap().keys())
     all_paths.update(list(self.first_manifest.GetPathMap().keys()))
     for path in sorted(all_paths):
@@ -3492,7 +3585,7 @@ class ManifestVerifier(object):
                checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
                verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
                warn_out_of_date_ignored_xattrs=True, legacy_xattr_date=None,
-               collapse_dirs=DEFAULT_COLLAPSE_DIRS):
+               collapse=True, collapse_dirs=DEFAULT_COLLAPSE_DIRS):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
@@ -3501,9 +3594,12 @@ class ManifestVerifier(object):
     self.path_matcher = path_matcher
     self.verbose = verbose
     self.manifest_on_top = manifest_on_top
+    self.collapse = collapse
     self.collapse_dirs = collapse_dirs
-    self.rollup_printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
-    self.path_enumerator = PathEnumerator(src_root, output, filters=filters, verbose=verbose)
+    self.rollup_printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs,
+                                                collapse=self.collapse)
+    self.path_enumerator = PathEnumerator(src_root, output, filters=filters, verbose=verbose,
+                                          rollup_printer=self.rollup_printer)
     self.has_diffs = False
     self.stats = ManifestVerifierStats()
     self.ignore_mtimes = ignore_mtimes
@@ -3732,13 +3828,14 @@ def DoDiffManifests(args, output):
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   path_matcher = GetPathMatcherFromArgs(cmd_args)
 
+  collapse = GetCollapseFromArgs(cmd_args)
   collapse_dirs = GetCollapseDirsFromArgs(cmd_args)
 
   manifest_diff_dumper = ManifestDiffDumper(
     first_manifest=first_manifest, second_manifest=second_manifest, output=output, verbose=args.verbose,
     path_matcher=path_matcher, ignore_matching_renames=cmd_args.ignore_matching_renames,
     ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs,
-    collapse_dirs=collapse_dirs)
+    collapse=collapse, collapse_dirs=collapse_dirs)
   return manifest_diff_dumper.DumpDiff()
 
 
@@ -3756,13 +3853,14 @@ def DoVerifyManifest(args, output):
   manifest = ReadManifestFromImageOrPath(
     cmd_args.path, encryption_manager=EncryptionManager(output=output), dry_run=args.dry_run)
 
+  collapse = GetCollapseFromArgs(cmd_args)
   collapse_dirs = GetCollapseDirsFromArgs(cmd_args)
 
   manifest_verifier = ManifestVerifier(
     manifest, cmd_args.src_root, output,
     checksum_path_matcher=PathMatcherAllOrNone(cmd_args.checksum_all), verbose=args.verbose,
     ignore_mtimes=cmd_args.ignore_mtimes, ignore_permissions=cmd_args.ignore_permissions,
-    ignore_xattrs=cmd_args.ignore_xattrs, collapse_dirs=collapse_dirs)
+    ignore_xattrs=cmd_args.ignore_xattrs, collapse=collapse, collapse_dirs=collapse_dirs)
   return manifest_verifier.Verify()
 
 
