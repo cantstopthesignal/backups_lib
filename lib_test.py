@@ -52,12 +52,17 @@ from .checkpoint_lib_test_util import DoCreate
 
 
 def DoDiffManifests(manifest1_path, manifest2_path, ignore_matching_renames=False,
+                    collapse=True, collapse_dirs=None,
                     expected_success=True, expected_output=[]):
   cmd_args = ['diff-manifests',
               manifest1_path,
               manifest2_path]
   if ignore_matching_renames:
     cmd_args.append('--ignore-matching-renames')
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    cmd_args.extend(['--collapse-dirs', collapse_dirs])
   DoBackupsMain(cmd_args, expected_success=expected_success, expected_output=expected_output)
 
 
@@ -355,6 +360,105 @@ class ItemizedPathChangeTestCase(BaseTestCase):
     AssertEquals(True, itemized_xattr_and_mtime.HasDiffs())
     AssertEquals(True, itemized_xattr_and_mtime.HasDiffs(ignore_xattr_diffs=True))
     AssertEquals(False, itemized_xattr_and_mtime.OnlyHasXattrDiff())
+
+
+class ItemizedRollupPrinterTestCase(BaseTestCase):
+  def testFindCollapseRoot(self):
+    printer = lib.ItemizedRollupPrinter(io.StringIO(), collapse_dirs=['.git', 'node_modules'])
+    AssertEquals('.git', printer.FindCollapseRoot('.git'))
+    AssertEquals('.git', printer.FindCollapseRoot('.git/HEAD'))
+    AssertEquals('proj/.git', printer.FindCollapseRoot('proj/.git'))
+    AssertEquals('proj/.git', printer.FindCollapseRoot('proj/.git/objects/ab/1234'))
+    AssertEquals('app/node_modules', printer.FindCollapseRoot('app/node_modules/package/index.js'))
+    AssertEquals(None, printer.FindCollapseRoot('proj/.gitignore'))
+    AssertEquals(None, printer.FindCollapseRoot('proj/git/something'))
+    AssertEquals(None, printer.FindCollapseRoot('src/index.js'))
+
+    empty_printer = lib.ItemizedRollupPrinter(io.StringIO(), collapse_dirs=[])
+    AssertEquals(None, empty_printer.FindCollapseRoot('proj/.git/HEAD'))
+
+  def testRollupMultiLine(self):
+    out = io.StringIO()
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], colorize=False)
+
+    printer.Print(lib.ItemizedPathChange('src/main.py', lib.PathInfo.TYPE_FILE, new_path=True))
+
+    printer.Print(lib.ItemizedPathChange('repo/.git', lib.PathInfo.TYPE_DIR, time_diff=True))
+    printer.Print(lib.ItemizedPathChange('repo/.git/logs', lib.PathInfo.TYPE_DIR, time_diff=True))
+    def MakeTestPathInfo(path, path_type, size=None):
+      return lib.PathInfo(path, path_type=path_type, mode=0o644, uid=1000, gid=1000, mtime=1234567890,
+                          size=size, link_dest=None, sha256=None, xattr_hash=None, xattr_keys=[],
+                          google_drive_remote_file=False)
+    head_pi = MakeTestPathInfo('repo/.git/HEAD', lib.PathInfo.TYPE_FILE, size=45)
+    index_pi = MakeTestPathInfo('repo/.git/index', lib.PathInfo.TYPE_FILE, size=10240)
+    printer.Print(
+      lib.ItemizedPathChange('repo/.git/HEAD', lib.PathInfo.TYPE_FILE, replace_path=True, checksum_diff=True, size_diff=True, time_diff=True),
+      second_path_info=head_pi)
+    printer.Print(
+      lib.ItemizedPathChange('repo/.git/index', lib.PathInfo.TYPE_FILE, replace_path=True, checksum_diff=True, size_diff=True, time_diff=True),
+      second_path_info=index_pi)
+    obj_pi = MakeTestPathInfo('repo/.git/objects/12/34', lib.PathInfo.TYPE_FILE, size=50000)
+    printer.Print(
+      lib.ItemizedPathChange('repo/.git/objects/12/34', lib.PathInfo.TYPE_FILE, new_path=True),
+      second_path_info=obj_pi)
+    del_pi = MakeTestPathInfo('repo/.git/ORIG_HEAD', lib.PathInfo.TYPE_FILE, size=45)
+    printer.Print(
+      lib.ItemizedPathChange('repo/.git/ORIG_HEAD', lib.PathInfo.TYPE_FILE, delete_path=True),
+      first_path_info=del_pi)
+
+    printer.Print(lib.ItemizedPathChange('src/util.py', lib.PathInfo.TYPE_FILE, time_diff=True))
+
+    printer.Flush()
+
+    expected = [
+      '>f+++++++ src/main.py',
+      '*d.rollup repo/.git/',
+      '  .d..t.... - 2 subpaths',
+      '  >f+++++++ - 1 subpath (48.8kb)',
+      '  >fcst.... - 2 subpaths (10kb)',
+      '  *f.delete - 1 subpath (45b)',
+      '.f..t.... src/util.py',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testDirectoryOnlyWithoutSubDeltas(self):
+    out = io.StringIO()
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], colorize=False)
+    printer.Print(lib.ItemizedPathChange('repo/.git', lib.PathInfo.TYPE_DIR, time_diff=True))
+    printer.Flush()
+    expected = [
+      '.d..t.... repo/.git',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testDisabledCollapsing(self):
+    out = io.StringIO()
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=[], colorize=False)
+    printer.Print(lib.ItemizedPathChange('repo/.git', lib.PathInfo.TYPE_DIR, time_diff=True))
+    printer.Print(lib.ItemizedPathChange('repo/.git/HEAD', lib.PathInfo.TYPE_FILE, time_diff=True))
+    printer.Flush()
+    expected = [
+      '.d..t.... repo/.git',
+      '.f..t.... repo/.git/HEAD',
+    ]
+    AssertLinesEqual(out.getvalue().strip().split('\n'), expected)
+
+  def testColorizedRollup(self):
+    out = io.StringIO()
+    printer = lib.ItemizedRollupPrinter(out, collapse_dirs=['.git'], colorize=True)
+    pi = lib.PathInfo('repo/.git/HEAD', path_type=lib.PathInfo.TYPE_FILE, mode=0o644, uid=1000, gid=1000,
+                      mtime=1234567890, size=100, link_dest=None, sha256=None, xattr_hash=None,
+                      xattr_keys=[], google_drive_remote_file=False)
+    printer.Print(
+      lib.ItemizedPathChange('repo/.git/HEAD', lib.PathInfo.TYPE_FILE, new_path=True),
+      second_path_info=pi)
+    printer.Flush()
+
+    expected_header = '\033[%s*d.rollup\033[%s \033[%srepo/.git/\033[%s' % (
+      lib.TERM_COLOR_PURPLE, lib.TERM_COLOR_RESET, lib.TERM_COLOR_CYAN, lib.TERM_COLOR_RESET)
+    expected_subdelta = '  \033[%s>f+++++++\033[%s - 1 subpath (100b)' % (
+      lib.TERM_COLOR_GREEN, lib.TERM_COLOR_RESET)
+    AssertLinesEqual(out.getvalue().strip().split('\n'), [expected_header, expected_subdelta])
 
 
 class CompactTestCase(BaseTestCase):
@@ -852,6 +956,32 @@ class DiffManifestsTestCase(BaseTestCase):
     DoDiffManifests(manifest1.path, manifest2.path,
                     ignore_matching_renames=True,
                     expected_output=['>L+++++++ ln1 -> INVALID'])
+
+    CreateDir(test_dir, 'repo')
+    CreateDir(test_dir, 'repo/.git')
+    git_head = CreateFile(test_dir, 'repo/.git/HEAD', contents='ref: refs/heads/main\n')
+    git_config = CreateFile(test_dir, 'repo/.git/config', contents='[core]\n')
+    git_head_pi = lib.PathInfo.FromPath('repo/.git/HEAD', git_head)
+    git_head_pi.sha256 = lib.Sha256(git_head)
+    git_config_pi = lib.PathInfo.FromPath('repo/.git/config', git_config)
+    git_config_pi.sha256 = lib.Sha256(git_config)
+    manifest3 = lib.Manifest(os.path.join(test_dir, 'manifest3.pbdata'))
+    manifest3.AddPathInfo(git_head_pi)
+    manifest3.AddPathInfo(git_config_pi)
+    manifest3.Write()
+    manifest_empty = lib.Manifest(os.path.join(test_dir, 'manifest_empty.pbdata'))
+    manifest_empty.Write()
+
+    total_git_size = lib.FileSizeToString(git_head_pi.size + git_config_pi.size)
+
+    DoDiffManifests(manifest_empty.path, manifest3.path,
+                    expected_output=['*d.rollup repo/.git/',
+                                     '  >f+++++++ - 2 subpaths (%s)' % total_git_size])
+
+    DoDiffManifests(manifest_empty.path, manifest3.path,
+                    collapse=False,
+                    expected_output=['>f+++++++ repo/.git/HEAD',
+                                     '>f+++++++ repo/.git/config'])
 
 
 class FileSizeToStringTestCase(BaseTestCase):

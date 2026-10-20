@@ -849,6 +849,34 @@ class SyncTestCase(BaseTestCase):
         '  replaced by duplicate: .f....... par3/f10',
         'Paths: 13 total (7kb), 3 synced (2kb), 1 renamed (1kb), 2 checksummed (2kb)'])
 
+    git_dir = CreateDir(root_dir, '.git')
+    git_head = CreateFile(git_dir, 'HEAD', contents='ref: refs/heads/main\n')
+    git_config = CreateFile(git_dir, 'config', contents='[core]\n')
+
+    DoSync(
+      root_dir, dry_run=True,
+      expected_output=[
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (28b)',
+        'Paths: 16 total (7kb), 3 synced (28b), 2 checksummed (28b)'])
+
+    DoSync(
+      root_dir, dry_run=True, collapse=False,
+      expected_output=[
+        '>d+++++++ .git',
+        '>f+++++++ .git/HEAD',
+        '>f+++++++ .git/config',
+        'Paths: 16 total (7kb), 3 synced (28b), 2 checksummed (28b)'])
+
+    DoSync(
+      root_dir,
+      expected_output=[
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (28b)',
+        'Paths: 16 total (7kb), 3 synced (28b), 2 checksummed (28b)'])
+
 
 class RenamePathsTestCase(BaseTestCase):
   def test(self):

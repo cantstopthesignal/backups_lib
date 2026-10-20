@@ -12,7 +12,7 @@ from .test_util import AssertLinesEqual
 
 def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_success=True, expected_output=[],
              last_checkpoint_path=None, manifest_only=False, checksum_all=True, filter_merge_path=None,
-             encrypt=False, dry_run=False, readonly=True):
+             encrypt=False, dry_run=False, readonly=True, collapse=True, collapse_dirs=None):
   args = []
   if dry_run:
     args.append('--dry-run')
@@ -30,6 +30,10 @@ def DoCreate(src_root, checkpoints_dir, checkpoint_name, expected_success=True, 
     args.extend(['--filter-merge-path', filter_merge_path])
   if not encrypt:
     args.append('--no-encrypt')
+  if not collapse:
+    args.append('--no-collapse')
+  if collapse_dirs is not None:
+    args.extend(['--collapse-dirs', collapse_dirs])
   output = io.StringIO()
   AssertEquals(backups_main.Main(args, output), expected_success)
   output_lines = []

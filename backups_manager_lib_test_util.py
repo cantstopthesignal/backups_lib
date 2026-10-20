@@ -137,10 +137,16 @@ def DoCreateCheckpoint(src_root, checkpoints_dir, checkpoint_name, expected_outp
   return checkpoint_path
 
 
-def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[], expected_success=True):
+def DoCreateBackup(config, backup_name=None, dry_run=False, collapse=True, collapse_dirs=None,
+                   expected_output=[], expected_success=True):
   cmd_args = ['create-backup',
               '--no-encrypt',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if backup_name is not None:
     cmd_args.extend(['--backup-name', backup_name])
   lines = DoBackupsMain(cmd_args, dry_run=dry_run, expected_success=expected_success, expected_output=None)
@@ -157,11 +163,16 @@ def DoCreateBackup(config, backup_name=None, dry_run=False, expected_output=[], 
 
 
 def DoApplyToBackups(config, dry_run=False, deduplicate_min_file_size=1024,
-                     checksum_all=True, checksum_hardlinks=True, expected_success=True,
-                     expected_output=[]):
+                     checksum_all=True, checksum_hardlinks=True, collapse=True, collapse_dirs=None,
+                     expected_success=True, expected_output=[]):
   cmd_args = ['apply-to-backups',
               '--backups-config', config.path,
               '--deduplicate-min-file-size', str(deduplicate_min_file_size)]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if not checksum_all:
     cmd_args.append('--no-checksum-all')
   if not checksum_hardlinks:
@@ -178,9 +189,15 @@ def DoListBackups(config, dry_run=False, verbose=False, expected_output=[]):
 
 def DoVerifyBackups(config, dry_run=False, min_backup=None, max_backup=None,
                     full=True, continue_on_error=False, checksum_all=True,
-                    legacy_xattr_date=None, expected_success=True, expected_output=[]):
+                    legacy_xattr_date=None, collapse=True, collapse_dirs=None,
+                    expected_success=True, expected_output=[]):
   cmd_args = ['verify-backups',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if min_backup is not None:
     cmd_args.extend(['--min-backup', min_backup])
   if max_backup is not None:
@@ -254,10 +271,15 @@ def DoDeleteBackups(config, backup_names, dry_run=False, expected_success=True, 
 
 def DoDeleteBackupsInteractive(config, backup_names=[], min_backup=None, max_backup=None,
                                ignore_matching_renames=False, include_latest_backup=False,
-                               dry_run=False, verbose=False,
+                               dry_run=False, verbose=False, collapse=True, collapse_dirs=None,
                                expected_success=True, expected_output=[]):
   cmd_args = ['delete-backups-interactive',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   for backup_name in backup_names:
     cmd_args.extend(['--backup-name', backup_name])
   if min_backup is not None:
@@ -275,9 +297,15 @@ def DoDeleteBackupsInteractive(config, backup_names=[], min_backup=None, max_bac
 def DoDumpUniqueFilesInBackups(config, backup_names=[], min_backup=None, max_backup=None,
                                ignore_matching_renames=False, match_previous_only=False,
                                match_next_only=False, dry_run=False, verbose=False,
+                               collapse=True, collapse_dirs=None,
                                expected_success=True, expected_output=[]):
   cmd_args = ['dump-unique-files-in-backups',
               '--backups-config', config.path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   for backup_name in backup_names:
     cmd_args.extend(['--backup-name', backup_name])
   if min_backup is not None:

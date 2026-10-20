@@ -213,7 +213,8 @@ class CheckpointCreator(object):
 
   def __init__(self, src_root_dir, checkpoints_root_dir, name, output, basis_path=None, basis_manifest=None,
                dry_run=False, verbose=False, checksum_all=False, manifest_only=False, encrypt=True,
-               encryption_manager=None, filters=STAGED_BACKUP_DEFAULT_FILTERS):
+               encryption_manager=None, filters=STAGED_BACKUP_DEFAULT_FILTERS,
+               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     if src_root_dir is None:
       raise Exception('src_root_dir cannot be None')
     self.src_root_dir = src_root_dir
@@ -232,6 +233,7 @@ class CheckpointCreator(object):
     self.checkpoint = None
     self.manifest = None
     self.path_infos_to_sync = []
+    self.collapse_dirs = collapse_dirs
     self.path_enumerator = lib.PathEnumerator(src_root_dir, output, filters=filters, verbose=verbose)
     self.enumerated_path_map = {}
     self.total_paths = 0
@@ -484,6 +486,7 @@ class CheckpointCreator(object):
     if not self.pending_path_printouts:
       return
     sha256_to_pathinfos = self.manifest.CreateSha256ToPathInfosMap()
+    printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
     for itemized, basis_path_info, path_info in self.pending_path_printouts:
       dup_analyze_result = None
       if itemized.HasDiffs():
@@ -495,12 +498,10 @@ class CheckpointCreator(object):
           dup_analyze_result = lib.AnalyzePathInfoDups(
             basis_path_info, sha256_to_pathinfos.get(basis_path_info.sha256, []),
             replacing_previous=False, verbose=self.verbose)
-      if dup_analyze_result is not None:
-        itemized.Print(output=self.output, found_matching_rename=dup_analyze_result.found_matching_rename)
-        for line in dup_analyze_result.dup_output_lines:
-          print(line, file=self.output)
-      else:
-        itemized.Print(output=self.output)
+      found_matching_rename = dup_analyze_result and dup_analyze_result.found_matching_rename
+      dup_lines = dup_analyze_result.dup_output_lines if dup_analyze_result is not None else []
+      printer.Print(itemized, first_path_info=basis_path_info, second_path_info=path_info,
+                    found_matching_rename=found_matching_rename, dup_lines=dup_lines)
       if self.verbose:
         if basis_path_info is not None:
           print('<', basis_path_info.ToString(
@@ -509,12 +510,14 @@ class CheckpointCreator(object):
           print('>', path_info.ToString(
             shorten_sha256=True, shorten_xattr_hash=True), file=self.output)
 
+    printer.Flush()
     self.pending_path_printouts = []
 
 
 class CheckpointApplier(object):
   def __init__(self, src_checkpoint_path, dest_root, output, dry_run=False, verbose=False,
-               checksum_all=False, strict_replace=False, encryption_manager=None):
+               checksum_all=False, strict_replace=False, encryption_manager=None,
+               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     self.src_checkpoint_path = src_checkpoint_path
     self.src_checkpoint = None
     self.src_manifest = None
@@ -525,6 +528,8 @@ class CheckpointApplier(object):
     self.checksum_all = checksum_all
     self.strict_replace = strict_replace
     self.encryption_manager = encryption_manager
+    self.collapse_dirs = collapse_dirs
+    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
     self.paths_to_sync = []
     self.existing_files_to_sync = []
     self.paths_to_delete = []
@@ -560,6 +565,7 @@ class CheckpointApplier(object):
         self._AddIfChanged(path, src_path_info, dest_path_info)
 
     self._HandleNewPaths(new_paths, next_existing_path=None)
+    self.rollup_printer.Flush()
 
     if self.errors_encountered:
       print('*** Errors encountered before applying checkpoint', file=self.output)
@@ -574,16 +580,17 @@ class CheckpointApplier(object):
       if next_existing_path is not None and next_new_path > next_existing_path:
         break
       if next_existing_path != next_new_path:
+        new_path_info = self.src_manifest.GetPathInfo(next_new_path)
         if self._AddPathContents(next_new_path, existing_path_info=None):
-          itemized = self.src_manifest.GetPathInfo(next_new_path).GetItemized()
+          itemized = new_path_info.GetItemized()
           itemized.new_path = True
-          itemized.Print(output=self.output)
+          self.rollup_printer.Print(itemized, second_path_info=new_path_info)
       del new_paths[0]
 
   def _AddDeleted(self, path, dest_path_info):
     itemized = dest_path_info.GetItemized()
     itemized.delete_path = True
-    itemized.Print(output=self.output)
+    self.rollup_printer.Print(itemized, first_path_info=dest_path_info)
     self.paths_to_delete.append(path)
 
   def _AddIfChanged(self, path, src_path_info, dest_path_info):
@@ -593,7 +600,7 @@ class CheckpointApplier(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=src_path_info, second_path_info=dest_path_info)
       return
     if dest_path_info.HasFileContents():
       dest_path_info.sha256 = lib.Sha256WithProgress(full_path, dest_path_info, output=self.output)
@@ -603,11 +610,11 @@ class CheckpointApplier(object):
       matches = False
     if matches:
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=src_path_info, second_path_info=dest_path_info)
       return
 
     if self._AddPathContents(path, existing_path_info=dest_path_info):
-      itemized.Print(output=self.output)
+      self.rollup_printer.Print(itemized, first_path_info=src_path_info, second_path_info=dest_path_info)
     if self.verbose:
       if src_path_info is not None:
         print('<', src_path_info.ToString(
@@ -618,9 +625,10 @@ class CheckpointApplier(object):
 
   def _AddPathContents(self, path, existing_path_info):
     if not os.path.lexists(os.path.join(self.src_checkpoint.GetContentRootPath(), path)):
-      itemized = self.src_manifest.GetPathInfo(path).GetItemized()
+      err_path_info = self.src_manifest.GetPathInfo(path)
+      itemized = err_path_info.GetItemized()
       itemized.error_path = True
-      itemized.Print(output=self.output)
+      self.rollup_printer.Print(itemized, first_path_info=err_path_info)
       self.errors_encountered = True
       return False
 
@@ -747,6 +755,7 @@ def DoCreateCheckpoint(args, output):
   parser.add_argument('--checkpoint-name')
   parser.add_argument('--last-manifest')
   parser.add_argument('--last-checkpoint')
+  lib.AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   if cmd_args.last_manifest is not None and cmd_args.last_checkpoint is not None:
@@ -769,11 +778,13 @@ def DoCreateCheckpoint(args, output):
   else:
     basis_manifest = None
 
+  collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
+
   checkpoint_creator = CheckpointCreator(
     cmd_args.src_root, cmd_args.checkpoints_dir, name=cmd_args.checkpoint_name, output=output,
     basis_path=basis_path, basis_manifest=basis_manifest, dry_run=args.dry_run, verbose=args.verbose,
     checksum_all=cmd_args.checksum_all, manifest_only=cmd_args.manifest_only, encrypt=cmd_args.encrypt,
-    encryption_manager=encryption_manager, filters=filters)
+    encryption_manager=encryption_manager, filters=filters, collapse_dirs=collapse_dirs)
   return checkpoint_creator.Create()
 
 
@@ -783,12 +794,16 @@ def DoApplyCheckpoint(args, output):
   parser.add_argument('--dest-root', required=True)
   parser.add_argument('--checksum-all', action='store_true')
   parser.add_argument('--strict-replace', action='store_true')
+  lib.AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
+
+  collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
 
   checkpoint_applier = CheckpointApplier(
     cmd_args.src_checkpoint_path, cmd_args.dest_root, output, dry_run=args.dry_run, verbose=args.verbose,
     checksum_all=cmd_args.checksum_all, strict_replace=cmd_args.strict_replace,
-    encryption_manager=lib.EncryptionManager(output=output))
+    encryption_manager=lib.EncryptionManager(output=output),
+    collapse_dirs=collapse_dirs)
   return checkpoint_applier.Apply()
 
 

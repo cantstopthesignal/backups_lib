@@ -299,6 +299,33 @@ class CreateDryRunTestCase(BaseTestCase):
     else:
       AssertCheckpointsList(checkpoints_dir, ['1.sparseimage'])
 
+    git_dir = CreateDir(src_root, '.git')
+    git_head = CreateFile(git_dir, 'HEAD', contents='ref: refs/heads/main\n')
+    git_index = CreateFile(git_dir, 'index', contents='index-data')
+    SetMTime(git_dir)
+    SetMTime(src_root)
+
+    DoCreate(
+      src_root, checkpoints_dir, 'git_test', dry_run=True,
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      expected_output=['*d.rollup .git/',
+                       '  >d+++++++ - 1 subpath',
+                       '  >f+++++++ - 2 subpaths (31b)',
+                       '>fcs..... par!/f2',
+                       '.f..t.... par!/f_\\r',
+                       'Transferring 5 of 8 paths (48b of 48b)'])
+
+    DoCreate(
+      src_root, checkpoints_dir, 'git_test_no_collapse', dry_run=True,
+      last_checkpoint_path=checkpoint1.GetImagePath(),
+      collapse=False,
+      expected_output=['>d+++++++ .git',
+                       '>f+++++++ .git/HEAD',
+                       '>f+++++++ .git/index',
+                       '>fcs..... par!/f2',
+                       '.f..t.... par!/f_\\r',
+                       'Transferring 5 of 8 paths (48b of 48b)'])
+
 
 class CreateTestCase(BaseTestCase):
   def test(self):

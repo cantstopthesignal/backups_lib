@@ -303,7 +303,8 @@ class ChecksumsSyncer(object):
 
   def __init__(self, root_path, output, manifest_path=None, checksum_all=False, interactive=False,
                detect_renames=True, path_matcher=lib.PathMatcherAll(), dry_run=False, verbose=False,
-               upgrade_ignored_xattrs=False, legacy_xattr_date=None):
+               upgrade_ignored_xattrs=False, legacy_xattr_date=None,
+               collapse_dirs=lib.DEFAULT_COLLAPSE_DIRS):
     if root_path is None:
       raise Exception('root_path cannot be None')
     self.root_path = root_path
@@ -317,6 +318,8 @@ class ChecksumsSyncer(object):
     self.verbose = verbose
     self.upgrade_ignored_xattrs = upgrade_ignored_xattrs
     self.legacy_xattr_date = legacy_xattr_date
+    self.collapse_dirs = collapse_dirs
+    self.rollup_printer = lib.ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
     self.effective_ignored_xattrs = None
     self.checksums = None
     self.basis_manifest = None
@@ -432,6 +435,7 @@ class ChecksumsSyncer(object):
       self._SyncPathIfChanged(path)
 
     self._HandleExistingPaths(existing_paths, next_new_path=None)
+    self.rollup_printer.Flush()
 
   def _PrintResults(self):
     if self.total_paths:
@@ -487,7 +491,7 @@ class ChecksumsSyncer(object):
     matches = not itemized.HasDiffs()
     if matches and not self.checksum_all:
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=basis_path_info, second_path_info=path_info)
       return
     if path_info.HasFileContents():
       if checksum_copied and not (self.upgrade_ignored_xattrs and itemized.OnlyHasXattrDiff()):
@@ -500,7 +504,7 @@ class ChecksumsSyncer(object):
       matches = False
     if matches:
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=basis_path_info, second_path_info=path_info)
       return
 
     find_matching_renames_results = self._FindMatchingRenames(basis_path_info)
@@ -508,9 +512,9 @@ class ChecksumsSyncer(object):
       return
     found_matching_rename, dup_output_lines = find_matching_renames_results
 
-    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
-    for dup_output_line in dup_output_lines:
-      print(dup_output_line, file=self.output)
+    self.rollup_printer.Print(
+      itemized, first_path_info=basis_path_info, second_path_info=path_info,
+      found_matching_rename=found_matching_rename, dup_lines=dup_output_lines)
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -523,9 +527,9 @@ class ChecksumsSyncer(object):
 
     itemized = path_info.GetItemized()
     itemized.new_path = True
-    itemized.Print(output=self.output)
     self.manifest.AddPathInfo(path_info)
 
+    dup_output_lines = []
     if (self.detect_renames and path_info.HasFileContents()
         and path_info.size >= MIN_RENAME_DETECTION_FILE_SIZE):
       if self.sha256_to_basis_pathinfos is None:
@@ -535,8 +539,10 @@ class ChecksumsSyncer(object):
       dup_path_infos = self.sha256_to_basis_pathinfos.get(path_info.sha256, [])
       analyze_result = lib.AnalyzePathInfoDups(
         path_info, dup_path_infos, replacing_previous=True, verbose=self.verbose)
-      for dup_output_line in analyze_result.dup_output_lines:
-        print(dup_output_line, file=self.output)
+      dup_output_lines.extend(analyze_result.dup_output_lines)
+
+    self.rollup_printer.Print(
+      itemized, second_path_info=path_info, dup_lines=dup_output_lines)
 
     self._AddStatsForSyncedPath(path_info)
 
@@ -553,9 +559,9 @@ class ChecksumsSyncer(object):
       return
     found_matching_rename, dup_output_lines = find_matching_renames_results
 
-    itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
-    for dup_output_line in dup_output_lines:
-      print(dup_output_line, file=self.output)
+    self.rollup_printer.Print(
+      itemized, first_path_info=basis_path_info,
+      found_matching_rename=found_matching_rename, dup_lines=dup_output_lines)
 
     if found_matching_rename:
       self.total_renamed_paths += 1
@@ -1431,9 +1437,11 @@ def DoSync(args, output):
   parser.add_argument('--upgrade-ignored-xattrs', action='store_true')
   parser.add_argument('--legacy-xattr-date')
   lib.AddPathsArgs(parser)
+  lib.AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   path_matcher = lib.GetPathMatcherFromArgs(cmd_args)
+  collapse_dirs = lib.GetCollapseDirsFromArgs(cmd_args)
 
   checksums_syncer = ChecksumsSyncer(
     cmd_args.root_path, output=output, manifest_path=cmd_args.manifest_path,
@@ -1441,7 +1449,8 @@ def DoSync(args, output):
     detect_renames=cmd_args.detect_renames, path_matcher=path_matcher,
     dry_run=args.dry_run, verbose=args.verbose,
     upgrade_ignored_xattrs=cmd_args.upgrade_ignored_xattrs,
-    legacy_xattr_date=cmd_args.legacy_xattr_date)
+    legacy_xattr_date=cmd_args.legacy_xattr_date,
+    collapse_dirs=collapse_dirs)
   return checksums_syncer.Sync()
 
 

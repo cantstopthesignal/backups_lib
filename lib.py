@@ -60,6 +60,8 @@ BASIS_INFO_FILENAME = 'basis_info.json'
 IGNORE_UID_DIFFS = True
 IGNORE_GID_DIFFS = True
 
+DEFAULT_COLLAPSE_DIRS = ('.git',)
+
 HDIUTIL_COMPACT_ON_BATTERY_ALLOWED = False
 
 OMIT_UID_AND_GID_IN_PATH_INFO_TO_STRING = False
@@ -207,6 +209,20 @@ def GetPathMatcherFromArgs(args, match_all_by_default=True):
   else:
     assert match_all_by_default
     return PathMatcherAll()
+
+
+def AddCollapseArgs(parser):
+  parser.add_argument('--no-collapse', dest='collapse', action='store_false', default=True)
+  parser.add_argument('--collapse-dirs', default=','.join(DEFAULT_COLLAPSE_DIRS))
+
+
+def GetCollapseDirsFromArgs(args):
+  if not getattr(args, 'collapse', True):
+    return []
+  collapse_dirs_str = getattr(args, 'collapse_dirs', None)
+  if collapse_dirs_str:
+    return [d.strip() for d in collapse_dirs_str.split(',') if d.strip()]
+  return list(DEFAULT_COLLAPSE_DIRS)
 
 
 def IsRunningAsRoot():
@@ -2423,6 +2439,64 @@ class ItemizedPathChange:
   def __str__(self):
     return self.ToString(colorize=False)
 
+  def GetStatusCode(self):
+    if self.delete_path:
+      return '*%s.delete' % self.GetItemizedShortCode()
+    if self.error_path:
+      return '*%s.error' % self.GetItemizedShortCode()
+    itemized_str = ['.', self.GetItemizedShortCode(), '.', '.', '.', '.', '.', '.', '.']
+    if self.new_path:
+      itemized_str[0] = '>'
+      for i in range(2, 9):
+        itemized_str[i] = '+'
+    else:
+      if self.replace_path:
+        itemized_str[0] = '>'
+      if self.checksum_diff:
+        itemized_str[2] = 'c'
+      if self.size_diff:
+        itemized_str[3] = 's'
+      if self.time_diff:
+        itemized_str[4] = 't'
+      if self.permission_diff:
+        itemized_str[5] = 'p'
+      if self.uid_diff:
+        itemized_str[6] = 'o'
+      if self.gid_diff:
+        itemized_str[7] = 'g'
+      if self.xattr_diff:
+        itemized_str[8] = 'x'
+    return ''.join(itemized_str)
+
+  def GetStatusColor(self, found_matching_rename=False, warn_for_new_path=False):
+    if self.delete_path:
+      return ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
+              and TERM_COLOR_PURPLE or TERM_COLOR_RED)
+    if self.error_path:
+      return TERM_COLOR_RED
+    if self.new_path:
+      if warn_for_new_path:
+        return ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
+                and TERM_COLOR_PURPLE or TERM_COLOR_RED)
+      else:
+        return TERM_COLOR_GREEN
+    color = TERM_COLOR_RESET
+    if self.checksum_diff:
+      color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
+    if self.size_diff:
+      if color in [TERM_COLOR_RESET, TERM_COLOR_PURPLE]:
+        color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
+    if self.time_diff:
+      if color == TERM_COLOR_RESET:
+        color = TERM_COLOR_YELLOW
+    if self.permission_diff:
+      if color == TERM_COLOR_RESET:
+        color = TERM_COLOR_YELLOW
+    if self.xattr_diff:
+      if color in [TERM_COLOR_RESET, TERM_COLOR_YELLOW]:
+        color = TERM_COLOR_PURPLE
+    return color
+
   def ToString(self, colorize=False, found_matching_rename=False, warn_for_new_path=False):
     path_str = EscapePath(self.path)
     if colorize:
@@ -2439,66 +2513,139 @@ class ItemizedPathChange:
         else:
           assert self.path_type == PathInfo.TYPE_SYMLINK
           path_str += self._Colorize(path_str_parts[1], color=TERM_COLOR_PURPLE)
-    if self.delete_path:
-      color = ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
-               and TERM_COLOR_PURPLE or TERM_COLOR_RED)
-      return '%s %s' % (
-        self._Colorize(
-          '*%s.delete' % self.GetItemizedShortCode(), color=color, colorize=colorize),
-        path_str)
-    if self.error_path:
-      return '%s %s' % (
-        self._Colorize(
-          '*%s.error' % self.GetItemizedShortCode(), color=TERM_COLOR_RED, colorize=colorize),
-        path_str)
-    itemized_str = ['.', self.GetItemizedShortCode(), '.', '.', '.', '.', '.', '.', '.']
-    color = TERM_COLOR_RESET
-    if self.new_path:
-      if warn_for_new_path:
-        color = ((found_matching_rename or self.path_type == PathInfo.TYPE_DIR)
-                 and TERM_COLOR_PURPLE or TERM_COLOR_RED)
-      else:
-        color = TERM_COLOR_GREEN
-      itemized_str[0] = '>'
-      for i in range(2, 9):
-        itemized_str[i] = '+'
-    else:
-      if self.replace_path:
-        itemized_str[0] = '>'
-      if self.checksum_diff:
-        itemized_str[2] = 'c'
-        color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
-      if self.size_diff:
-        itemized_str[3] = 's'
-        if color in [TERM_COLOR_RESET, TERM_COLOR_PURPLE]:
-          color = found_matching_rename and TERM_COLOR_PURPLE or TERM_COLOR_RED
-      if self.time_diff:
-        itemized_str[4] = 't'
-        if color == TERM_COLOR_RESET:
-          color = TERM_COLOR_YELLOW
-      if self.permission_diff:
-        itemized_str[5] = 'p'
-        if color == TERM_COLOR_RESET:
-          color = TERM_COLOR_YELLOW
-      if self.uid_diff:
-        itemized_str[6] = 'o'
-      if self.gid_diff:
-        itemized_str[7] = 'g'
-      if self.xattr_diff:
-        itemized_str[8] = 'x'
-        if color in [TERM_COLOR_RESET, TERM_COLOR_YELLOW]:
-          color = TERM_COLOR_PURPLE
+    status_code = self.GetStatusCode()
+    color = self.GetStatusColor(found_matching_rename=found_matching_rename,
+                                warn_for_new_path=warn_for_new_path)
     link_dest_str = ''
-    if self.link_dest is not None:
+    if not self.delete_path and not self.error_path and self.link_dest is not None:
       link_dest_str = ' -> %s' % EscapePath(self.link_dest)
     return '%s %s%s' % (
-      self._Colorize(''.join(itemized_str), color=color, colorize=colorize),
+      self._Colorize(status_code, color=color, colorize=colorize),
       path_str, link_dest_str)
 
   def _Colorize(self, s, color, colorize=True):
     if colorize:
       return '\033[%s%s\033[%s' % (color, s, TERM_COLOR_RESET)
     return s
+
+
+class ItemizedRollupPrinter(object):
+  def __init__(self, output, collapse_dirs=DEFAULT_COLLAPSE_DIRS, colorize=None):
+    self.output = output
+    self.collapse_dirs = set(collapse_dirs) if collapse_dirs else set()
+    self.colorize = output.isatty() if colorize is None else colorize
+    self.current_root = None
+    self.buffered_items = []
+
+  def FindCollapseRoot(self, path):
+    if not self.collapse_dirs:
+      return None
+    parts = path.split('/')
+    for i, part in enumerate(parts):
+      if part in self.collapse_dirs:
+        return '/'.join(parts[:i + 1])
+    return None
+
+  def Print(self, itemized, first_path_info=None, second_path_info=None,
+            found_matching_rename=False, warn_for_new_path=False, dup_lines=None):
+    collapse_root = self.FindCollapseRoot(itemized.path)
+    if collapse_root != self.current_root:
+      self.Flush()
+      self.current_root = collapse_root
+
+    if self.current_root is not None:
+      self.buffered_items.append({
+        'itemized': itemized,
+        'first_path_info': first_path_info,
+        'second_path_info': second_path_info,
+        'found_matching_rename': found_matching_rename,
+        'warn_for_new_path': warn_for_new_path,
+        'dup_lines': dup_lines or [],
+      })
+    else:
+      self._DirectPrint(itemized, found_matching_rename=found_matching_rename,
+                         warn_for_new_path=warn_for_new_path, dup_lines=dup_lines)
+
+  def _DirectPrint(self, itemized, found_matching_rename=False,
+                   warn_for_new_path=False, dup_lines=None):
+    print(itemized.ToString(colorize=self.colorize,
+                            found_matching_rename=found_matching_rename,
+                            warn_for_new_path=warn_for_new_path), file=self.output)
+    if dup_lines:
+      for line in dup_lines:
+        print(line, file=self.output)
+
+  def Flush(self):
+    if not self.buffered_items:
+      self.current_root = None
+      return
+
+    # If the only item is the directory root itself and has no children sub-deltas,
+    # print directly as a normal itemized change without rollup headers.
+    if len(self.buffered_items) == 1 and self.buffered_items[0]['itemized'].path == self.current_root:
+      item = self.buffered_items[0]
+      self._DirectPrint(item['itemized'],
+                         found_matching_rename=item['found_matching_rename'],
+                         warn_for_new_path=item['warn_for_new_path'],
+                         dup_lines=item['dup_lines'])
+      self.buffered_items = []
+      self.current_root = None
+      return
+
+    dir_path = self.current_root
+    if not dir_path.endswith('/'):
+      dir_path += '/'
+    escaped_path = EscapePath(dir_path)
+    if self.colorize:
+      prefix = '\033[%s%s\033[%s' % (TERM_COLOR_PURPLE, '*d.rollup', TERM_COLOR_RESET)
+      path_str = '\033[%s%s\033[%s' % (TERM_COLOR_CYAN, escaped_path, TERM_COLOR_RESET)
+    else:
+      prefix = '*d.rollup'
+      path_str = escaped_path
+    print('%s %s' % (prefix, path_str), file=self.output)
+
+    groups = {}
+    for item in self.buffered_items:
+      itemized = item['itemized']
+      code = itemized.GetStatusCode()
+      color = itemized.GetStatusColor(
+        found_matching_rename=item['found_matching_rename'],
+        warn_for_new_path=item['warn_for_new_path'])
+
+      size = 0
+      if itemized.path_type == PathInfo.TYPE_FILE:
+        second_pi = item['second_path_info']
+        first_pi = item['first_path_info']
+        if second_pi is not None and second_pi.size is not None:
+          size = second_pi.size
+        elif first_pi is not None and first_pi.size is not None:
+          size = first_pi.size
+
+      if code not in groups:
+        groups[code] = {
+          'count': 0,
+          'total_size': 0,
+          'color': color,
+        }
+      groups[code]['count'] += 1
+      groups[code]['total_size'] += size
+
+    type_order = {'.': 0, '>': 1, '*': 2}
+    for code in sorted(groups.keys(), key=lambda c: (type_order.get(c[0], 3), c)):
+      group = groups[code]
+      count = group['count']
+      unit = 'subpath' if count == 1 else 'subpaths'
+      size_str = ''
+      if group['total_size'] > 0:
+        size_str = ' (%s)' % FileSizeToString(group['total_size'])
+      if self.colorize:
+        code_str = '\033[%s%s\033[%s' % (group['color'], code, TERM_COLOR_RESET)
+      else:
+        code_str = code
+      print('  %s - %d %s%s' % (code_str, count, unit, size_str), file=self.output)
+
+    self.buffered_items = []
+    self.current_root = None
 
 
 class PathInfo(object):
@@ -3259,7 +3406,8 @@ class DiffDumperStats(object):
 class ManifestDiffDumper(object):
   def __init__(self, first_manifest, second_manifest, output, path_matcher=PathMatcherAll(),
                ignore_matching_renames=False, ignore_uid_diffs=IGNORE_UID_DIFFS,
-               ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False):
+               ignore_gid_diffs=IGNORE_GID_DIFFS, verbose=False,
+               collapse_dirs=DEFAULT_COLLAPSE_DIRS):
     self.first_manifest = first_manifest
     self.second_manifest = second_manifest
     self.output = output
@@ -3268,12 +3416,14 @@ class ManifestDiffDumper(object):
     self.ignore_uid_diffs = ignore_uid_diffs
     self.ignore_gid_diffs = ignore_gid_diffs
     self.verbose = verbose
+    self.collapse_dirs = collapse_dirs
     self.stats = DiffDumperStats()
 
   def DumpDiff(self):
     sha256_to_first_pathinfos = self.first_manifest.CreateSha256ToPathInfosMap()
     sha256_to_second_pathinfos = self.second_manifest.CreateSha256ToPathInfosMap()
 
+    printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
     all_paths = set(self.second_manifest.GetPathMap().keys())
     all_paths.update(list(self.first_manifest.GetPathMap().keys()))
     for path in sorted(all_paths):
@@ -3313,11 +3463,11 @@ class ManifestDiffDumper(object):
         found_matching_rename = dup_analyze_result and dup_analyze_result.found_matching_rename
 
         if not self.ignore_matching_renames or not found_matching_rename or self.verbose:
-          itemized.Print(output=self.output, found_matching_rename=found_matching_rename)
-          if dup_analyze_result is not None:
-            for line in dup_analyze_result.dup_output_lines:
-              print(line, file=self.output)
+          dup_lines = dup_analyze_result.dup_output_lines if dup_analyze_result is not None else []
+          printer.Print(itemized, first_path_info=first_path_info, second_path_info=second_path_info,
+                        found_matching_rename=found_matching_rename, dup_lines=dup_lines)
 
+    printer.Flush()
     return True
 
   def GetStats(self):
@@ -3341,7 +3491,8 @@ class ManifestVerifier(object):
   def __init__(self, manifest, src_root, output, filters=[], manifest_on_top=True,
                checksum_path_matcher=PathMatcherNone(), escape_key_detector=None, path_matcher=PathMatcherAll(),
                verbose=False, ignore_mtimes=False, ignore_permissions=False, ignore_xattrs=False,
-               warn_out_of_date_ignored_xattrs=True, legacy_xattr_date=None):
+               warn_out_of_date_ignored_xattrs=True, legacy_xattr_date=None,
+               collapse_dirs=DEFAULT_COLLAPSE_DIRS):
     self.manifest = manifest
     self.src_root = src_root
     self.output = output
@@ -3350,6 +3501,8 @@ class ManifestVerifier(object):
     self.path_matcher = path_matcher
     self.verbose = verbose
     self.manifest_on_top = manifest_on_top
+    self.collapse_dirs = collapse_dirs
+    self.rollup_printer = ItemizedRollupPrinter(output=self.output, collapse_dirs=self.collapse_dirs)
     self.path_enumerator = PathEnumerator(src_root, output, filters=filters, verbose=verbose)
     self.has_diffs = False
     self.stats = ManifestVerifierStats()
@@ -3406,6 +3559,7 @@ class ManifestVerifier(object):
         self._CheckCommonPath(path, src_path_info, manifest_path_info)
 
     self._HandleMissingPaths(missing_paths, next_present_path=None)
+    self.rollup_printer.Flush()
 
     return not self.has_diffs
 
@@ -3418,9 +3572,11 @@ class ManifestVerifier(object):
     itemized = src_path_info.GetItemized()
     if self.manifest_on_top:
       itemized.delete_path = True
+      first_pi, second_pi = src_path_info, None
     else:
       itemized.new_path = True
-    itemized.Print(output=self.output)
+      first_pi, second_pi = None, src_path_info
+    self.rollup_printer.Print(itemized, first_path_info=first_pi, second_path_info=second_pi)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
@@ -3441,7 +3597,7 @@ class ManifestVerifier(object):
         self.stats.total_checksum_skipped_paths += 1
         self.stats.total_checksum_skipped_size += src_path_info.size
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=manifest_path_info, second_path_info=src_path_info)
       return
     if src_path_info.HasFileContents():
       src_path_info.sha256 = Sha256WithProgress(full_path, src_path_info, output=self.output)
@@ -3453,10 +3609,10 @@ class ManifestVerifier(object):
       matches = False
     if matches:
       if self.verbose:
-        itemized.Print(output=self.output)
+        self.rollup_printer.Print(itemized, first_path_info=manifest_path_info, second_path_info=src_path_info)
       return
 
-    itemized.Print(output=self.output)
+    self.rollup_printer.Print(itemized, first_path_info=manifest_path_info, second_path_info=src_path_info)
     self.stats.total_mismatched_paths += 1
     if src_path_info.size:
       self.stats.total_mismatched_size += src_path_info.size
@@ -3480,9 +3636,11 @@ class ManifestVerifier(object):
         itemized = path_info.GetItemized()
         if self.manifest_on_top:
           itemized.new_path = True
+          first_pi, second_pi = None, path_info
         else:
           itemized.delete_path = True
-        itemized.Print(output=self.output)
+          first_pi, second_pi = path_info, None
+        self.rollup_printer.Print(itemized, first_path_info=first_pi, second_path_info=second_pi)
         self.stats.total_mismatched_paths += 1
         if path_info.size:
           self.stats.total_mismatched_size += path_info.size
@@ -3563,6 +3721,7 @@ def DoDiffManifests(args, output):
     parser.add_argument('--no-ignore-gid-diffs', dest='ignore_gid_diffs', action='store_false')
   else:
     parser.add_argument('--ignore-gid-diffs', dest='ignore_gid_diffs', action='store_true')
+  AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   encryption_manager = EncryptionManager(output=output)
@@ -3573,10 +3732,13 @@ def DoDiffManifests(args, output):
     cmd_args.second_path, encryption_manager=encryption_manager, dry_run=args.dry_run)
   path_matcher = GetPathMatcherFromArgs(cmd_args)
 
+  collapse_dirs = GetCollapseDirsFromArgs(cmd_args)
+
   manifest_diff_dumper = ManifestDiffDumper(
     first_manifest=first_manifest, second_manifest=second_manifest, output=output, verbose=args.verbose,
     path_matcher=path_matcher, ignore_matching_renames=cmd_args.ignore_matching_renames,
-    ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs)
+    ignore_uid_diffs=cmd_args.ignore_uid_diffs, ignore_gid_diffs=cmd_args.ignore_gid_diffs,
+    collapse_dirs=collapse_dirs)
   return manifest_diff_dumper.DumpDiff()
 
 
@@ -3588,16 +3750,19 @@ def DoVerifyManifest(args, output):
   parser.add_argument('--ignore-mtimes', action='store_true')
   parser.add_argument('--ignore-permissions', action='store_true')
   parser.add_argument('--ignore-xattrs', action='store_true')
+  AddCollapseArgs(parser)
   cmd_args = parser.parse_args(args.cmd_args)
 
   manifest = ReadManifestFromImageOrPath(
     cmd_args.path, encryption_manager=EncryptionManager(output=output), dry_run=args.dry_run)
 
+  collapse_dirs = GetCollapseDirsFromArgs(cmd_args)
+
   manifest_verifier = ManifestVerifier(
     manifest, cmd_args.src_root, output,
     checksum_path_matcher=PathMatcherAllOrNone(cmd_args.checksum_all), verbose=args.verbose,
     ignore_mtimes=cmd_args.ignore_mtimes, ignore_permissions=cmd_args.ignore_permissions,
-    ignore_xattrs=cmd_args.ignore_xattrs)
+    ignore_xattrs=cmd_args.ignore_xattrs, collapse_dirs=collapse_dirs)
   return manifest_verifier.Verify()
 
 

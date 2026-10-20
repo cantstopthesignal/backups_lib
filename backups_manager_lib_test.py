@@ -2148,6 +2148,49 @@ class DumpUniqueFilesInBackupsTestCase(BaseTestCase):
                        '.d..t.... par2',
                        'Paths: 4 unique (2kb), 13 total'])
 
+    git_dir = CreateDir(config.src_path, '.git')
+    CreateFile(git_dir, 'HEAD', contents='ref: refs/heads/main\n')
+    CreateFile(git_dir, 'config', contents='[core]\n')
+
+    DoCreateBackup(
+      config, backup_name='2020-01-05-120000',
+      expected_output=[
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (28b)',
+        'Transferring 3 of 16 paths (28b of 3kb)'])
+
+    DoApplyToBackups(
+      config,
+      expected_output=[
+        'Applying 2020-01-05-120000 onto 2020-01-04-120000...',
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (28b)',
+        'Copying paths: 16 to copy, 8 to hard link, 16 total in source, 16 total in result...',
+        'Verifying 2020-01-05-120000...',
+        'Paths: 16 total (3kb), 10 checksummed (3kb)'])
+
+    DoDumpUniqueFilesInBackups(
+      config, backup_names=['2020-01-05-120000'],
+      expected_output=[
+        'Finding unique files in backup Backup<2020-01-05-120000,DONE>...',
+        'Compare to previous Backup<2020-01-04-120000,DONE>...',
+        '*d.rollup .git/',
+        '  >d+++++++ - 1 subpath',
+        '  >f+++++++ - 2 subpaths (28b)',
+        'Paths: 3 unique (28b), 16 total'])
+
+    DoDumpUniqueFilesInBackups(
+      config, backup_names=['2020-01-05-120000'], collapse=False,
+      expected_output=[
+        'Finding unique files in backup Backup<2020-01-05-120000,DONE>...',
+        'Compare to previous Backup<2020-01-04-120000,DONE>...',
+        '>d+++++++ .git',
+        '>f+++++++ .git/HEAD',
+        '>f+++++++ .git/config',
+        'Paths: 3 unique (28b), 16 total'])
+
 
 class ExtractFromBackupsTestCase(BaseTestCase):
   def test(self):

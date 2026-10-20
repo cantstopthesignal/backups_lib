@@ -122,8 +122,14 @@ def DoVerify(root_path, manifest_path=None, dry_run=False, verbose=False, checks
 
 def DoSync(root_path, manifest_path=None, dry_run=False, checksum_all=False, interactive=False,
            detect_renames=True, upgrade_ignored_xattrs=False, legacy_xattr_date=None, paths=[],
+           collapse=True, collapse_dirs=None,
            expected_success=True, expected_output=[]):
   cmd_args = ['sync', root_path]
+  if not collapse:
+    cmd_args.append('--no-collapse')
+  if collapse_dirs is not None:
+    for d in collapse_dirs:
+      cmd_args.extend(['--collapse-dir', d])
   if manifest_path is not None:
     cmd_args.extend(['--manifest-path', manifest_path])
   if checksum_all:
